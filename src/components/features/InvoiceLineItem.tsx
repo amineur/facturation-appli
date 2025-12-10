@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import { Trash2, GripVertical } from "lucide-react";
 import { useFormContext, Controller } from "react-hook-form";
@@ -14,7 +15,36 @@ interface InvoiceLineItemProps {
     products: Produit[];
     remove: (index: number) => void;
     handleDescriptionChange: (index: number, value: string) => void;
+    isReadOnly?: boolean;
 }
+
+const PriceInput = ({ value, onChange, onBlur, inputRef, className }: any) => {
+    const [localValue, setLocalValue] = useState(value !== undefined ? value.toFixed(2).replace('.', ',') : "0,00");
+
+    useEffect(() => {
+        setLocalValue(value !== undefined ? value.toFixed(2).replace('.', ',') : "0,00");
+    }, [value]);
+
+    return (
+        <input
+            type="text"
+            ref={inputRef}
+            value={localValue}
+            onChange={(e) => setLocalValue(e.target.value)}
+            onBlur={(e) => {
+                const val = parseFloat(e.target.value.replace(',', '.')) || 0;
+                onChange(val);
+                onBlur();
+            }}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                }
+            }}
+            className={className}
+        />
+    );
+};
 
 export const InvoiceLineItem = ({
     field,
@@ -25,20 +55,23 @@ export const InvoiceLineItem = ({
     discountType,
     products,
     remove,
-    handleDescriptionChange
+    handleDescriptionChange,
+    isReadOnly = false
 }: InvoiceLineItemProps) => {
     const { register, control, setValue, watch, formState: { errors } } = useFormContext();
     const dragControls = useDragControls();
+    const [open, setOpen] = useState(false);
 
     return (
         <Reorder.Item
             value={field}
-            dragListener={false} // Disable default drag listener to allow input interaction
+            dragListener={!isReadOnly} // Disable drag if read only
             dragControls={dragControls}
             className="relative mb-2 list-none" // Ensure list-none for UL context
         >
             <div className={cn(
                 "group grid gap-4 items-start p-2 rounded-lg hover:bg-white/5 transition-colors pl-8",
+                isReadOnly && "hover:bg-transparent pl-2" // Adjust padding if no drag handle
             )}
                 style={{
                     gridTemplateColumns: [
@@ -50,17 +83,19 @@ export const InvoiceLineItem = ({
                         "0.8fr", // TVA
                         showTTCColumn ? "1.2fr" : null, // Total TTC
                         discountEnabled ? "1.1fr" : null, // Remise
-                        "0.4fr"
+                        !isReadOnly ? "0.4fr" : null
                     ].filter(Boolean).join(" ")
                 }}>
 
                 {/* Drag Handle */}
-                <div
-                    className="absolute left-2 top-3 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity touch-none"
-                    onPointerDown={(e) => dragControls.start(e)}
-                >
-                    <GripVertical className="h-4 w-4 text-muted-foreground" />
-                </div>
+                {!isReadOnly && (
+                    <div
+                        className="absolute left-2 top-3 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity touch-none"
+                        onPointerDown={(e) => dragControls.start(e)}
+                    >
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                )}
 
                 {field.type === 'texte' ? (
                     /* Text Line Rendering */
@@ -68,34 +103,79 @@ export const InvoiceLineItem = ({
                         <div className="space-y-2">
                             <input
                                 {...register(`items.${index}.description`)}
+                                disabled={isReadOnly}
                                 placeholder="Description libre..."
-                                className="w-full h-9 rounded bg-white/5 border border-white/10 px-3 text-foreground text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 italic"
+                                className={cn(
+                                    "w-full h-9 rounded bg-white/5 border border-white/10 px-3 text-foreground text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 italic",
+                                    isReadOnly && "opacity-80 bg-transparent border-transparent"
+                                )}
                             />
                         </div>
-                        <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button type="button" onClick={() => remove(index)} className="text-red-500 hover:text-red-400">
-                                <Trash2 className="h-4 w-4" />
-                            </button>
-                        </div>
+                        {!isReadOnly && (
+                            <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => remove(index)} className="text-red-500 hover:text-red-400">
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     /* Product Line Rendering */
                     <>
-                        <div className="space-y-2">
+
+
+                        <div className="relative">
                             <input
-                                list={`products - ${index} `}
+                                autoComplete="off"
                                 {...register(`items.${index}.description`)}
-                                onChange={(e) => handleDescriptionChange(index, e.target.value)}
+                                disabled={isReadOnly}
+                                onChange={(e) => {
+                                    setOpen(true);
+                                    handleDescriptionChange(index, e.target.value);
+                                }}
+                                onFocus={() => !isReadOnly && setOpen(true)}
+                                onBlur={() => setTimeout(() => setOpen(false), 200)}
                                 placeholder="Description"
-                                className="w-full h-9 rounded bg-white/5 border border-white/10 px-3 text-foreground text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className={cn(
+                                    "w-full h-9 rounded glass-input px-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 peer",
+                                    isReadOnly && "disabled:opacity-100 disabled:bg-transparent disabled:border-transparent cursor-default"
+                                )}
                             />
-                            <datalist id={`products - ${index} `}>
-                                {products.map(p => (
-                                    <option key={p.id} value={p.nom}>
-                                        {p.prixUnitaire.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} - TVA {p.tva}%
-                                    </option>
-                                ))}
-                            </datalist>
+                            {/* Custom Dropdown for Products */}
+                            {open && !isReadOnly && (
+                                <div className="absolute top-full left-0 w-full z-50 mt-1 max-h-60 overflow-y-auto rounded-md glass-dropdown animate-in fade-in zoom-in-95 duration-100">
+                                    {products.length > 0 ? (
+                                        products
+                                            .filter(p => p.nom.toLowerCase().includes((watch(`items.${index}.description`) || "").toLowerCase()))
+                                            .map(p => (
+                                                <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault(); // Prevent input blur
+                                                        handleDescriptionChange(index, p.nom);
+                                                        setOpen(false); // Close on selection
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-colors border-b border-black/5 dark:border-white/5 last:border-0"
+                                                >
+                                                    <div className="font-medium">{p.nom}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {p.prixUnitaire.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} - TVA {p.tva}%
+                                                    </div>
+                                                </button>
+                                            ))
+                                    ) : (
+                                        <div className="p-3 text-center text-xs text-muted-foreground">
+                                            Aucun produit disponible.
+                                        </div>
+                                    )}
+                                    {products.filter(p => p.nom.toLowerCase().includes((watch(`items.${index}.description`) || "").toLowerCase())).length === 0 && products.length > 0 && (
+                                        <div className="p-2 text-center text-xs text-muted-foreground">
+                                            Aucun résultat.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {showDateColumn && (
@@ -103,7 +183,8 @@ export const InvoiceLineItem = ({
                                 <input
                                     type="date"
                                     {...register(`items.${index}.date`)}
-                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 text-sm p-1"
+                                    disabled={isReadOnly}
+                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 text-sm p-1 disabled:border-transparent disabled:opacity-80"
                                 />
                             </div>
                         )}
@@ -114,7 +195,8 @@ export const InvoiceLineItem = ({
                                 lang="fr-FR"
                                 step="any"
                                 {...register(`items.${index}.quantite`, { valueAsNumber: true })}
-                                className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                disabled={isReadOnly}
+                                className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:border-transparent disabled:opacity-80"
                             />
                         </div>
 
@@ -123,22 +205,16 @@ export const InvoiceLineItem = ({
                                 control={control}
                                 name={`items.${index}.prixUnitaire`}
                                 render={({ field: { onChange, value, onBlur, ref } }) => (
-                                    <input
-                                        type="text"
-                                        ref={ref}
-                                        defaultValue={value ? value.toFixed(2).replace('.', ',') : "0,00"}
-                                        onBlur={(e) => {
-                                            const val = parseFloat(e.target.value.replace(',', '.')) || 0;
-                                            e.target.value = val.toFixed(2).replace('.', ',');
-                                            onChange(val);
-                                            onBlur();
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.currentTarget.blur();
-                                            }
-                                        }}
-                                        className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-5"
+                                    <PriceInput
+                                        value={value}
+                                        onChange={onChange}
+                                        onBlur={onBlur}
+                                        inputRef={ref}
+                                        // disabled={isReadOnly} // PriceInput needs to handle disabled if standard input doesn't
+                                        className={cn(
+                                            "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-5",
+                                            isReadOnly && "disabled:border-transparent disabled:opacity-80 pointer-events-none"
+                                        )}
                                     />
                                 )}
                             />
@@ -168,7 +244,8 @@ export const InvoiceLineItem = ({
                                     type="number"
                                     step="0.1"
                                     {...register(`items.${index}.tva`, { valueAsNumber: true })}
-                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pr-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    disabled={isReadOnly}
+                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pr-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:border-transparent disabled:opacity-80"
                                 />
                                 <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
                             </div>
@@ -205,25 +282,29 @@ export const InvoiceLineItem = ({
                                     max={discountType === 'pourcentage' ? "100" : undefined}
                                     placeholder="0"
                                     {...register(`items.${index}.remise`, { valueAsNumber: true })}
+                                    disabled={isReadOnly}
                                     onChange={(e) => {
                                         setValue(`items.${index}.remise`, parseFloat(e.target.value) || 0);
                                         setValue(`items.${index}.remiseType`, discountType);
                                     }}
-                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:border-transparent disabled:opacity-80"
                                 />
                                 <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none">
                                     {discountType === 'pourcentage' ? '%' : '€'}
                                 </span>
                             </div>
                         )}
-                        <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button type="button" onClick={() => remove(index)} className="text-red-500 hover:text-red-400">
-                                <Trash2 className="h-4 w-4" />
-                            </button>
-                        </div>
+                        {!isReadOnly && (
+                            <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => remove(index)} className="text-red-500 hover:text-red-400">
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            </div>
+                        )}
                     </>
-                )}
-            </div>
-        </Reorder.Item>
+                )
+                }
+            </div >
+        </Reorder.Item >
     );
 };

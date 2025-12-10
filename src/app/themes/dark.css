@@ -1,0 +1,35 @@
+/* -----------------------------------------
+   [SECTION] DARK THEME
+   ----------------------------------------- */
+.dark {
+    /* -- Colors -- */
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --muted-foreground: #a1a1aa;
+    --primary: #ededed;
+    --border: rgba(255, 255, 255, 0.1);
+
+    /* -- Semantics: Icons -- */
+    --icon-nav: #a1a1aa;
+    --icon-invoice: #10B981;
+    /* Explicitly defined for strict separation */
+    --icon-quote: #6366F1;
+    --icon-client: #F59E0B;
+
+    /* -- Semantics: Glass -- */
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-dropdown-bg: #1C1C1C;
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+
+    /* -- Semantics: Inputs -- */
+    --input-bg: rgba(255, 255, 255, 0.05);
+    --input-border: rgba(255, 255, 255, 0.1);
+    --input-text: #ffffff;
+
+    /* -- Visualization -- */
+    --bg-gradient:
+        radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+        radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%),
+        radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+}

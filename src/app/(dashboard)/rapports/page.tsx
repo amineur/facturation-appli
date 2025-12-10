@@ -155,8 +155,22 @@ export default function RapportsPage() {
             inv.items.forEach(item => {
                 const key = item.description; // Aggregate by name for now
                 const current = stats.get(key) || { revenue: 0, count: 0 };
+
+                // Fallback calculation if totalLigne is missing or 0 (legacy data issue)
+                let lineRevenue = item.totalLigne;
+                if (!lineRevenue) { // Checks for undefined, null, or 0
+                    const parseVal = (v: any) => {
+                        if (typeof v === 'number') return v;
+                        if (typeof v === 'string') return parseFloat(v.replace(',', '.')) || 0;
+                        return 0;
+                    };
+                    const qty = parseVal(item.quantite);
+                    const price = parseVal(item.prixUnitaire);
+                    lineRevenue = qty * price;
+                }
+
                 stats.set(key, {
-                    revenue: current.revenue + (item.totalLigne || 0), // Fallback if totalLigne missing
+                    revenue: current.revenue + (lineRevenue || 0),
                     count: current.count + item.quantite
                 });
             });
@@ -219,7 +233,7 @@ export default function RapportsPage() {
                     <p className="text-muted-foreground mt-1">Analyse détaillée de votre activité</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 bg-white/5 p-1.5 rounded-xl border border-white/10">
+                <div className="flex flex-col sm:flex-row items-center gap-3 bg-black/5 dark:bg-white/5 p-1.5 rounded-xl border border-border">
                     <div className="flex items-center gap-1">
                         <button
                             onClick={() => {
@@ -228,7 +242,7 @@ export default function RapportsPage() {
                                 setCustomEnd(format(new Date(), "yyyy-MM-dd"));
                             }}
                             className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                                dateRange === "month" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-white/5 text-muted-foreground")}
+                                dateRange === "month" ? "bg-primary text-white shadow-sm dark:bg-emerald-500/20 dark:text-emerald-300 dark:border dark:border-emerald-500/20" : "hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground")}
                         >
                             Ce Mois
                         </button>
@@ -239,13 +253,15 @@ export default function RapportsPage() {
                                 setCustomEnd(format(new Date(), "yyyy-MM-dd"));
                             }}
                             className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                                dateRange === "3months" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-white/5 text-muted-foreground")}
+                                dateRange === "3months" ? "bg-primary text-white shadow-sm dark:bg-emerald-500/20 dark:text-emerald-300 dark:border dark:border-emerald-500/20" : "hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground")}
                         >
                             3 Derniers Mois
                         </button>
                     </div>
 
-                    <div className="h-6 w-px bg-white/10 hidden sm:block mx-1" />
+
+
+                    <div className="h-6 w-px bg-border hidden sm:block mx-1" />
 
                     <div className="flex items-center gap-2 px-2">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">Période : Du</span>
@@ -253,14 +269,14 @@ export default function RapportsPage() {
                             type="date"
                             value={customStart}
                             onChange={(e) => handleDateChange('start', e.target.value)}
-                            className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px]"
+                            className="bg-transparent border border-border rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px]"
                         />
                         <span className="text-sm text-muted-foreground">au</span>
                         <input
                             type="date"
                             value={customEnd}
                             onChange={(e) => handleDateChange('end', e.target.value)}
-                            className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px]"
+                            className="bg-transparent border border-border rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px]"
                         />
                     </div>
                 </div>
@@ -559,6 +575,6 @@ export default function RapportsPage() {
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

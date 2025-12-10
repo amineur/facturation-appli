@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { Mail, Save, AlertCircle, CheckCircle } from "lucide-react";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
+import { updateSociete } from "@/app/actions";
 import { Societe } from "@/types";
 
 interface SmtpFormData {
@@ -17,7 +18,7 @@ interface SmtpFormData {
 
 export function EmailSettings() {
     // Access the current active society
-    const { societe: currentSociete } = useData();
+    const { societe: currentSociete, refreshData } = useData();
     const [isSaving, setIsSaving] = useState(false);
     const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
 
@@ -37,30 +38,37 @@ export function EmailSettings() {
     useEffect(() => {
         if (currentSociete) {
             reset({
-                host: currentSociete.smtpConfig?.host || "",
-                port: currentSociete.smtpConfig?.port || 587,
-                user: currentSociete.smtpConfig?.user || "",
-                pass: currentSociete.smtpConfig?.pass || "",
-                secure: currentSociete.smtpConfig?.secure || false,
-                fromName: currentSociete.smtpConfig?.fromName || currentSociete.nom,
-                fromEmail: currentSociete.smtpConfig?.fromEmail || currentSociete.email
+                host: currentSociete.smtpHost || "",
+                port: currentSociete.smtpPort || 587,
+                user: currentSociete.smtpUser || "",
+                pass: currentSociete.smtpPass || "",
+                secure: currentSociete.smtpSecure || false,
+                fromName: currentSociete.nom, // Sender name usually company name
+                fromEmail: currentSociete.smtpFrom || currentSociete.email || ""
             });
         }
     }, [currentSociete, reset]);
 
-    const onSubmit = (data: SmtpFormData) => {
+    const onSubmit = async (data: SmtpFormData) => {
         setIsSaving(true);
         setStatus("idle");
 
         try {
             if (!currentSociete) return;
 
-            const updatedSociete: Societe = {
+            const updatedSociete: any = {
                 ...currentSociete,
-                smtpConfig: data
+                smtpHost: data.host,
+                smtpPort: data.port,
+                smtpUser: data.user,
+                smtpPass: data.pass,
+                smtpSecure: data.secure,
+                smtpFrom: data.fromEmail
+                // fromName is unused in schema currently, maybe stored implicitly or ignored
             };
 
-            dataService.updateSociete(updatedSociete);
+            await updateSociete(updatedSociete);
+            refreshData();
 
             // In a real app we might test connection here
             setTimeout(() => {

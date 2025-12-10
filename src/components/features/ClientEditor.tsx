@@ -3,9 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
+import { createClient, updateClient } from "@/app/actions";
 import { Client } from "@/types";
 import { COUNTRIES } from "@/lib/countries";
 import Link from "next/link";
@@ -28,13 +30,15 @@ interface ClientFormValues {
 }
 
 export function ClientEditor({ initialData }: { initialData?: Client }) {
-    const { refreshData, societe } = useData();
+    const { refreshData, societe, setIsDirty, confirm, logAction } = useData();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const returnUrl = searchParams.get("returnUrl");
     const [countryOpen, setCountryOpen] = useState(false);
     const [countrySearch, setCountrySearch] = useState(initialData?.pays || "France");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const { register, handleSubmit, setValue, formState: { errors } } = useForm<ClientFormValues>({
+    const { register, handleSubmit, setValue, watch, formState: { errors, isDirty } } = useForm<ClientFormValues>({
         defaultValues: {
             nom: initialData?.nom || "",
             siret: initialData?.siret || "",
@@ -52,6 +56,39 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
         }
     });
 
+    // Auto-fill City based on Zip Code (France only)
+    const watchedZip = watch("codePostal");
+
+    useEffect(() => {
+        const fetchCity = async () => {
+            if (watchedZip && watchedZip.length === 5 && !isNaN(Number(watchedZip))) {
+                try {
+                    const response = await fetch(`https://geo.api.gouv.fr/communes?codePostal=${watchedZip}&fields=nom&format=json&geometry=centre`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.length > 0) {
+                            // Automatically set the first matching city and Country to France
+                            setValue("ville", data[0].nom);
+                            setValue("pays", "France");
+                            setCountrySearch("France");
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error fetching city:", error);
+                }
+            }
+        };
+
+        const timeoutId = setTimeout(fetchCity, 300); // 300ms debounce
+        return () => clearTimeout(timeoutId);
+    }, [watchedZip, setValue]);
+
+    // Sync isDirty with global state
+    useEffect(() => {
+        setIsDirty(isDirty);
+        return () => setIsDirty(false); // Cleanup
+    }, [isDirty, setIsDirty]);
+
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -68,28 +105,95 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
         c.toLowerCase().includes(countrySearch.toLowerCase())
     );
 
-    const onSubmit = (data: ClientFormValues) => {
-        const clientData: Client = {
-            id: initialData?.id || crypto.randomUUID(),
-            societeId: societe.id,
-            ...data,
-            adresse2: "", // Clear or keep empty
-            pays: countrySearch // Ensure we take the state value if manually typed
-        };
+    const [isSaving, setIsSaving] = useState(false);
 
-        dataService.saveClient(clientData);
-        refreshData();
-        alert("Client enregistré avec succès !");
-        router.push("/clients");
+    const onSubmit = async (data: ClientFormValues) => {
+        setIsSaving(true);
+        try {
+            const isNew = !initialData?.id;
+
+            // Prepare Client Data
+            const clientData: Client = {
+                id: initialData?.id || "temp", // Temp ID until server response
+                societeId: societe?.id || "",
+                ...data,
+                adresse2: "", // Clear or keep empty
+                pays: countrySearch // Ensure we take the state value if manually typed
+            };
+
+            if (isNew) {
+                // CREATE
+                const res = await createClient(clientData);
+                if (!res.success || !res.id) {
+                    throw new Error(res.error || "Erreur lors de la création");
+                }
+                // Update local with real ID
+                clientData.id = res.id;
+                logAction('create', 'client', `Nouveau client ${clientData.nom} créé`, clientData.id);
+            } else {
+                // UPDATE
+                const res = await updateClient(clientData);
+                if (!res.success) {
+                    throw new Error(res.error || "Erreur lors de la modification");
+                }
+                logAction('update', 'client', `Client ${clientData.nom} modifié`, clientData.id);
+            }
+
+            await refreshData();
+            toast.success("Client enregistré avec succès !");
+
+            setTimeout(() => {
+                if (returnUrl) {
+                    const separator = returnUrl.includes('?') ? '&' : '?';
+                    router.push(`${returnUrl}${separator}clientId=${clientData.id}`);
+                } else {
+                    router.push("/clients");
+                }
+            }, 500);
+        } catch (error: any) {
+            console.error(error);
+            toast.error("Erreur: " + error.message);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
+    const handleBack = () => {
+        if (isDirty) {
+            // Need to import confirm from useData if not already
+            // Wait, useData in this file returns { refreshData, societe, setIsDirty }
+            // I need to update the destructuring in the component signature
+            // But I can't do it here easily since I'm replacing a specific block.
+            // I will assume I can access it or update the destructuring below.
+            // Actually, I should update the destructuring first or in this same call?
+            // No, I updated it to: const { refreshData, societe, setIsDirty } = useData();
+            // I need to add `confirm` there.
+        }
+    }
+
+    // Actually, I'll do a button that calls a function, and I'll add the hook implementation in a separate edit or multireplace.
+    // Let's use MultiReplace to add `confirm` to useData AND change the button.
     return (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/clients" className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (isDirty) {
+                                confirm({
+                                    title: "Modifications non enregistrées",
+                                    message: "Voulez-vous vraiment quitter ?",
+                                    onConfirm: () => router.push("/clients")
+                                });
+                            } else {
+                                router.push("/clients");
+                            }
+                        }}
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                    >
                         <ArrowLeft className="h-5 w-5" />
-                    </Link>
+                    </button>
                     <div>
                         <h2 className="text-3xl font-bold tracking-tight text-foreground">{initialData ? "Modifier le Client" : "Nouveau Client"}</h2>
                         <p className="text-muted-foreground mt-1">Saisissez les informations du client.</p>
@@ -181,13 +285,14 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-muted-foreground">Code Postal</label>
-                                    <input {...register("codePostal")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                    <input {...register("codePostal")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="75001" />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-muted-foreground">Ville</label>
-                                    <input {...register("ville")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                    <input {...register("ville")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="Paris" />
                                 </div>
                             </div>
+
 
                             {/* Custom Country Combobox */}
                             <div className="space-y-2 relative" ref={dropdownRef}>
@@ -209,7 +314,7 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
                                 </div>
 
                                 {countryOpen && (
-                                    <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto rounded-lg border border-white/20 bg-[#1a1a1a] shadow-xl">
+                                    <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto rounded-lg glass-card">
                                         {filteredCountries.length > 0 ? (
                                             filteredCountries.map((country) => (
                                                 <button

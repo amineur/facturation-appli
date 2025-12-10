@@ -1,5 +1,5 @@
 export type StatusFacture = 'Brouillon' | 'Envoyée' | 'Payée' | 'Retard' | 'Annulée';
-export type StatusDevis = 'Brouillon' | 'Envoyé' | 'Accepté' | 'Refusé' | 'Facturé';
+export type StatusDevis = 'Brouillon' | 'Envoyé' | 'Accepté' | 'Refusé' | 'Facturé' | 'Converti';
 export type InvoiceStatus = StatusFacture; // Backward compatibility alias if needed
 export type InvoiceType = 'Facture' | 'Devis';
 
@@ -53,40 +53,51 @@ export interface Client {
 }
 
 export interface Societe {
-    id: string; // Unique ID (uuid)
+    id: string;
     nom: string;
-    email: string;
-    emailContact?: string; // Alias found in mock
-    adresse: string;
-    codePostal: string;
-    ville: string;
-    telephone: string;
-    siret: string;
-    tvaIntracom: string;
-    tvaIntra?: string; // Alias found in mock
-    logoUrl?: string; // Base64 ou URL
-    iban?: string;
-    bic?: string;
-    capitalSocial?: string;
-    formeJuridique?: string; // SAS, SARL...
-    rcs?: string;
-    siteWeb?: string;
-    banque?: string;
-    titulaireCompte?: string;
-    // Mentions légales par défaut
-    mentionsLegales?: string;
-    mentionLegale?: string; // Alias found in mock
-    cgv?: string; // Add missing field
-    devise?: string; // Add missing field
-    smtpConfig?: {
-        host: string;
-        port: number;
-        user: string;
-        pass: string; // Stored securely in real app
-        secure: boolean;
-        fromName?: string;
-        fromEmail?: string;
-    };
+    email: string | null;
+    telephone: string | null;
+    adresse: string | null;
+    codePostal: string | null;
+    ville: string | null;
+    pays: string | null;
+    siret: string | null;
+    tvaIntra: string | null;
+    logoUrl: string | null;
+    iban: string | null;
+    bic: string | null;
+    titulaireCompte: string | null;
+    mentionsLegales: string | null;
+    cgv: string | null;
+
+    // Branding
+    primaryColor: string | null;
+    secondaryColor: string | null;
+
+    // Settings
+    defaultTva: number;
+    defaultConditions: string | null;
+    currency: string;
+    invoicePrefix: string | null;
+    quotePrefix: string | null;
+
+    // Legal
+    capitalSocial: string | null;
+    formeJuridique: string | null;
+    rcs: string | null;
+    siteWeb: string | null;
+    banque: string | null;
+
+    // SMTP
+    smtpHost: string | null;
+    smtpPort: number | null;
+    smtpUser: string | null;
+    smtpPass: string | null;
+    smtpSecure: boolean;
+    smtpFrom: string | null;
+
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 export interface User {
@@ -98,6 +109,34 @@ export interface User {
     permissions: string[]; // e.g. 'create:invoice', 'delete:client'
     societes: string[]; // IDs of permitted societes
     currentSocieteId?: string; // Last active society
+}
+
+export interface HistoryEntry {
+    id: string;
+    userId: string;
+    userName: string;
+    action: 'create' | 'update' | 'delete' | 'read' | 'other';
+    entityType: 'facture' | 'devis' | 'client' | 'produit' | 'societe' | 'settings';
+    entityId?: string;
+    description: string; // "A créé une nouvelle facture F-2024-001"
+    timestamp: string; // ISO date
+    details?: any; // Snapshot of changes if needed
+}
+
+export interface EmailLog {
+    id: string;
+    documentId: string;
+    date: string; // ISO
+    actionType: 'envoi' | 'relance' | 'download'; // Type d'action
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    message: string;
+    status: 'sent' | 'failed' | 'draft' | 'scheduled';
+    attachments: { name: string; size?: number; type: string; content?: string }[];
+    relatedEmailId?: string; // ID de l'email d'origine pour les relances
+    scheduledAt?: string; // ISO date pour envoi différé
 }
 
 export interface Acompte {
@@ -139,6 +178,7 @@ export interface Facture {
     // Totaux (calculés mais stockés pour perf/historique)
     totalHT: number;
     totalTTC: number;
+    itemsJSON?: string;
     totalTVA?: number;
 
     remiseGlobale?: number; // Valeur
@@ -159,12 +199,18 @@ export interface Facture {
     // Soft delete
     isDeleted?: boolean;
     deletedAt?: string;
+
+    createdAt?: string;
+    updatedAt?: string;
+
+    emails?: EmailLog[]; // History of sent emails
 }
 
 export interface Devis extends Omit<Facture, 'type' | 'statut' | 'echeance'> {
     type: 'Devis';
     statut: StatusDevis;
     dateValidite: string; // ISO Date
+    emails?: EmailLog[]; // History of sent emails
 }
 
 // Configuration globale app

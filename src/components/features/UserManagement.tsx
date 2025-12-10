@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { User, Societe } from "@/types";
 import { dataService } from "@/lib/data-service";
 import { useData } from "@/components/data-provider";
-import { Plus, Trash2, Edit2, Shield, User as UserIcon, Check, X, Building2, Mail, Save } from "lucide-react";
+import { Plus, Trash2, Edit2, Shield, User as UserIcon, Check, X, Building2, Mail, Save, Copy, Key } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface UserFormData {
     id?: string;
@@ -12,6 +13,7 @@ interface UserFormData {
     fullName: string;
     role: "admin" | "user" | "viewer";
     societes: string[];
+    password?: string; // Add password
 }
 
 export function UserManagement({ onBack }: { onBack: () => void }) {
@@ -22,12 +24,10 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
 
     useEffect(() => {
         setUsers(dataService.getUsers());
-        // In a real app, we might filter this list based on admin rights
     }, []);
 
     const handleRevoke = (id: string) => {
         if (confirm("Êtes-vous sûr de vouloir révoquer l'accès de cet utilisateur ?")) {
-            // In a real app, we would call an API
             const newUsers = users.filter(u => u.id !== id);
             localStorage.setItem("glassy_users", JSON.stringify(newUsers));
             setUsers(newUsers);
@@ -53,12 +53,19 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
             currentSocieteId: selectedUser?.currentSocieteId
         };
 
+        // Preserve password if not updated and editing
+        if (!data.password && selectedUser?.password) {
+            newUser.password = selectedUser.password;
+        }
+
         dataService.saveUser(newUser);
         setUsers(dataService.getUsers());
         setIsEditing(false);
 
         if (isNew) {
-            alert(`Une invitation a été envoyée par email à ${data.email}`);
+            toast.success(`Utilisateur ${data.fullName} invité !`);
+        } else {
+            toast.success("Utilisateur mis à jour");
         }
     };
 
@@ -117,7 +124,6 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
                                     return (
                                         <div key={socId} className="h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-white overflow-hidden" title={soc.nom}>
                                             {soc.logoUrl ? (
-                                                /* eslint-disable-next-line @next/next/no-img-element */
                                                 <img src={soc.logoUrl} alt={soc.nom} className="w-full h-full object-cover" />
                                             ) : (
                                                 soc.nom.charAt(0)
@@ -133,7 +139,7 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
                             >
                                 <Edit2 className="h-4 w-4" />
                             </button>
-                            {user.id !== currentUser.id && (
+                            {currentUser && user.id !== currentUser.id && (
                                 <button
                                     onClick={() => handleRevoke(user.id)}
                                     className="p-2 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-red-500 transition-colors"
@@ -151,12 +157,13 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
 }
 
 function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, societes: Societe[], onSave: (data: UserFormData) => void, onCancel: () => void }) {
-    const { register, handleSubmit, formState: { errors } } = useForm<UserFormData>({
+    const { register, handleSubmit, watch, formState: { errors } } = useForm<UserFormData>({
         defaultValues: user ? {
             email: user.email,
             fullName: user.fullName,
             role: user.role,
-            societes: user.societes
+            societes: user.societes,
+            password: user.password // Load password
         } : {
             role: "user",
             societes: []
@@ -164,6 +171,7 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
     });
 
     const [selectedSocietes, setSelectedSocietes] = useState<string[]>(user?.societes || []);
+    const email = watch("email");
 
     const toggleSociete = (id: string) => {
         if (selectedSocietes.includes(id)) {
@@ -175,6 +183,12 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
 
     const onSubmit = (data: UserFormData) => {
         onSave({ ...data, societes: selectedSocietes });
+    };
+
+    const copyInviteLink = () => {
+        const link = `${window.location.origin}/login?email=${encodeURIComponent(email || "")}`;
+        navigator.clipboard.writeText(link);
+        toast.success("Lien d'invitation copié !");
     };
 
     return (
@@ -191,11 +205,23 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid gap-4">
                     {!user && (
-                        <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-sm text-purple-200 flex gap-3">
-                            <Mail className="h-5 w-5 shrink-0" />
-                            <div>
-                                Une invitation sera envoyée par email. L'utilisateur pourra définir son mot de passe lors de sa première connexion.
+                        <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-sm text-purple-200 flex flex-col gap-3">
+                            <div className="flex gap-3">
+                                <Mail className="h-5 w-5 shrink-0" />
+                                <div>
+                                    Envoyez ce lien à votre collaborateur pour qu'il puisse se connecter directement.
+                                </div>
                             </div>
+                            {email && (
+                                <button
+                                    type="button"
+                                    onClick={copyInviteLink}
+                                    className="flex items-center gap-2 self-start px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg text-xs font-medium transition-colors"
+                                >
+                                    <Copy className="h-3 w-3" />
+                                    Copier le lien d'invitation
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -216,6 +242,20 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
                             placeholder="sophie@example.com"
                         />
                     </div>
+
+                    <div>
+                        <label className="text-sm font-medium text-muted-foreground mb-1 block">Mot de passe {!user && "(Défini par l'utilisateur plus tard si vide)"}</label>
+                        <div className="relative">
+                            <Key className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+                            <input
+                                {...register("password")}
+                                type="text"
+                                className="w-full glass-input px-4 py-2.5 pl-10 rounded-xl block"
+                                placeholder={user ? "Modifier le mot de passe" : "Mot de passe provisoire (optionnel)"}
+                            />
+                        </div>
+                    </div>
+
                     <div>
                         <label className="text-sm font-medium text-muted-foreground mb-1 block">Rôle</label>
                         <select
@@ -253,7 +293,6 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
 
                                     <div className="h-6 w-6 rounded-md bg-white/10 flex items-center justify-center mr-3 overflow-hidden">
                                         {soc.logoUrl ? (
-                                            /* eslint-disable-next-line @next/next/no-img-element */
                                             <img src={soc.logoUrl} alt={soc.nom} className="w-full h-full object-cover" />
                                         ) : (
                                             <Building2 className="h-3 w-3" />

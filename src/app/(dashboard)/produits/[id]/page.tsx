@@ -3,14 +3,17 @@
 import { useParams, useRouter } from "next/navigation";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ArrowLeft, Save, Trash2 } from "lucide-react";
 import { Produit } from "@/types";
+import { createProduct, updateProduct, deleteRecord } from "@/app/actions";
+
+import { toast } from "sonner";
 
 export default function ProductEditPage() {
     const params = useParams();
     const router = useRouter();
-    const { products, refreshData, societe } = useData();
+    const { products, refreshData, societe, confirm, logAction, setIsDirty } = useData();
     const productId = params.id as string;
 
     const [formData, setFormData] = useState<Produit>({
@@ -22,34 +25,101 @@ export default function ProductEditPage() {
         societeId: societe?.id || "soc_1"
     });
 
-    useEffect(() => {
-        const product = products.find(p => p.id === productId);
-        if (product) {
-            setFormData(product);
-        }
-    }, [productId, products]);
+    // Detect if we are editing an existing product
+    const originalProduct = useMemo(() => products.find(p => p.id === productId), [products, productId]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    useEffect(() => {
+        if (originalProduct) {
+            setFormData(originalProduct);
+        }
+    }, [originalProduct]);
+
+    // Calculate Dirty State
+    const isFormDirty = useMemo(() => {
+        if (originalProduct) {
+            return (
+                formData.nom !== originalProduct.nom ||
+                formData.description !== (originalProduct.description || "") ||
+                formData.prixUnitaire !== originalProduct.prixUnitaire ||
+                formData.tva !== originalProduct.tva
+            );
+        }
+        // New Product: Dirty if any field is filled
+        return formData.nom !== "" || formData.description !== "" || formData.prixUnitaire !== 0 || formData.tva !== 20;
+    }, [formData, originalProduct]);
+
+    // Sync with Global Navigation Guard
+    useEffect(() => {
+        setIsDirty(isFormDirty);
+        return () => setIsDirty(false);
+    }, [isFormDirty, setIsDirty]);
+
+    const handleBack = () => {
+        if (isFormDirty) {
+            confirm({
+                title: "Modifications non enregistrées",
+                message: "Vous avez des modifications non enregistrées. Voulez-vous vraiment quitter ?",
+                onConfirm: () => router.push("/produits")
+            });
+        } else {
+            router.push("/produits");
+        }
+    };
+
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        dataService.saveProduct(formData);
-        refreshData();
-        alert("Produit mis à jour avec succès !");
-        router.push("/produits");
+        setIsSaving(true);
+        try {
+            const isNew = !products.find(p => p.id === productId);
+            const productToSave = { ...formData };
+
+            if (isNew) {
+                // CREATE
+                const res = await createProduct(productToSave);
+                if (!res.success || !res.id) throw new Error(res.error || "Erreur création base de données");
+                productToSave.id = res.id;
+                logAction('create', 'produit', `Création du produit ${productToSave.nom}`, productToSave.id);
+            } else {
+                // UPDATE
+                const res = await updateProduct(productToSave);
+                if (!res.success) throw new Error(res.error || "Erreur mise à jour base de données");
+                logAction('update', 'produit', `Mise à jour du produit ${productToSave.nom}`, productToSave.id);
+            }
+
+            await refreshData();
+            setIsDirty(false); // Reset dirty state before navigation
+            toast.success("Produit enregistré !");
+            router.push("/produits");
+        } catch (error: any) {
+            console.error(error);
+            toast.error("Erreur: " + error.message);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleDelete = () => {
-        if (confirm("Êtes-vous sûr de vouloir supprimer ce produit ?")) {
-            dataService.deleteProduct(productId);
-            refreshData();
-            router.push("/produits");
-        }
+        confirm({
+            title: "Supprimer le produit",
+            message: "Êtes-vous sûr de vouloir supprimer ce produit ? Cette action est irréversible.",
+            onConfirm: async () => {
+                await deleteRecord('Produits', productId);
+                logAction('delete', 'produit', `Suppression du produit ${formData.nom}`, productId);
+                await refreshData();
+                setIsDirty(false); // Reset dirty state
+                toast.success("Produit supprimé");
+                router.push("/produits");
+            }
+        });
     };
 
     return (
         <div className="space-y-6 max-w-3xl mx-auto">
             <div className="flex items-center gap-4">
                 <button
-                    onClick={() => router.push("/produits")}
+                    onClick={handleBack}
                     className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                 >
                     <ArrowLeft className="h-5 w-5 text-muted-foreground" />
@@ -97,7 +167,7 @@ export default function ProductEditPage() {
                             <input
                                 type="number"
                                 step="0.01"
-                                value={formData.prixUnitaire}
+                                value={formData.prixUnitaire === 0 ? "" : formData.prixUnitaire}
                                 onChange={(e) => setFormData({ ...formData, prixUnitaire: parseFloat(e.target.value) || 0 })}
                                 required
                                 className="w-full h-11 rounded-lg glass-input px-4 text-foreground"

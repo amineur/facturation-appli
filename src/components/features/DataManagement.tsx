@@ -4,8 +4,18 @@ import { useState, useRef } from "react";
 import { Upload, Trash2, FileText, Receipt, Database, AlertTriangle, Users, Package } from "lucide-react";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
+// import { airtableService } from "@/lib/airtable-service"; // REMOVED
+import {
+    checkDatabaseConnection,
+    importClient,
+    importInvoice,
+    importQuote,
+    importProduct,
+    deleteAllRecords // NEW
+} from "@/app/actions"; // NEW Server Actions
 import { StatusDevis, StatusFacture, Devis, Facture, Client, Produit } from "@/types";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export function DataManagement({ onBack }: { onBack?: () => void }) {
     const { clients, refreshData, societe, invoices, quotes, products } = useData();
@@ -14,7 +24,31 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
     const fileInputRefClients = useRef<HTMLInputElement>(null);
     const fileInputRefProduits = useRef<HTMLInputElement>(null);
 
-    // --- SHARED UTILS --- 
+    const checkConnection = async () => {
+        const result = await checkDatabaseConnection();
+        if (result.success) toast.success(result.message);
+        else toast.error(result.message);
+    };
+
+    const handleReset = async () => {
+        if (confirm("Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action est irréversible.")) {
+            // Reset all tables sequentially
+            await deleteAllRecords('Factures');
+            await deleteAllRecords('Devis');
+            await deleteAllRecords('Clients');
+            await deleteAllRecords('Produits');
+
+            refreshData();
+            toast.success("Données réinitialisées !");
+        }
+    };
+
+
+
+
+    // ... (rest of shared utils unchanged) ...
+
+    // --- SHARED UTILS (keeping cleanString, cleanAmount, parseFrenchNumber, parseCSVLine) ---
     const cleanString = (val: string) => {
         if (!val) return "";
         let cleaned = val.trim();
@@ -73,7 +107,9 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
 
         let importCount = 0;
 
-        dataRows.forEach(rowStr => {
+        // Process sequentially to be nice to Airtable rate limits (5 req/s) if possible, or usually parallel is fine for small batches.
+        // For better UX, we'll map.
+        const promises = dataRows.map(async (rowStr) => {
             const row = parseCSVLine(rowStr, separator);
             if (row.length < 5) return;
 
@@ -129,11 +165,17 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
             };
 
             dataService.saveQuote(newDevis);
+
+            // Sync to Database via Server Action
+            await importQuote(newDevis, clientName);
             importCount++;
         });
 
+        await Promise.all(promises);
+
         refreshData();
-        alert(`${importCount} devis importés avec succès !`);
+        refreshData();
+        toast.success(`${importCount} devis importés localement et synchronisation base de données lancée !`);
         if (fileInputRefDevis.current) fileInputRefDevis.current.value = "";
     };
 
@@ -151,7 +193,7 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
         let importCount = 0;
         const updatedClients = [...clients];
 
-        dataRows.forEach(rowStr => {
+        const promises = dataRows.map(async (rowStr) => {
             const row = parseCSVLine(rowStr, separator);
             if (row.length < 5) return;
 
@@ -210,11 +252,17 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
             };
 
             dataService.saveInvoice(newInvoice);
+
+            // Sync to Database via Server Action
+            await importInvoice(newInvoice, clientName);
             importCount++;
         });
 
+        await Promise.all(promises);
+
         refreshData();
-        alert(`${importCount} factures importées avec succès !`);
+        refreshData();
+        toast.success(`${importCount} factures importées localement et synchronisation base de données lancée !`);
         if (fileInputRefFactures.current) fileInputRefFactures.current.value = "";
     };
 
@@ -232,12 +280,15 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
             startIndex = 1;
         }
 
+        const promises = [];
+
         for (let i = startIndex; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
             const cols = line.split(",").map(c => c.trim());
             let clientData: Partial<Client> = {};
 
+            // (Previous parsing logic kept same)
             if (cols.length >= 14) {
                 clientData = {
                     reference: cols[0],
@@ -288,12 +339,18 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                     titreContact: clientData.titreContact || ""
                 };
                 dataService.saveClient(newClient);
+
+                // Sync to Database via Server Action
+                promises.push(importClient(newClient));
                 count++;
             }
         }
 
+        await Promise.all(promises);
+
         refreshData();
-        alert(`${count} clients importés avec succès !`);
+        refreshData();
+        toast.success(`${count} clients importés localement et synchronisation base de données lancée !`);
         if (fileInputRefClients.current) fileInputRefClients.current.value = "";
     };
 
@@ -310,7 +367,7 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
 
         let importCount = 0;
 
-        dataRows.forEach(rowStr => {
+        const promises = dataRows.map(async (rowStr) => {
             const row = parseCSVLine(rowStr, separator);
             const nom = cleanString(row[0] || "");
             const unite = cleanString(row[1] || "");
@@ -329,11 +386,17 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
             };
 
             dataService.saveProduct(newProduct);
+
+            // Sync to Database via Server Action
+            await importProduct(newProduct);
             importCount++;
         });
 
+        await Promise.all(promises);
+
         refreshData();
-        alert(`${importCount} produit(s) importé(s) avec succès !`);
+        refreshData();
+        toast.success(`${importCount} produits importés localement et synchronisation base de données lancée !`);
         if (fileInputRefProduits.current) fileInputRefProduits.current.value = "";
     };
 
@@ -349,6 +412,45 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                         Retour
                     </button>
                 )}
+            </div>
+
+            <div className="w-full">
+                <div className="flex items-center gap-2 mb-4">
+                    <Database className="h-5 w-5 text-purple-400" />
+                    <h3 className="text-lg font-semibold text-white">Base de données</h3>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm font-medium text-white mb-1">Connexion Serveur</p>
+                            <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                                <span className="text-xs text-green-400">Connecté (SQLite)</span>
+                            </div>
+                        </div>
+                        <button
+                            onClick={checkConnection}
+                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-medium transition-colors border border-white/10"
+                        >
+                            Test Connexion
+                        </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                        <div>
+                            <p className="text-sm font-medium text-red-400">Zone de danger</p>
+                            <p className="text-xs text-muted-foreground">Supprimer toutes les données de cette société</p>
+                        </div>
+                        <button
+                            onClick={handleReset}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-medium transition-colors border border-red-500/20"
+                        >
+                            <Trash2 className="h-3 w-3" />
+                            Tout supprimer
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
@@ -383,9 +485,11 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                         </div>
 
                         <button
-                            onClick={() => {
+                            onClick={async () => {
                                 if (confirm("ATTENTION : Cette action est irréversible. Voulez-vous vraiment supprimer TOUS les devis ?")) {
-                                    quotes.forEach(q => dataService.deleteQuote(q.id));
+                                    const res = await deleteAllRecords('Devis');
+                                    if (res.success) toast.success("Table Devis vidée !");
+                                    else toast.error("Erreur suppression: " + res.error);
                                     refreshData();
                                 }
                             }}
@@ -428,9 +532,11 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                         </div>
 
                         <button
-                            onClick={() => {
+                            onClick={async () => {
                                 if (confirm("ATTENTION : Cette action est irréversible. Voulez-vous vraiment supprimer TOUTES les factures ?")) {
-                                    dataService.deleteAllInvoices();
+                                    const res = await deleteAllRecords('Factures');
+                                    if (res.success) toast.success("Table Factures vidée !");
+                                    else toast.error("Erreur suppression: " + res.error);
                                     refreshData();
                                 }
                             }}
@@ -473,12 +579,15 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                         </div>
 
                         <button
-                            onClick={() => {
+                            onClick={async () => {
                                 if (confirm("ATTENTION : Cette action est irréversible. Voulez-vous vraiment supprimer TOUS les clients ?")) {
-                                    clients.forEach(c => dataService.deleteClient(c.id));
+                                    const res = await deleteAllRecords('Clients');
+                                    if (res.success) toast.success("Table Clients vidée !");
+                                    else toast.error("Erreur suppression: " + res.error);
                                     refreshData();
                                 }
                             }}
+
                             className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-500/20 transition-colors"
                         >
                             <Trash2 className="h-4 w-4" />
@@ -518,9 +627,11 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                         </div>
 
                         <button
-                            onClick={() => {
+                            onClick={async () => {
                                 if (confirm("ATTENTION : Cette action est irréversible. Voulez-vous vraiment supprimer TOUS les produits ?")) {
-                                    products.forEach(p => dataService.deleteProduct(p.id));
+                                    const res = await deleteAllRecords('Produits');
+                                    if (res.success) toast.success("Table Produits vidée !");
+                                    else toast.error("Erreur suppression: " + res.error);
                                     refreshData();
                                 }
                             }}
@@ -541,6 +652,6 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                     Assurez-vous d'avoir une sauvegarde si nécessaire.
                 </p>
             </div>
-        </div>
+        </div >
     );
 }

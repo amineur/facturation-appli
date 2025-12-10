@@ -40,7 +40,7 @@ export function MobileHeader() {
 
                     {/* Dropdown */}
                     <div className="md:hidden absolute top-[70px] left-0 right-0 z-50 px-4 pb-4 animate-in slide-in-from-top-4 duration-200">
-                        <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-2 shadow-2xl backdrop-blur-xl">
+                        <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-2 shadow-2xl">
                             {/* ... Content ... */}
                             <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                                 <span>Changer de société</span>
@@ -59,13 +59,13 @@ export function MobileHeader() {
                                         }}
                                         className={cn(
                                             "w-full flex items-center gap-3 p-3 rounded-lg transition-colors border border-transparent active:scale-95 touch-manipulation",
-                                            s.id === societe.id
+                                            s.id === societe?.id
                                                 ? "bg-purple-500/20 text-purple-400 border-purple-500/20"
                                                 : "hover:bg-white/5 text-muted-foreground hover:text-white"
                                         )}
                                     >
                                         <div className="flex-1 text-left font-medium">{s.nom}</div>
-                                        {s.id === societe.id && <div className="h-2 w-2 rounded-full bg-current" />}
+                                        {s.id === societe?.id && <div className="h-2 w-2 rounded-full bg-current" />}
                                     </button>
                                 ))}
                             </div>

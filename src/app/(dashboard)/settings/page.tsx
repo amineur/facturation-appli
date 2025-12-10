@@ -1,26 +1,39 @@
 "use client";
 
+import { deleteRecord } from '@/app/actions';
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
+import { updateSociete } from "@/app/actions";
 import { Societe } from "@/types";
-import { Save, Building, FileText, CreditCard, ChevronRight, Lock, Shield, Users, Layers, Layout, Key, PenTool, ArrowLeft, ChevronLeft, Database, Mail, Plus, Check, User, Upload, X, Image as ImageIcon } from "lucide-react";
+import { Save, Building, FileText, CreditCard, ChevronRight, Lock, Shield, Users, Layers, Layout, Key, PenTool, ArrowLeft, ChevronLeft, Database, Mail, Plus, Check, User, Upload, X, Image as ImageIcon, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 import { ProEditor } from "@/components/features/ProEditor";
 import { DataManagement } from "@/components/features/DataManagement";
+import { UserProfileEditor } from "@/components/features/UserProfileEditor";
 import { UserManagement } from "@/components/features/UserManagement";
 import { EmailSettings } from "@/components/features/EmailSettings";
+import { toast } from "sonner";
 
 interface SettingsFormData extends Societe {
     globalConfig: any;
 }
 
-type SettingsView = "MAIN" | "IDENTITY" | "USERS" | "EMAIL" | "ADVANCED" | "PRO_EDITOR" | "DATA" | "CREATE_SOCIETE";
+type SettingsView = "MAIN" | "IDENTITY" | "USERS" | "EMAIL" | "ADVANCED" | "PRO_EDITOR" | "DATA" | "CREATE_SOCIETE" | "PROFILE";
 
-export default function SettingsPage() {
-    const { societe, refreshData, createSociete } = useData();
+export default function SettingsPageWrapper() {
+    return (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center">Chargement...</div>}>
+            <SettingsPage />
+        </Suspense>
+    );
+}
+
+function SettingsPage() {
+    const { societe, societes, refreshData, createSociete, logAction, confirm } = useData();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -41,12 +54,33 @@ export default function SettingsPage() {
 
     // ... existing hook calls and onSubmit remain the same ...
 
-    const { register, handleSubmit, reset } = useForm<SettingsFormData>({
+    const { register, handleSubmit, reset, setValue, formState: { isDirty } } = useForm<SettingsFormData>({
         defaultValues: {
             ...societe,
             globalConfig: dataService.getGlobalConfig()
         }
     });
+
+    const { setIsDirty } = useData();
+
+    // Sync dirty state
+    useEffect(() => {
+        setIsDirty(isDirty);
+        return () => setIsDirty(false);
+    }, [isDirty, setIsDirty]);
+
+    // Helper for navigation
+    const handleNavigation = (view: SettingsView) => {
+        if (isDirty) {
+            confirm({
+                title: "Modifications non enregistrées",
+                message: "Voulez-vous vraiment quitter ?",
+                onConfirm: () => setActiveView(view)
+            });
+        } else {
+            setActiveView(view);
+        }
+    };
 
     useEffect(() => {
         if (societe) {
@@ -104,39 +138,42 @@ export default function SettingsPage() {
         });
     };
 
+    // ... imports
+
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         // Validate file size (5MB max before compression)
         if (file.size > 5 * 1024 * 1024) {
-            alert('Le fichier est trop volumineux (max 5MB)');
+            toast.error('Le fichier est trop volumineux (max 5MB)');
             return;
         }
+
+        const loadingToast = toast.loading("Traitement de l'image...");
 
         try {
             const compressed = await compressImage(file);
             setLogoPreview(compressed);
 
-            // Update form data
-            if (societe) {
-                const updatedSociete = { ...societe, logoUrl: compressed };
-                dataService.updateSociete(updatedSociete);
-                refreshData();
-            }
-        } catch (error) {
+            // Update form state only, do not save yet
+            setValue("logoUrl", compressed, { shouldDirty: true });
+            toast.success("Logo chargé. Cliquez sur Enregistrer pour valider.");
+
+        } catch (error: any) {
             console.error('Erreur lors du traitement de l\'image:', error);
-            alert('Erreur lors du traitement de l\'image');
+            toast.error(`Erreur: ${error.message || "Impossible de traiter l'image"}`);
+            // Revert preview if failed
+            if (societe) setLogoPreview(societe.logoUrl || null);
+        } finally {
+            toast.dismiss(loadingToast);
         }
     };
 
-    const handleRemoveLogo = () => {
+    const handleRemoveLogo = async () => {
         setLogoPreview(null);
-        if (societe) {
-            const updatedSociete = { ...societe, logoUrl: '' };
-            dataService.updateSociete(updatedSociete);
-            refreshData();
-        }
+        setValue("logoUrl", "", { shouldDirty: true });
+        toast.info("Logo supprimé. Cliquez sur Enregistrer pour valider.");
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -166,11 +203,15 @@ export default function SettingsPage() {
         setIsSaving(true);
         try {
             const { globalConfig, ...societeData } = data;
-            dataService.updateSociete(societeData);
+            await updateSociete(societeData);
             dataService.saveGlobalConfig(globalConfig);
             refreshData();
+            // Reset to prevent dirty state from persisting after save
+            reset(data);
+            toast.success("Informations enregistrées avec succès");
         } catch (e) {
             console.error(e);
+            toast.error("Erreur lors de l'enregistrement");
         } finally {
             setIsSaving(false);
         }
@@ -180,11 +221,11 @@ export default function SettingsPage() {
     const SettingsItem = ({ icon: Icon, label, color, onClick }: { icon: any, label: string, color: string, onClick?: () => void }) => (
         <button
             onClick={onClick}
-            className="w-full flex items-center justify-between p-4 glass-card hover:bg-white/5 transition-colors first:rounded-t-xl last:rounded-b-xl border-b border-white/5 last:border-0 group text-left"
+            className="w-full flex items-center justify-between p-4 glass-card hover:bg-white/5 transition-colors first:rounded-t-xl last:rounded-b-xl border-b border-border last:border-0 group text-left"
         >
             <div className="flex items-center gap-3">
                 <div className={cn("p-1.5 rounded-md", color)}>
-                    <Icon className="h-5 w-5 text-white" />
+                    <Icon className="h-5 w-5 text-foreground" />
                 </div>
                 <span className="font-medium text-foreground">{label}</span>
             </div>
@@ -197,7 +238,7 @@ export default function SettingsPage() {
             <h3 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 {title}
             </h3>
-            <div className="flex flex-col rounded-xl overflow-hidden glass-card border border-white/10">
+            <div className="flex flex-col rounded-xl overflow-hidden glass-card border border-border">
                 {children}
             </div>
         </div>
@@ -223,19 +264,23 @@ export default function SettingsPage() {
         );
     }
 
+
+
+    // ...
+
     if (activeView === "USERS") {
         return (
             <div className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex items-center justify-between mb-6">
                     <button
-                        onClick={() => setActiveView("MAIN")}
+                        onClick={() => handleNavigation("MAIN")}
                         className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors font-medium"
                     >
                         <ChevronLeft className="h-5 w-5" />
                         Réglages
                     </button>
                 </div>
-                <UserManagement onBack={() => setActiveView("MAIN")} />
+                <UserManagement onBack={() => handleNavigation("MAIN")} />
             </div>
         );
     }
@@ -245,7 +290,7 @@ export default function SettingsPage() {
             <div className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex items-center justify-between mb-6">
                     <button
-                        onClick={() => setActiveView("MAIN")}
+                        onClick={() => handleNavigation("MAIN")}
                         className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors font-medium"
                     >
                         <ChevronLeft className="h-5 w-5" />
@@ -253,6 +298,23 @@ export default function SettingsPage() {
                     </button>
                 </div>
                 <EmailSettings />
+            </div>
+        );
+    }
+
+    if (activeView === "PROFILE") {
+        return (
+            <div className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="flex items-center justify-between mb-6">
+                    <button
+                        onClick={() => handleNavigation("MAIN")}
+                        className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors font-medium"
+                    >
+                        <ChevronLeft className="h-5 w-5" />
+                        Retour aux réglages
+                    </button>
+                </div>
+                <UserProfileEditor onBack={() => handleNavigation("MAIN")} />
             </div>
         );
     }
@@ -267,63 +329,57 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-8">
-                    {/* SECTION: Utilisateurs & Sécurité */}
-                    <SettingsSection title="Utilisateurs & Sécurité">
+                    {/* SECTION: Mon Compte */}
+                    <SettingsSection title="Mon Compte">
                         <SettingsItem
-                            icon={Shield}
-                            label="Gestion des utilisateurs"
+                            icon={User}
+                            label="Mon Profil"
+                            color="bg-blue-500/10 text-blue-500"
+                            onClick={() => setActiveView("PROFILE")}
+                        />
+                    </SettingsSection>
+
+                    {/* SECTION: Identité & Société (Renamed / Restructured) */}
+                    <SettingsSection title={`Entreprise : ${societe?.nom || 'Ma Société'}`}>
+                        <SettingsItem
+                            icon={Building}
+                            label="Identité Société"
+                            color="bg-indigo-500" // Kept similar color
+                            onClick={() => setActiveView("IDENTITY")}
+                        />
+                        <SettingsItem
+                            icon={Users}
+                            label="Membres & Accès"
                             color="bg-green-500"
                             onClick={() => setActiveView("USERS")}
+                        />
+                        <SettingsItem
+                            icon={Mail}
+                            label="Email & PDF"
+                            color="bg-blue-500"
+                            onClick={() => setActiveView("EMAIL")}
                         />
                     </SettingsSection>
 
                     {/* SECTION: Fonctionnalités avancées */}
-                    <SettingsSection title="Fonctionnalités avancées">
+                    <SettingsSection title="Outils & Données">
+                        <SettingsItem
+                            icon={Database}
+                            label="Import / Export"
+                            color="bg-emerald-500"
+                            onClick={() => setActiveView("DATA")}
+                        />
                         <SettingsItem
                             icon={PenTool}
-                            label="Éditeur Pro"
+                            label="Models et Templates"
                             color="bg-purple-500"
                             onClick={() => setActiveView("PRO_EDITOR")}
-                        />
-                        <SettingsItem
-                            icon={Layers}
-                            label="Modèles & Templates"
-                            color="bg-pink-500"
-                            onClick={() => setActiveView("ADVANCED")}
-                        />
-                        <SettingsItem
-                            icon={Key}
-                            label="Signatures & Mentions"
-                            color="bg-yellow-500"
-                            onClick={() => setActiveView("ADVANCED")}
                         />
                         <SettingsItem
                             icon={Plus}
                             label="Ajouter une société"
                             color="bg-orange-500"
                             onClick={() => setActiveView("CREATE_SOCIETE")}
-                        />
-                    </SettingsSection>
-
-                    {/* SECTION: Identité & Société */}
-                    <SettingsSection title="Identité & Société">
-                        <SettingsItem
-                            icon={Building}
-                            label="Informations de la société"
-                            color="bg-indigo-500"
-                            onClick={() => setActiveView("IDENTITY")}
-                        />
-                        <SettingsItem
-                            icon={Mail}
-                            label="Configuration Email Société"
-                            color="bg-blue-500"
-                            onClick={() => setActiveView("EMAIL")}
-                        />
-                        <SettingsItem
-                            icon={Database}
-                            label="Gestion des données"
-                            color="bg-emerald-500"
-                            onClick={() => setActiveView("DATA")}
                         />
                     </SettingsSection>
                 </div>
@@ -337,311 +393,374 @@ export default function SettingsPage() {
 
     if (activeView === "IDENTITY") {
         return (
-            <div className="max-w-5xl mx-auto p-6 h-full flex flex-col animate-in fade-in slide-in-from-right-8 duration-300">
-                <div className="flex items-center justify-between mb-6">
-                    <button
-                        onClick={() => setActiveView("MAIN")}
-                        className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors font-medium"
-                    >
-                        <ChevronLeft className="h-5 w-5" />
-                        Réglages
-                    </button>
+            <div className="max-w-6xl mx-auto px-6 pb-20 animate-in fade-in slide-in-from-right-8 duration-300">
+                {/* Header - Not Sticky */}
+                <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => handleNavigation("MAIN")}
+                            className="p-2 -ml-2 rounded-lg hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </button>
+                        <div>
+                            <h1 className="text-xl font-bold text-foreground">Identité & Entreprise</h1>
+                            <p className="text-xs text-muted-foreground hidden md:block">Gérez les informations légales et l'apparence de votre société</p>
+                        </div>
+                    </div>
                     <button
                         onClick={handleSubmit(onSubmit)}
                         disabled={isSaving}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium rounded-lg shadow-lg shadow-purple-500/20 transition-all disabled:opacity-50"
+                        className="flex items-center gap-2 px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-foreground font-medium rounded-lg shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50"
                     >
                         <Save className="h-4 w-4" />
-                        {isSaving ? "Enregistrement..." : "Enregistrer"}
+                        {isSaving ? "..." : "Enregistrer"}
                     </button>
                 </div>
 
-                <div className="mb-8">
-                    <h1 className="text-2xl font-bold text-foreground">Identité & Entreprise</h1>
-                    <p className="text-muted-foreground mt-1">Gérez les informations légales et bancaires de votre société.</p>
-                </div>
+                <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-                <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pb-20">
-                    {/* Logo Upload Section */}
-                    <div className="glass-card p-6 rounded-2xl">
-                        <div className="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
-                            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500">
-                                <ImageIcon className="h-5 w-5 text-white" />
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-semibold text-white">Logo de l'entreprise</h2>
-                                <p className="text-xs text-muted-foreground">Affiché sur vos factures et documents</p>
+                    {/* Top Grid: Logo & General Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+
+                        {/* Left Col: Logo (4/12) */}
+                        <div className="md:col-span-4 space-y-6">
+                            <div className="glass-card p-5 rounded-xl flex flex-col h-full border border-border">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2 rounded-lg bg-blue-500/10">
+                                        <ImageIcon className="h-5 w-5 text-blue-400" />
+                                    </div>
+                                    <h2 className="text-sm font-semibold text-foreground">Logo</h2>
+                                </div>
+
+                                <div className="flex-1 flex flex-col gap-4">
+                                    <div
+                                        className="aspect-square bg-black/40 rounded-lg border border-border flex items-center justify-center overflow-hidden relative group"
+                                    >
+                                        {logoPreview ? (
+                                            <>
+                                                <img
+                                                    src={logoPreview}
+                                                    alt="Logo"
+                                                    className="max-w-full max-h-full object-contain p-4"
+                                                />
+                                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleRemoveLogo}
+                                                        className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors"
+                                                        title="Supprimer"
+                                                    >
+                                                        <X className="h-5 w-5" />
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="text-center text-muted-foreground">
+                                                <ImageIcon className="h-10 w-10 mx-auto mb-2 opacity-20" />
+                                                <span className="text-xs">Aucun logo</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div
+                                        onDragOver={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={handleDrop}
+                                        className={cn(
+                                            "border-2 border-dashed rounded-lg p-4 transition-all cursor-pointer text-center",
+                                            isDragging
+                                                ? "border-blue-400 bg-blue-500/10"
+                                                : "border-border hover:border-white/20 hover:bg-white/5"
+                                        )}
+                                    >
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleLogoUpload}
+                                            className="hidden"
+                                            id="logo-upload"
+                                        />
+                                        <label htmlFor="logo-upload" className="cursor-pointer block">
+                                            <Upload className="h-5 w-5 text-muted-foreground mx-auto mb-2" />
+                                            <span className="text-xs text-muted-foreground block">Cliquez ou glissez une image (max 10MB)</span>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Upload Zone */}
-                            <div>
-                                <div
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={handleDrop}
-                                    className={cn(
-                                        "relative border-2 border-dashed rounded-xl p-8 transition-all cursor-pointer",
-                                        isDragging
-                                            ? "border-blue-400 bg-blue-500/10"
-                                            : "border-white/20 hover:border-white/40 hover:bg-white/5"
-                                    )}
-                                >
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={handleLogoUpload}
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    />
-                                    <div className="flex flex-col items-center justify-center gap-3 text-center">
-                                        <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20">
-                                            <Upload className="h-6 w-6 text-blue-400" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-foreground">
-                                                Glissez une image ici ou cliquez
-                                            </p>
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                                PNG, JPG ou SVG (max 5MB)
-                                            </p>
-                                        </div>
+                        {/* Right Col: General Info (8/12) */}
+                        <div className="md:col-span-8 space-y-6">
+                            <div className="glass-card p-6 rounded-xl border border-border">
+                                <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
+                                    <div className="p-2 rounded-lg bg-purple-500/10">
+                                        <Building className="h-5 w-5 text-purple-400" />
+                                    </div>
+                                    <h2 className="text-sm font-semibold text-foreground">Informations Générales</h2>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Nom de l'entreprise</label>
+                                        <input
+                                            {...register("nom")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="Ex: Ma Société"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Forme Juridique</label>
+                                        <input
+                                            {...register("formeJuridique")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="SAS, SARL, EURL..."
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Capital Social</label>
+                                        <input
+                                            {...register("capitalSocial")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="Ex: 1000 €"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Email contact</label>
+                                        <input
+                                            {...register("email")}
+                                            type="email"
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="contact@societe.com"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Site Web</label>
+                                        <input
+                                            {...register("siteWeb")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="https://www.societe.com"
+                                        />
                                     </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-2 px-1">
-                                    L'image sera automatiquement redimensionnée et optimisée
-                                </p>
                             </div>
 
-                            {/* Logo Preview */}
-                            <div>
-                                <div className="glass-card p-4 rounded-xl border border-white/10">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <span className="text-xs font-medium text-muted-foreground">Aperçu</span>
-                                        {logoPreview && (
-                                            <button
-                                                type="button"
-                                                onClick={handleRemoveLogo}
-                                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-400 transition-colors"
-                                                title="Supprimer le logo"
-                                            >
-                                                <X className="h-4 w-4" />
-                                            </button>
-                                        )}
+                            {/* Address Card */}
+                            <div className="glass-card p-6 rounded-xl border border-border">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2 rounded-lg bg-orange-500/10">
+                                        <Layout className="h-5 w-5 text-orange-400" />
                                     </div>
-                                    <div className="aspect-square bg-white/5 rounded-lg flex items-center justify-center overflow-hidden">
-                                        {logoPreview ? (
-                                            <img
-                                                src={logoPreview}
-                                                alt="Logo"
-                                                className="max-w-full max-h-full object-contain"
-                                            />
-                                        ) : (
-                                            <div className="text-center p-6">
-                                                <ImageIcon className="h-12 w-12 text-muted-foreground/30 mx-auto mb-2" />
-                                                <p className="text-xs text-muted-foreground">Aucun logo</p>
-                                            </div>
-                                        )}
+                                    <h2 className="text-sm font-semibold text-foreground">Adresse & Contact</h2>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Adresse postale</label>
+                                        <input
+                                            {...register("adresse")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="123 Avenue de la République"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Code Postal</label>
+                                        <input
+                                            {...register("codePostal")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="75001"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Ville</label>
+                                        <input
+                                            {...register("ville")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="Paris"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Téléphone</label>
+                                        <input
+                                            {...register("telephone")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="+33 1 23 45 67 89"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Pays</label>
+                                        <input
+                                            {...register("pays")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="France"
+                                        />
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Informations Entreprise */}
-                        <div className="glass-card p-6 rounded-2xl space-y-6">
-                            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                                <div className="p-2 rounded-lg bg-blue-500/10">
-                                    <Building className="h-5 w-5 text-blue-400" />
+                    {/* Bottom Grid: Legal & Banking (2 Cols) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        {/* Legal Info */}
+                        <div className="glass-card p-6 rounded-xl border border-border h-full">
+                            <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
+                                <div className="p-2 rounded-lg bg-indigo-500/10">
+                                    <Shield className="h-5 w-5 text-indigo-400" />
                                 </div>
-                                <h2 className="text-lg font-semibold text-white">Identité Entreprise</h2>
+                                <h2 className="text-sm font-semibold text-foreground">Informations Légales</h2>
                             </div>
 
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="col-span-2">
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Nom de l'entreprise</label>
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">SIRET</label>
                                         <input
-                                            {...register("nom")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                            placeholder="Votre société"
+                                            {...register("siret")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm font-mono"
+                                            placeholder="000 000 000 00000"
                                         />
                                     </div>
-
                                     <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Forme juridique</label>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">RCS</label>
                                         <input
-                                            {...register("formeJuridique")}
-                                            placeholder="SAS, SARL..."
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Capital</label>
-                                        <input
-                                            {...register("capitalSocial")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                            placeholder="1000 €"
+                                            {...register("rcs")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder="RCS Paris B ..."
                                         />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Adresse complète</label>
-                                    <textarea
-                                        {...register("adresse")}
-                                        rows={2}
-                                        className="w-full glass-input px-4 py-2.5 rounded-xl text-sm min-h-[80px]"
-                                        placeholder="Adresse postale..."
+                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">TVA Intracommunautaire</label>
+                                    <input
+                                        {...register("tvaIntra")}
+                                        className="w-full h-10 glass-input px-3 rounded-lg text-sm font-mono"
+                                        placeholder="FR 00 000000000"
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Code postal</label>
-                                        <input
-                                            {...register("codePostal")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Ville</label>
-                                        <input
-                                            {...register("ville")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Email</label>
-                                        <input
-                                            {...register("email")}
-                                            type="email"
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Téléphone</label>
-                                        <input
-                                            {...register("telephone")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                        />
-                                    </div>
-                                </div>
-
                                 <div>
-                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Site web</label>
-                                    <input
-                                        {...register("siteWeb")}
-                                        className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                        placeholder="https://..."
+                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Mentions légales (Pied de page)</label>
+                                    <textarea
+                                        {...register("mentionsLegales")}
+                                        className="w-full glass-input px-3 py-2 rounded-lg text-sm min-h-[80px]"
+                                        placeholder="Ex: SAS au capital de..."
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        <div className="space-y-6">
-                            {/* Informations Légales */}
-                            <div className="glass-card p-6 rounded-2xl space-y-6">
-                                <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                                    <div className="p-2 rounded-lg bg-purple-500/10">
-                                        <FileText className="h-5 w-5 text-purple-400" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-white">Informations Légales</h2>
+                        {/* Banking Info */}
+                        <div className="glass-card p-6 rounded-xl border border-border h-full">
+                            <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
+                                <div className="p-2 rounded-lg bg-green-500/10">
+                                    <CreditCard className="h-5 w-5 text-green-400" />
                                 </div>
-
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">SIRET</label>
-                                            <input
-                                                {...register("siret")}
-                                                className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">RCS</label>
-                                            <input
-                                                {...register("rcs")}
-                                                className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">TVA Intracommunautaire</label>
-                                        <input
-                                            {...register("tvaIntracom")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Mentions légales (Pied de page)</label>
-                                        <textarea
-                                            {...register("mentionsLegales")}
-                                            rows={3}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm min-h-[80px]"
-                                        />
-                                    </div>
-                                </div>
+                                <h2 className="text-sm font-semibold text-foreground">Coordonnées Bancaires</h2>
                             </div>
 
-                            {/* Informations Bancaires */}
-                            <div className="glass-card p-6 rounded-2xl space-y-6">
-                                <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                                    <div className="p-2 rounded-lg bg-green-500/10">
-                                        <CreditCard className="h-5 w-5 text-green-400" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-white">Coordonnées Bancaires</h2>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Nom de la Banque</label>
+                                    <input
+                                        {...register("banque")}
+                                        className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                        placeholder="Ma Banque"
+                                    />
                                 </div>
 
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Nom de la banque</label>
-                                            <input
-                                                {...register("banque")}
-                                                className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                                placeholder="Ma Banque"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Titulaire du compte</label>
-                                            <input
-                                                {...register("titulaireCompte")}
-                                                className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                                placeholder="Nom du titulaire"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">IBAN</label>
-                                        <input
-                                            {...register("iban")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono"
-                                            placeholder="FR76..."
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">BIC/SWIFT</label>
-                                        <input
-                                            {...register("bic")}
-                                            className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono"
-                                        />
-                                    </div>
+                                <div>
+                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Titulaire du compte</label>
+                                    <input
+                                        {...register("titulaireCompte")}
+                                        className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                        placeholder="Nom du titulaire"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">IBAN</label>
+                                    <input
+                                        {...register("iban")}
+                                        className="w-full h-10 glass-input px-3 rounded-lg text-sm font-mono"
+                                        placeholder="FR76 ..."
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">BIC / SWIFT</label>
+                                    <input
+                                        {...register("bic")}
+                                        className="w-full h-10 glass-input px-3 rounded-lg text-sm font-mono"
+                                        placeholder="XXXXXXXX"
+                                    />
                                 </div>
                             </div>
                         </div>
                     </div>
-                </form>
-            </div>
+
+                    {/* Danger Zone: Delete Society */}
+                    <div className="glass-card p-6 rounded-xl border border-red-500/20 bg-red-500/5 mt-8">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold text-red-500 flex items-center gap-2">
+                                    <Shield className="h-5 w-5" />
+                                    Zone de Danger
+                                </h3>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    La suppression de la société est irréversible.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (societe && societes.length <= 1) {
+                                        toast.error("Vous ne pouvez pas supprimer la dernière société.");
+                                        return;
+                                    }
+                                    confirm({
+                                        title: "Supprimer la société ?",
+                                        message: "Cette action est irréversible. Toutes les factures, clients et produits de cette société seront perdus.",
+                                        onConfirm: async () => {
+                                            if (!societe) return;
+                                            try {
+                                                const nomSociete = societe.nom;
+                                                await deleteRecord('Societe', societe.id);
+                                                logAction('delete', 'societe', `Société ${nomSociete} supprimée`, societe.id);
+                                                toast.success(`Société ${nomSociete} supprimée avec succès`);
+
+                                                // Force refresh and redirect to home to let provider pick next company
+                                                await refreshData();
+                                                window.location.href = "/";
+                                            } catch (e: any) {
+                                                console.error(e);
+                                                toast.error("Erreur: " + e.message);
+                                            }
+                                        }
+                                    });
+                                }}
+                                className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg border border-red-500/20 transition-colors text-sm font-medium"
+                            >
+                                Supprimer la société
+                            </button>
+                        </div>
+                    </div>
+                </form >
+            </div >
         );
     }
 
-    // Placeholder Views for Advanced
+    // Advanced View Placeholder
     if (activeView === "ADVANCED") {
         const title = "Fonctionnalités avancées";
         return (
@@ -655,13 +774,12 @@ export default function SettingsPage() {
                         Réglages
                     </button>
                 </div>
-
                 <div className="text-center py-20 glass-card rounded-2xl">
                     <div className="p-4 rounded-full bg-white/5 inline-flex mb-4">
                         <Layers className="h-8 w-8 text-muted-foreground" />
                     </div>
                     <h2 className="text-xl font-bold text-foreground mb-2">{title}</h2>
-                    <p className="text-muted-foreground">Cette section est en cours de développement.</p>
+                    <p className="text-muted-foreground">Gestion des utilisateurs, permissions et logs (Bientôt).</p>
                 </div>
             </div>
         );
@@ -671,267 +789,189 @@ export default function SettingsPage() {
 }
 
 function CreateSocieteView({ onBack }: { onBack: () => void }) {
-    const { refreshData } = useData();
+    const { refreshData, createSociete, updateSociete } = useData(); // Ensure updateSociete is available
     const [isLoading, setIsLoading] = useState(false);
-    const [users, setUsers] = useState<any[]>([]); // Using any to avoid circle deps for now, ideally User[]
-    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
-    // Form state
+    // Extended form state
     const { register, handleSubmit, formState: { errors } } = useForm<Societe>();
-
-    useEffect(() => {
-        // Load users for selection
-        setUsers(dataService.getUsers());
-        // Select current user by default
-        const currentUser = dataService.getCurrentUser();
-        if (currentUser) {
-            setSelectedUsers([currentUser.id]);
-        }
-    }, []);
-
-    const toggleUser = (userId: string) => {
-        if (selectedUsers.includes(userId)) {
-            setSelectedUsers(selectedUsers.filter(id => id !== userId));
-        } else {
-            setSelectedUsers([...selectedUsers, userId]);
-        }
-    };
 
     const onSubmit = async (data: Societe) => {
         setIsLoading(true);
         try {
-            // 1. Create the base society
-            const newSociete = dataService.createSociete(data.nom);
+            // 1. Create with Name
+            // Warning: createSociete returns Promise<any> or void? 
+            // We assume it returns the new ID or object, or we fetch it.
+            // If createSociete is just `actions.createSociete`, it returns {success, id}.
+            // If it's wrapped in DataProvider, it might return the result.
+            // Let's assume standard flow:
+            const res = await createSociete(data.nom);
 
-            // 2. Update with full details
-            const updatedSociete = {
-                ...newSociete,
-                ...data,
-                id: newSociete.id // Ensure ID persists
-            };
-            dataService.updateSociete(updatedSociete);
-
-            // 3. Grant access to selected users
-            const allUsers = dataService.getUsers();
-            for (const userId of selectedUsers) {
-                const user = allUsers.find(u => u.id === userId);
-                if (user) {
-                    if (!user.societes.includes(newSociete.id)) {
-                        user.societes.push(newSociete.id);
-                        dataService.saveUser(user);
-                    }
-                }
+            // If res contains ID, we can update immediately
+            if (res && res.id) {
+                const newId = res.id;
+                // 2. Update with other details
+                await updateSociete({ ...data, id: newId });
+                toast.success("Société créée avec succès !");
+                await refreshData();
+                onBack();
+            } else {
+                // Fallback if no ID returned (shouldn't happen with proper action)
+                toast.success("Société créée !");
+                await refreshData();
+                onBack();
             }
-
-            // 4. Force refresh and switch
-            refreshData();
-            dataService.switchSociete(newSociete.id);
-
-            // 5. Navigate back to main settings (which will now show the NEW society context)
-            // We use window.location.reload() or explicit update to ensure full context switch safety?
-            // Actually switchSociete does the heavy lifting.
-            onBack();
-
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to create company", error);
-            alert("Erreur lors de la création de la société");
+            toast.error("Erreur lors de la création: " + error.message);
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className="max-w-5xl mx-auto p-6 h-full flex flex-col animate-in fade-in slide-in-from-right-8 duration-300">
-            <div className="flex items-center justify-between mb-6">
+        <div className="max-w-4xl mx-auto p-6 animate-in fade-in slide-in-from-right-8 duration-300">
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-8">
                 <button
                     onClick={onBack}
-                    className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors font-medium"
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground"
                 >
-                    <ChevronLeft className="h-5 w-5" />
-                    Annuler
+                    <ArrowLeft className="h-5 w-5" />
                 </button>
-                <button
-                    onClick={handleSubmit(onSubmit)}
-                    disabled={isLoading}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 text-white font-medium rounded-lg shadow-lg shadow-orange-500/20 transition-all disabled:opacity-50"
-                >
-                    <Plus className="h-4 w-4" />
-                    {isLoading ? "Création..." : "Créer la société"}
-                </button>
+                <div>
+                    <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+                        Nouvelle Société
+                    </h2>
+                    <p className="text-muted-foreground">Configurez votre nouvel espace de travail.</p>
+                </div>
             </div>
 
-            <div className="mb-8">
-                <h1 className="text-2xl font-bold text-foreground">Nouvelle Société</h1>
-                <p className="text-muted-foreground mt-1">Configurez votre nouvelle entité et attribuez les accès.</p>
-            </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                {/* Main Identity Card */}
+                <div className="glass-card p-8 rounded-2xl border border-white/10 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-32 bg-blue-500/5 blur-3xl rounded-full -mr-16 -mt-16 pointer-events-none"></div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
-                {/* Left Column: Information */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="glass-card p-6 rounded-2xl space-y-6">
-                        <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                            <div className="p-2 rounded-lg bg-indigo-500/10">
-                                <Building className="h-5 w-5 text-indigo-400" />
-                            </div>
-                            <h2 className="text-lg font-semibold text-white">Informations Générales</h2>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <span className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-500/20 text-blue-400 text-xs text-center border border-blue-500/20">1</span>
+                                Identité
+                            </h3>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Nom de l'entreprise *</label>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground ml-1">Nom de la société *</label>
                                 <input
-                                    {...register("nom", { required: true })}
-                                    className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                    placeholder="Ex: Ma Nouvelle Boite"
+                                    {...register("nom", { required: "Le nom est requis" })}
+                                    className="w-full h-12 glass-input px-4 rounded-xl text-lg font-medium focus:ring-2 focus:ring-blue-500/50"
+                                    placeholder="Ex: Ma Super Boite"
+                                    autoFocus
                                 />
-                                {errors.nom && <span className="text-red-500 text-xs ml-1">Ce champ est requis</span>}
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Forme juridique</label>
-                                <input {...register("formeJuridique")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" placeholder="SAS, SARL..." />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Ville</label>
-                                <input {...register("ville")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Adresse</label>
-                                <textarea {...register("adresse")} rows={2} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                        </div>
-
-                        {/* Contact & Logo */}
-                        <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4">
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Logo URL</label>
-                                <input {...register("logoUrl")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" placeholder="https://..." />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Email Contact</label>
-                                <input {...register("email")} type="email" className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Téléphone</label>
-                                <input {...register("telephone")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Site Web</label>
-                                <input {...register("siteWeb")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="glass-card p-6 rounded-2xl space-y-6">
-                        <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                            <div className="p-2 rounded-lg bg-green-500/10">
-                                <CreditCard className="h-5 w-5 text-green-400" />
-                            </div>
-                            <h2 className="text-lg font-semibold text-white">Banque & Juridique</h2>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* Juridique */}
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">SIRET</label>
-                                <input {...register("siret")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">RCS</label>
-                                <input {...register("rcs")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">TVA Intracom</label>
-                                <input {...register("tvaIntracom")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Capital Social</label>
-                                <input {...register("capitalSocial")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" placeholder="Ex: 1000 €" />
+                                {errors.nom && <span className="text-xs text-red-500 ml-1">{errors.nom.message}</span>}
                             </div>
 
-                            {/* Banque */}
-                            <div className="col-span-2 border-t border-white/10 pt-4 mt-2">
-                                <h3 className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Coordonnées Bancaires</h3>
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Nom de la Banque</label>
-                                <input {...register("banque")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">Titulaire du compte</label>
-                                <input {...register("titulaireCompte")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm" />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">IBAN</label>
-                                <input {...register("iban")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono" />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-xs font-medium text-muted-foreground ml-1 mb-1 block">BIC (SWIFT)</label>
-                                <input {...register("bic")} className="w-full glass-input px-4 py-2.5 rounded-xl text-sm font-mono" />
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground ml-1">Email de contact</label>
+                                <input
+                                    {...register("email")}
+                                    type="email"
+                                    className="w-full h-11 glass-input px-4 rounded-xl"
+                                    placeholder="contact@societe.com"
+                                />
                             </div>
 
-                            {/* Footer defaults */}
-                            <div className="col-span-2 border-t border-white/10 pt-4 mt-2">
-                                <h3 className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Mentions légales (Pied de page)</h3>
-                            </div>
-                            <div className="col-span-2">
-                                <textarea
-                                    {...register("mentionsLegales")}
-                                    rows={3}
-                                    className="w-full glass-input px-4 py-2.5 rounded-xl text-sm"
-                                    placeholder="Mentions apparaissant en bas des factures..."
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground ml-1">Téléphone</label>
+                                <input
+                                    {...register("telephone")}
+                                    className="w-full h-11 glass-input px-4 rounded-xl"
+                                    placeholder="+33 1 23 45 67 89"
                                 />
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                {/* Right Column: Users */}
-                <div className="space-y-6">
-                    <div className="glass-card p-6 rounded-2xl space-y-6 sticky top-6">
-                        <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                            <div className="p-2 rounded-lg bg-purple-500/10">
-                                <Users className="h-5 w-5 text-purple-400" />
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <span className="flex items-center justify-center h-6 w-6 rounded-full bg-purple-500/20 text-purple-400 text-xs text-center border border-purple-500/20">2</span>
+                                Adresse & Légal
+                            </h3>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground ml-1">Adresse</label>
+                                <input
+                                    {...register("adresse")}
+                                    className="w-full h-11 glass-input px-4 rounded-xl"
+                                    placeholder="123 Avenue..."
+                                />
                             </div>
-                            <h2 className="text-lg font-semibold text-white">Accès Utilisateurs</h2>
-                        </div>
 
-                        <p className="text-xs text-muted-foreground">
-                            Sélectionnez les utilisateurs qui pourront accéder à cette société.
-                        </p>
-
-                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                            {users.map(u => (
-                                <div
-                                    key={u.id}
-                                    onClick={() => toggleUser(u.id)}
-                                    className={cn(
-                                        "flex items-center p-3 rounded-xl border cursor-pointer transition-all duration-200 group",
-                                        selectedUsers.includes(u.id)
-                                            ? "bg-purple-500/20 border-purple-500/50"
-                                            : "glass-card border-white/5 hover:bg-white/5"
-                                    )}
-                                >
-                                    <div className={cn(
-                                        "w-5 h-5 rounded-md border flex items-center justify-center mr-3 transition-colors",
-                                        selectedUsers.includes(u.id)
-                                            ? "bg-purple-500 border-purple-500"
-                                            : "border-muted-foreground gp-hover:border-white"
-                                    )}>
-                                        {selectedUsers.includes(u.id) && <Check className="h-3 w-3 text-white" />}
-                                    </div>
-
-                                    <div className="flex-1 overflow-hidden">
-                                        <div className="flex items-center justify-between">
-                                            <span className="font-medium text-foreground text-sm truncate">{u.fullName}</span>
-                                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground bg-white/5 px-1.5 rounded">{u.role}</span>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground truncate">{u.email}</div>
-                                    </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground ml-1">Code Postal</label>
+                                    <input
+                                        {...register("codePostal")}
+                                        className="w-full h-11 glass-input px-4 rounded-xl"
+                                        placeholder="75000"
+                                    />
                                 </div>
-                            ))}
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground ml-1">Ville</label>
+                                    <input
+                                        {...register("ville")}
+                                        className="w-full h-11 glass-input px-4 rounded-xl"
+                                        placeholder="Paris"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground ml-1">SIRET</label>
+                                    <input
+                                        {...register("siret")}
+                                        className="w-full h-11 glass-input px-4 rounded-xl font-mono text-sm"
+                                        placeholder="123 456 789 00000"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground ml-1">TVA Intra</label>
+                                    <input
+                                        {...register("tvaIntra")}
+                                        className="w-full h-11 glass-input px-4 rounded-xl font-mono text-sm"
+                                        placeholder="FR..."
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+
+                <div className="flex justify-end gap-4">
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="px-6 py-3 rounded-xl hover:bg-white/5 transition-colors text-muted-foreground font-medium"
+                    >
+                        Annuler
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="px-8 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold shadow-lg shadow-blue-500/25 transition-all flex items-center gap-2"
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                Création...
+                            </>
+                        ) : (
+                            <>
+                                <Check className="h-5 w-5" />
+                                Créer la société
+                            </>
+                        )}
+                    </button>
+                </div>
+            </form>
         </div>
     );
 }

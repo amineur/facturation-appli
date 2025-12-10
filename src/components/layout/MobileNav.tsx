@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
     LayoutDashboard,
     FileText,
@@ -27,11 +27,31 @@ const mainNavItems = [
 
 export function MobileNav() {
     const pathname = usePathname();
+    const router = useRouter();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const { societe, switchSociete, societes } = useData();
+    const { societe, switchSociete, societes, isDirty, confirm } = useData();
 
-    // Close menu when path changes
-    // useEffect(() => setIsMenuOpen(false), [pathname]);
+    const handleNavigation = (href: string) => {
+        if (pathname === href) {
+            setIsMenuOpen(false);
+            return;
+        }
+
+        const navigate = () => {
+            setIsMenuOpen(false);
+            router.push(href);
+        };
+
+        if (isDirty) {
+            confirm({
+                title: "Modifications non enregistrées",
+                message: "Vous avez des modifications non enregistrées. Voulez-vous vraiment quitter cette page ?",
+                onConfirm: navigate
+            });
+        } else {
+            navigate();
+        }
+    };
 
     return (
         <>
@@ -50,36 +70,36 @@ export function MobileNav() {
                         </div>
 
                         <div className="space-y-2">
-                            <Link href="/clients" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all">
+                            <button onClick={() => handleNavigation("/clients")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400">
                                     <Users className="h-5 w-5" />
                                 </div>
                                 <span className="font-medium text-sm text-white/90">Clients</span>
-                            </Link>
+                            </button>
 
-                            <Link href="/produits" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all">
+                            <button onClick={() => handleNavigation("/produits")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
                                     <Package className="h-5 w-5" />
                                 </div>
                                 <span className="font-medium text-sm text-white/90">Produits & Services</span>
-                            </Link>
+                            </button>
 
-                            <Link href="/rapports" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all">
+                            <button onClick={() => handleNavigation("/rapports")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
                                     <BarChart3 className="h-5 w-5" />
                                 </div>
                                 <span className="font-medium text-sm text-white/90">Rapports & Statistiques</span>
-                            </Link>
+                            </button>
 
-                            <Link href="/corbeille" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all">
+                            <button onClick={() => handleNavigation("/corbeille")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-red-500/10 text-red-400">
                                     <Trash2 className="h-5 w-5" />
                                 </div>
                                 <span className="font-medium text-sm text-white/90">Corbeille</span>
-                            </Link>
+                            </button>
 
                             <button
-                                onClick={() => { setIsMenuOpen(false); router.push("/settings"); }}
+                                onClick={() => handleNavigation("/settings")}
                                 className="flex items-center gap-4 p-4 rounded-xl hover:bg-white/5 active:bg-white/10 transition-colors group w-full text-left"
                             >
                                 <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 group-hover:bg-orange-500/20 transition-colors">
@@ -92,10 +112,14 @@ export function MobileNav() {
 
                             <button
                                 onClick={() => {
-                                    if (confirm("Attention : Cela va effacer toutes les données locales et restaurer l'état initial. Continuer ?")) {
-                                        localStorage.clear();
-                                        window.location.reload();
-                                    }
+                                    confirm({
+                                        title: "Réinitialiser les données",
+                                        message: "Attention : Cela va effacer toutes les données locales et restaurer l'état initial. Continuer ?",
+                                        onConfirm: () => {
+                                            localStorage.clear();
+                                            window.location.reload();
+                                        }
+                                    });
                                 }}
                                 className="flex items-center gap-4 p-4 rounded-xl hover:bg-white/5 active:bg-white/10 transition-colors group w-full text-left"
                             >
@@ -105,12 +129,12 @@ export function MobileNav() {
                                 <span className="font-medium text-red-500">Réinitialiser les données</span>
                             </button>
 
-                            <Link href="/settings" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all">
+                            <button onClick={() => handleNavigation("/settings")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-gray-500/10 text-gray-400">
                                     <Settings className="h-5 w-5" />
                                 </div>
                                 <span className="font-medium text-sm text-white/90">Paramètres</span>
-                            </Link>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -123,10 +147,9 @@ export function MobileNav() {
                     {mainNavItems.map((item) => {
                         const isActive = pathname === item.href;
                         return (
-                            <Link
+                            <button
                                 key={item.name}
-                                href={item.href}
-                                onClick={() => setIsMenuOpen(false)}
+                                onClick={() => handleNavigation(item.href)}
                                 className={cn(
                                     "flex flex-col items-center justify-center gap-1 w-16 h-full transition-all duration-200 active:scale-90",
                                     isActive ? "text-white" : "text-white/40 hover:text-white/70"
@@ -138,7 +161,7 @@ export function MobileNav() {
                                 <span className={cn("text-[9px] font-medium tracking-wide transition-all", isActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 hidden")}>
                                     {item.name}
                                 </span>
-                            </Link>
+                            </button>
                         );
                     })}
 

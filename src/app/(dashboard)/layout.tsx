@@ -1,7 +1,14 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
+import { FaviconUpdater } from "@/components/features/FaviconUpdater";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { MobileHeader } from "@/components/layout/MobileHeader";
+
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "Tableau de bord",
+};
 
 export default function DashboardLayout({
     children,
@@ -10,6 +17,7 @@ export default function DashboardLayout({
 }) {
     return (
         <div className="flex h-screen w-full overflow-hidden bg-transparent">
+            <FaviconUpdater />
             {/* Desktop Sidebar */}
             <div className="hidden md:flex h-full">
                 <Sidebar />

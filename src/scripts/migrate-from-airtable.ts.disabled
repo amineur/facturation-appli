@@ -1,0 +1,186 @@
+import { PrismaClient } from '@prisma/client';
+import Airtable from 'airtable';
+import * as dotenv from 'dotenv';
+import path from 'path';
+
+// Load env
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+
+// Force env var for Prisma
+// Force env var for Prisma
+// Force env var for Prisma to point to correct location (relative to cwd)
+const prisma = new PrismaClient();
+
+const apiKey = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY || process.env.AIRTABLE_API_KEY;
+const baseId = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID;
+
+if (!apiKey || !baseId) {
+    console.error("Missing Airtable credentials");
+    process.exit(1);
+}
+
+Airtable.configure({ apiKey });
+const base = Airtable.base(baseId);
+
+async function main() {
+    console.log("Starting Migration from Airtable to Local SQLite...");
+
+    // 1. Create Companies (Societes)
+    console.log("Creating/Updating Companies...");
+    const companies = [
+        {
+            id: "Euromedmultimedia",
+            nom: "Euromedmultimedia",
+            email: "compta@urbanhit.fr",
+            adresse: "45 Avenue de la République",
+            codePostal: "75011",
+            ville: "Paris",
+            siret: "123 456 789 00012",
+            tvaIntra: "FR12345678901"
+        },
+        {
+            id: "Studio Urban",
+            nom: "Studio Urban",
+            email: "compta@studiourban.fr",
+            adresse: "123 Creative Avenue",
+            codePostal: "75011",
+            ville: "Paris",
+            siret: "999 999 999 00012",
+            tvaIntra: "FR99999999901"
+        }
+    ];
+
+    for (const company of companies) {
+        await prisma.societe.upsert({
+            where: { id: company.id },
+            update: company,
+            create: company
+        });
+    }
+
+    // 2. Migrate Clients
+    console.log("Migrating Clients...");
+    const atClients = await base('Clients').select().all();
+    for (const r of atClients) {
+        let societeId = r.get('SocieteID');
+        // Fallback for messy data
+        if (!societeId || (societeId !== "Euromedmultimedia" && societeId !== "Studio Urban")) {
+            societeId = "Euromedmultimedia";
+        }
+
+        await prisma.client.create({
+            data: {
+                id: r.id, // Keep Airtable ID for continuity
+                societeId: societeId,
+                nom: r.get('Nom') || "Sans nom",
+                email: r.get('Email'),
+                telephone: r.get('Téléphone'),
+                adresse: r.get('Adresse'),
+                codePostal: r.get('Code Postal'),
+                ville: r.get('Ville'),
+                pays: r.get('Pays'),
+                siret: r.get('SIRET'),
+                tvaIntra: r.get('TVA')
+            }
+        }).catch(e => console.error(`Failed client ${r.get('Nom')}: ${e.message}`));
+    }
+
+    // 3. Migrate Products
+    console.log("Migrating Products...");
+    const atProducts = await base('Produits').select().all();
+    for (const r of atProducts) {
+        let societeId = r.get('SocieteID');
+        if (!societeId || (societeId !== "Euromedmultimedia" && societeId !== "Studio Urban")) societeId = "Euromedmultimedia";
+
+        await prisma.produit.create({
+            data: {
+                id: r.id,
+                societeId: societeId,
+                nom: r.get('Nom') || "Produit sans nom",
+                description: r.get('Description'),
+                prixUnitaire: r.get('Prix Unitaire') || 0,
+                tva: Number(r.get('TVA')) || 20
+            }
+        }).catch(e => console.error(`Failed product ${r.get('Nom')}: ${e.message}`));
+    }
+
+    // 4. Migrate Invoices
+    console.log("Migrating Invoices...");
+    const atInvoices = await base('Factures').select().all();
+    for (const r of atInvoices) {
+        let societeId = r.get('SocieteID');
+        if (!societeId || (societeId !== "Euromedmultimedia" && societeId !== "Studio Urban")) societeId = "Euromedmultimedia";
+
+        const clientIdRaw = r.get('Client');
+        const clientId = Array.isArray(clientIdRaw) ? clientIdRaw[0] : clientIdRaw;
+
+        if (!clientId) {
+            console.warn(`Skipping Invoice ${r.get('Numéro')} - No Client Linked`);
+            continue;
+        }
+
+        // Check if client exists (if not, migration fails due to FK)
+        const clientExists = await prisma.client.findUnique({ where: { id: clientId } });
+        if (!clientExists) {
+            console.warn(`Skipping Invoice ${r.get('Numéro')} - Client ${clientId} not found locally`);
+            continue;
+        }
+
+        await prisma.facture.create({
+            data: {
+                id: r.id,
+                societeId: societeId,
+                clientId: clientId,
+                numero: r.get('Numéro') || "DRAFT",
+                dateEmission: new Date(r.get('Date Émission') || Date.now()),
+                statut: r.get('Statut') || "Brouillon",
+                totalHT: r.get('Total HT') || 0,
+                totalTTC: r.get('Total TTC') || 0,
+                dateEcheance: r.get('Échéance') ? new Date(r.get('Échéance')) : null,
+                itemsJSON: r.get('ItemsJSON') || "[]"
+            }
+        }).catch(e => console.error(`Failed invoice ${r.get('Numéro')}: ${e.message}`));
+    }
+
+    // 5. Migrate Quotes
+    console.log("Migrating Quotes...");
+    const atQuotes = await base('Devis').select().all();
+    for (const r of atQuotes) {
+        let societeId = r.get('SocieteID');
+        if (!societeId || (societeId !== "Euromedmultimedia" && societeId !== "Studio Urban")) societeId = "Euromedmultimedia";
+
+        const clientIdRaw = r.get('Client');
+        const clientId = Array.isArray(clientIdRaw) ? clientIdRaw[0] : clientIdRaw;
+
+        if (!clientId) continue; // Skip orphaned quotes
+
+        const clientExists = await prisma.client.findUnique({ where: { id: clientId } });
+        if (!clientExists) continue;
+
+        await prisma.devis.create({
+            data: {
+                id: r.id,
+                societeId: societeId,
+                clientId: clientId,
+                numero: r.get('Numéro') || "DRAFT",
+                dateEmission: new Date(r.get('Date Émission') || Date.now()),
+                statut: r.get('Statut') || "Brouillon",
+                totalHT: r.get('Total HT') || 0,
+                totalTTC: r.get('Total TTC') || 0,
+                dateValidite: r.get('Date Validité') ? new Date(r.get('Date Validité')) : null,
+                itemsJSON: r.get('ItemsJSON') || "[]"
+            }
+        }).catch(e => console.error(`Failed quote ${r.get('Numéro')}: ${e.message}`));
+    }
+
+    console.log("Migration Complete!");
+}
+
+main()
+    .catch(e => {
+        console.error(e);
+        process.exit(1);
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
+    });

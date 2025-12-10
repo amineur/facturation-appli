@@ -13,9 +13,15 @@ import { useRouter } from "next/navigation";
 import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoice-utils";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { InvoiceLineItem } from "./InvoiceLineItem";
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { createInvoice, updateInvoice, createQuote, updateQuote } from "@/app/actions";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
-
+import { SidePanel } from "@/components/ui/SidePanel";
+import { CommunicationsPanel } from "@/components/features/CommunicationsPanel";
+import { EmailComposer } from "@/components/features/EmailComposer";
+import { useInvoiceEmail } from "@/hooks/use-invoice-email";
+import { Minimize2, Maximize2, Clock } from "lucide-react";
 import Link from "next/link";
 
 interface InvoiceFormValues {
@@ -32,7 +38,7 @@ interface InvoiceFormValues {
 }
 
 export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
-    const { clients, products, refreshData, societe, invoices, quotes } = useData();
+    const { clients, products, refreshData, societe, invoices, quotes, logAction } = useData();
     const router = useRouter();
 
     // Generate next invoice/quote number
@@ -48,14 +54,19 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             numero: getNextNumber(),
             dateEmission: new Date().toISOString().split("T")[0],
             conditionsPaiement: "30 jours", // Default to 30 days
-
+            echeance: (() => {
+                // Calculate default due date (Today + 30 days)
+                const date = new Date();
+                date.setDate(date.getDate() + 30);
+                return date.toISOString().split("T")[0];
+            })(),
             ...initialData, // Apply initial data if provided
             // Ensure items are correctly initialized if initialData has them
-            items: initialData?.items || [{ description: "", quantite: 1, prixUnitaire: 0, tva: 20, totalLigne: 0, produitId: "", type: 'produit' }]
+            items: initialData?.items || [{ description: "", quantite: 1, prixUnitaire: 0, tva: 20, totalLigne: 0, produitId: "", type: 'produit', remise: 0, remiseType: 'pourcentage' }]
         }
     });
 
-    const { register, control, handleSubmit, setValue, watch, getValues, formState: { errors } } = methods;
+    const { register, control, handleSubmit, setValue, watch, getValues, formState: { errors, isDirty } } = methods;
 
     const { fields, append, remove, replace } = useFieldArray({
         control,
@@ -80,6 +91,12 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const [editedClientData, setEditedClientData] = useState<Partial<Client>>({});
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+    // Email & History State
+    const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+    const [isComposerOpen, setIsComposerOpen] = useState(false);
+    const { sendEmail, isUndoVisible, cancelSend } = useInvoiceEmail();
+    const [draftData, setDraftData] = useState<any>(null);
+
     // Auto-calculate due date based on payment terms
     const watchDateEmission = useWatch({ control, name: "dateEmission" });
     const watchConditionsPaiement = useWatch({ control, name: "conditionsPaiement" });
@@ -99,9 +116,14 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             const dueDate = new Date(emissionDate);
             dueDate.setDate(dueDate.getDate() + daysToAdd);
-            setValue("echeance", dueDate.toISOString().split("T")[0]);
+            const formattedDueDate = dueDate.toISOString().split("T")[0];
+
+            // Only update if different to avoid triggering isDirty on load
+            if (getValues("echeance") !== formattedDueDate) {
+                setValue("echeance", formattedDueDate);
+            }
         }
-    }, [watchDateEmission, watchConditionsPaiement, setValue]);
+    }, [watchDateEmission, watchConditionsPaiement, setValue, getValues]);
 
     // Preview state
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -271,8 +293,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             // Construct document
             const documentData = {
-                id: initialData?.id || crypto.randomUUID(),
-                ...data,
+                id: initialData?.id, // Keep existing ID if update, otherwise undefined (Prisma generates on create)
+                ...data, // Contains basic form fields
                 totalHT: totals.ht,
                 totalTVA: totals.tva,
                 totalTTC: totals.ttc,
@@ -287,10 +309,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 remiseGlobale: data.remiseGlobale || 0,
                 remiseGlobaleMontant: totals.remiseGlobale,
                 clientId: data.clientId,
-                societeId: societe.id,
+                societeId: societe?.id || "",
                 items: data.items.map(item => ({
-                    id: crypto.randomUUID(),
-                    ...item
+                    ...item,
+                    id: item.id || uuidv4(), // Ensure items have IDs
                 })),
                 ...(type === "Facture" ? {
                     type: "Facture",
@@ -306,28 +328,50 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 })
             } as unknown as Facture | Devis;
 
+            let result;
             if (type === "Facture") {
-                dataService.saveInvoice(documentData as Facture);
+                if (initialData?.id) {
+                    result = await updateInvoice(documentData as Facture);
+                } else {
+                    result = await createInvoice(documentData as Facture);
+                }
             } else {
-                dataService.saveQuote(documentData as Devis);
+                if (initialData?.id) {
+                    result = await updateQuote(documentData as Devis);
+                } else {
+                    result = await createQuote(documentData as Devis);
+                }
             }
+
+            if (!result.success) {
+                throw new Error(result.error || "Erreur inconnue");
+            }
+
+            // Log Action for Recent Activity
+            const savedId = (result as any).id || (documentData as any).id;
+            const actionType = initialData?.id ? 'update' : 'create';
+            const entityType = type === 'Facture' ? 'facture' : 'devis';
+            const clientName = clients.find(c => c.id === data.clientId)?.nom || "Client";
+            const description = `${actionType === 'create' ? 'Création' : 'Modification'} ${type === 'Facture' ? 'de la facture' : 'du devis'} ${documentData.numero} pour ${clientName}`;
+
+            await logAction(actionType, entityType, description, savedId);
 
             refreshData();
 
             // Simulate a brief delay to show the loading state
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            alert(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès !`);
+            toast.success(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès !`);
             router.push(type === "Facture" ? "/factures" : "/devis");
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving:", error);
-            alert("Erreur lors de l'enregistrement. Veuillez réessayer.");
+            toast.error("Erreur lors de l'enregistrement: " + error.message);
         } finally {
             setIsSaving(false);
         }
     };
 
-    const handleGeneratePDF = () => {
+    const handleGeneratePDF = async () => {
         const formData = watch();
         const client = clients.find(c => c.id === formData.clientId);
 
@@ -337,7 +381,6 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
 
         // Construct a temporary document object for generation
-        // Note: In a real app we might want to save first or use a proper type adjusted for "preview"
         const documentData = {
             id: initialData?.id || "temp",
             ...formData,
@@ -346,8 +389,23 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             totalTVA: totals.tva,
             totalTTC: totals.ttc,
             // Ensure type specific fields exist
-            ...(type === "Facture" ? { statut: "Brouillon", echeance: (formData as any).echeance || "" } : { statut: "Brouillon", dateValidite: (formData as any).dateValidite || "" })
-        } as unknown as Facture | Devis; // Casting for simplicity in this mock context
+            ...(type === "Facture" ? { statut: initialData?.statut || "Brouillon", echeance: (formData as any).echeance || "" } : { statut: initialData?.statut || "Brouillon", dateValidite: (formData as any).dateValidite || "" })
+        } as unknown as Facture | Devis;
+
+        // Auto-update status to "Envoyé" if it's a saved Draft and we are downloading
+        if (initialData?.id && initialData.statut === 'Brouillon') {
+            try {
+                if (type === "Facture") {
+                    await updateInvoice({ ...documentData as Facture, statut: 'Envoyée' });
+                } else {
+                    await updateQuote({ ...documentData as Devis, statut: 'Envoyé' });
+                }
+                logAction('update', type === 'Facture' ? 'facture' : 'devis', `${type} téléchargé (Statut passé à Envoyé)`, initialData.id);
+                refreshData();
+            } catch (error) {
+                console.error("Error updating status on download:", error);
+            }
+        }
 
         generateInvoicePDF(documentData, societe, client, {});
     };
@@ -401,25 +459,49 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const selectedClient = clients.find(c => c.id === selectedClientId);
 
     const isEditMode = !!initialData?.id;
+    const isReadOnly = type === "Devis" && initialData?.statut === "Facturé";
+
     const pageTitle = type === "Facture"
         ? (isEditMode ? "Modifier la Facture" : "Nouvelle Facture")
-        : (isEditMode ? "Modifier le Devis" : "Nouveau Devis");
+        : (isEditMode ? (isReadOnly ? "Devis Facturé (Lecture Seule)" : "Modifier le Devis") : "Nouveau Devis");
+
+    // Unsaved Changes Modal State
+    const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+
+    // Warn on unsaved changes
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (isDirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [isDirty]);
+
+    const handleBack = () => {
+        if (isDirty) {
+            setIsUnsavedModalOpen(true);
+        } else {
+            router.back();
+        }
+    };
 
     return (
         <FormProvider {...methods}>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        {isEditMode && (
-                            <button
-                                type="button"
-                                onClick={() => router.back()}
-                                className="p-2 text-muted-foreground hover:text-foreground glass rounded-lg transition-colors"
-                                title="Retour"
-                            >
-                                <ArrowLeft className="h-5 w-5" />
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={handleBack}
+                            className="p-2 text-muted-foreground hover:text-foreground glass rounded-lg transition-colors"
+                            title="Retour"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </button>
                         <div>
                             <h2 className="text-3xl font-bold tracking-tight text-foreground">{pageTitle}</h2>
                             <p className="text-gray-400 mt-1">Édition en cours</p>
@@ -588,14 +670,31 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         >
                             <Download className="h-5 w-5" />
                         </button>
-                        <button type="button" className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors cursor-pointer">
-                            <Send className="h-4 w-4" />
-                            Envoyer
-                        </button>
+                        {initialData?.id && (type === "Facture" || type === "Devis") && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryPanelOpen(true)}
+                                    className="p-2 text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 glass rounded-lg transition-colors cursor-pointer"
+                                    title="Historique des envois"
+                                >
+                                    <Clock className="h-5 w-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsComposerOpen(true)}
+                                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 font-medium"
+                                    title="Envoyer la facture"
+                                >
+                                    <Send className="h-4 w-4" />
+                                    Envoyer
+                                </button>
+                            </>
+                        )}
                         <button
                             type="button"
                             onClick={handleSubmit(onSubmit)}
-                            disabled={isSaving}
+                            disabled={isSaving || isReadOnly}
                             className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-emerald-600"
                         >
                             {isSaving ? (
@@ -624,13 +723,17 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <div className="relative">
                                 <button
                                     type="button"
-                                    onClick={() => setIsClientOpen(!isClientOpen)}
-                                    className="w-full h-11 rounded-lg glass-input px-4 text-foreground text-left flex items-center justify-between focus:ring-1 focus:ring-white/20"
+                                    onClick={() => !isReadOnly && setIsClientOpen(!isClientOpen)}
+                                    disabled={isReadOnly}
+                                    className={cn(
+                                        "w-full h-11 rounded-lg glass-input px-4 text-foreground text-left flex items-center justify-between focus:ring-1 focus:ring-white/20",
+                                        isReadOnly && "opacity-60 cursor-not-allowed"
+                                    )}
                                 >
                                     <span className={!selectedClient ? "text-muted-foreground" : ""}>
                                         {selectedClient ? selectedClient.nom : "Sélectionner un client..."}
                                     </span>
-                                    <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                                    {!isReadOnly && <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />}
                                 </button>
 
                                 {isClientOpen && (
@@ -698,15 +801,15 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <div className="grid grid-cols-3 gap-4">
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground">Numéro</label>
-                                <input {...register("numero")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                <input {...register("numero")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground">Date d'émission</label>
-                                <input type="date" {...register("dateEmission")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                <input type="date" {...register("dateEmission")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground">Échéance</label>
-                                <input type="date" {...register("echeance")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                <input type="date" {...register("echeance")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
                             </div>
                         </div>
 
@@ -976,7 +1079,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                     "0.8fr", // TVA
                                     showTTCColumn ? "1.2fr" : null, // Total TTC
                                     discountEnabled ? "1.1fr" : null, // Remise (moved to end)
-                                    "0.4fr"
+                                    !isReadOnly ? "0.4fr" : null
                                 ].filter(Boolean).join(" ")
                             }}>
                             <div className="pl-1">Description</div>
@@ -987,7 +1090,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <div className="text-center">TVA</div>
                             {showTTCColumn && <div className="text-right">Total TTC</div>}
                             {discountEnabled && <div className="text-right">Remise</div>}
-                            <div></div>
+                            {!isReadOnly && <div></div>}
                         </div>
 
                         <div className="space-y-2">
@@ -995,7 +1098,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 // We need to update the form state with the new order
                                 // Since useFieldArray doesn't support direct reordering with Reorder.Group values easily,
                                 // we use replace() to update the entire array.
-                                replace(newOrder);
+                                if (!isReadOnly) replace(newOrder);
                             }}>
                                 {fields.map((field, index) => (
                                     <InvoiceLineItem
@@ -1009,47 +1112,50 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                         products={products}
                                         remove={remove}
                                         handleDescriptionChange={handleDescriptionChange}
+                                        isReadOnly={isReadOnly}
                                     />
                                 ))}
                             </Reorder.Group>
                         </div>
 
-                        <div className="flex gap-4 mt-4">
-                            <button
-                                type="button"
-                                onClick={() => append({
-                                    id: uuidv4(),
-                                    description: "",
-                                    quantite: 1,
-                                    prixUnitaire: 0,
-                                    tva: defaultTva,
-                                    totalLigne: 0,
-                                    produitId: "",
-                                    type: 'produit',
-                                    remise: 0,
-                                    remiseType: 'pourcentage'
-                                })}
-                                className="flex items-center gap-2 text-sm text-blue-500 hover:text-blue-600 transition-colors"
-                            >
-                                <Plus className="h-4 w-4" /> Ajouter un produit
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => append({
-                                    id: uuidv4(),
-                                    description: "",
-                                    quantite: 0,
-                                    prixUnitaire: 0,
-                                    tva: 0,
-                                    totalLigne: 0,
-                                    produitId: "",
-                                    type: 'texte'
-                                })}
-                                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                                <Type className="h-4 w-4" /> Ajouter du texte
-                            </button>
-                        </div>
+                        {!isReadOnly && (
+                            <div className="flex gap-4 mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => append({
+                                        id: uuidv4(),
+                                        description: "",
+                                        quantite: 1,
+                                        prixUnitaire: 0,
+                                        tva: defaultTva,
+                                        totalLigne: 0,
+                                        produitId: "",
+                                        type: 'produit',
+                                        remise: 0,
+                                        remiseType: 'pourcentage'
+                                    })}
+                                    className="flex items-center gap-2 text-sm text-blue-500 hover:text-blue-600 transition-colors"
+                                >
+                                    <Plus className="h-4 w-4" /> Ajouter un produit
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => append({
+                                        id: uuidv4(),
+                                        description: "",
+                                        quantite: 0,
+                                        prixUnitaire: 0,
+                                        tva: 0,
+                                        totalLigne: 0,
+                                        produitId: "",
+                                        type: 'texte'
+                                    })}
+                                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                    <Type className="h-4 w-4" /> Ajouter du texte
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="h-px bg-white/20 dark:bg-white/10" />
@@ -1199,6 +1305,94 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     invoiceNumber={watch("numero")}
                 />
             </form>
+
+            {/* Gmail-style Compose Window */}
+            {isComposerOpen && initialData && (type === "Facture" || type === "Devis") && (
+                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-[#1e1e1e] border border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+                    <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm font-medium">Nouveau message - {initialData.numero}</span>
+                            <button
+                                className="px-2 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-full flex items-center gap-1 transition-colors border border-blue-500/20"
+                                title="Voir l'historique"
+                                onClick={(e) => { e.stopPropagation(); setHistoryPanelOpen(true); }}
+                            >
+                                <Clock className="h-3 w-3" />
+                                Historique
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
+                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+                        <EmailComposer
+                            key={draftData ? 'draft-restore' : initialData.id}
+                            defaultTo={draftData ? draftData.to : (clients.find(c => c.id === initialData.clientId)?.email || "")}
+                            defaultSubject={draftData ? draftData.subject : `${type} ${initialData.numero} - ${societe?.nom}`}
+                            defaultMessage={draftData ? draftData.message : `Madame, Monsieur,\n\nVeuillez trouver ci-joint votre ${type === 'Facture' ? 'facture' : 'devis'} n°${initialData.numero}.\n\nCordialement,\n${societe?.nom || ""}`}
+                            mainAttachmentName={`${type}_${initialData.numero}.pdf`}
+                            onSend={async (data) => {
+                                await sendEmail(initialData as Facture | Devis, data, {
+                                    onSuccess: () => setIsComposerOpen(false)
+                                });
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Undo Notification */}
+            {isUndoVisible && (
+                <div className="fixed bottom-6 right-6 bg-[#1e1e1e] border border-white/10 text-foreground px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                    <div className="flex flex-col">
+                        <span className="font-medium">Message envoyé</span>
+                        <span className="text-xs text-muted-foreground">Envoi en cours...</span>
+                    </div>
+                    <button
+                        onClick={() => {
+                            const restored = cancelSend();
+                            if (restored) {
+                                setDraftData(restored);
+                                setIsComposerOpen(true);
+                            }
+                        }}
+                        className="ml-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium rounded transition-colors"
+                    >
+                        Annuler
+                    </button>
+                </div>
+            )}
+
+            {/* History Side Panel */}
+            <SidePanel
+                isOpen={historyPanelOpen}
+                onClose={() => setHistoryPanelOpen(false)}
+                title={initialData ? `Historique - ${initialData.numero}` : "Historique"}
+            >
+                {initialData && (type === "Facture" || type === "Devis") && (
+                    <div key={initialData.id}>
+                        <CommunicationsPanel
+                            invoice={initialData as Facture | Devis}
+                            defaultComposeOpen={false}
+                            hideComposeButton={true}
+                        />
+                    </div>
+                )}
+            </SidePanel>
+
+            <ConfirmationModal
+                isOpen={isUnsavedModalOpen}
+                onClose={() => setIsUnsavedModalOpen(false)}
+                onConfirm={() => {
+                    // Force navigation even if dirty
+                    setIsUnsavedModalOpen(false);
+                    router.back();
+                }}
+                title="Modifications non enregistrées"
+                message="Vous avez des modifications en cours. Si vous quittez cette page maintenant, toutes vos modifications seront perdues."
+            />
         </FormProvider>
     );
 }

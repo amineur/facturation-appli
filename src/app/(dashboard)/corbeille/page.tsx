@@ -3,73 +3,114 @@
 import { useState, useEffect } from "react";
 import { Trash2, RotateCcw, X, FileText, Receipt, Filter, Search } from "lucide-react";
 import { useData } from "@/components/data-provider";
+import { toast } from "sonner";
 import { dataService } from "@/lib/data-service";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Facture, Devis } from "@/types";
 import { cn } from "@/lib/utils";
 
-type DeletedItem = (Facture | Devis) & { itemType: "Facture" | "Devis" };
+type DeletedItem = (Facture & { itemType: "Facture" }) | (Devis & { itemType: "Devis" });
+
+import { fetchDeletedInvoices, fetchDeletedQuotes, restoreRecord, permanentlyDeleteRecord } from "@/app/actions";
 
 export default function TrashPage() {
-    const { refreshData, clients } = useData();
+    const { refreshData, clients, societe, isLoading: isDataLoading, logAction, confirm } = useData();
     const [deletedItems, setDeletedItems] = useState<DeletedItem[]>([]);
     const [filter, setFilter] = useState<"ALL" | "FACTURE" | "DEVIS">("ALL");
     const [searchTerm, setSearchTerm] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
 
     // Load deleted items
-    const loadDeletedItems = () => {
-        const invoices = dataService.getDeletedInvoices().map(i => ({ ...i, itemType: "Facture" as const }));
-        const quotes = dataService.getDeletedQuotes().map(q => ({ ...q, itemType: "Devis" as const }));
-        // Sort by deletedAt desc (most recently deleted first)
-        const combined = [...invoices, ...quotes].sort((a, b) => {
-            const dateA = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
-            const dateB = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
-            return dateB - dateA;
-        });
-        setDeletedItems(combined);
+    const loadDeletedItems = async () => {
+        if (!societe?.id) return;
+        setIsLoading(true);
+        try {
+            const [invoicesRes, quotesRes] = await Promise.all([
+                fetchDeletedInvoices(societe.id),
+                fetchDeletedQuotes(societe.id)
+            ]);
+
+            const invoices = (invoicesRes.data || []).map(i => ({ ...i, itemType: "Facture" as const })) as (Facture & { itemType: "Facture" })[];
+            const quotes = (quotesRes.data || []).map(q => ({ ...q, itemType: "Devis" as const })) as (Devis & { itemType: "Devis" })[];
+
+            const combined = [...invoices, ...quotes].sort((a, b) => {
+                const dateA = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
+                const dateB = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
+                return dateB - dateA;
+            });
+            setDeletedItems(combined as DeletedItem[]);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     useEffect(() => {
-        loadDeletedItems();
-    }, []);
+        if (!isDataLoading && societe?.id) {
+            loadDeletedItems();
+        }
+    }, [isDataLoading, societe?.id]);
 
     const handleRestore = (item: DeletedItem) => {
-        if (confirm(`Voulez-vous restaurer ${item.itemType === "Facture" ? "cette facture" : "ce devis"} ?`)) {
-            if (item.itemType === "Facture") {
-                dataService.restoreInvoice(item.id);
-            } else {
-                dataService.restoreQuote(item.id);
+        confirm({
+            title: "Restaurer l'élément",
+            message: `Voulez-vous restaurer ${item.itemType === "Facture" ? "cette facture" : "ce devis"} ?`,
+            onConfirm: async () => {
+                const table = item.itemType === "Facture" ? 'Factures' : 'Devis';
+                const res = await restoreRecord(table, item.id);
+
+                if (res.success) {
+                    // Log Action (Explicitly)
+                    const clientName = (item as any).client?.nom || "Client inconnu";
+                    logAction(
+                        'update',
+                        item.itemType === "Facture" ? 'facture' : 'devis',
+                        `A restauré ${item.itemType === "Facture" ? "la facture" : "le devis"} ${item.numero} pour ${clientName} depuis la corbeille`,
+                        item.id
+                    );
+
+                    toast.success("Élément restauré avec succès");
+                    loadDeletedItems();
+                    refreshData();
+                } else {
+                    toast.error("Erreur lors de la restauration: " + res.error);
+                }
             }
-            loadDeletedItems();
-            refreshData();
-        }
+        });
     };
 
     const handlePermanentDelete = (item: DeletedItem) => {
-        if (confirm(`Suppression définitive. Cette action est irréversible. Continuer ?`)) {
-            if (item.itemType === "Facture") {
-                dataService.permanentlyDeleteInvoice(item.id);
-            } else {
-                dataService.permanentlyDeleteQuote(item.id);
+        confirm({
+            title: "Suppression définitive",
+            message: "Cette action est irréversible. Continuer ?",
+            onConfirm: async () => {
+                const table = item.itemType === "Facture" ? 'Factures' : 'Devis';
+                await permanentlyDeleteRecord(table, item.id);
+                loadDeletedItems();
+                refreshData();
+                toast.success("Élément supprimé définitivement");
             }
-            loadDeletedItems();
-            refreshData();
-        }
+        });
     };
 
     const handleEmptyTrash = () => {
-        if (confirm("Voulez-vous vider la corbeille ? Tous les éléments seront supprimés définitivement.")) {
-            deletedItems.forEach(item => {
-                if (item.itemType === "Facture") {
-                    dataService.permanentlyDeleteInvoice(item.id);
-                } else {
-                    dataService.permanentlyDeleteQuote(item.id);
+        confirm({
+            title: "Vider la corbeille",
+            message: "Voulez-vous vider la corbeille ? Tous les éléments seront supprimés définitivement.",
+            onConfirm: async () => {
+                setIsLoading(true);
+                for (const item of deletedItems) {
+                    const table = item.itemType === "Facture" ? 'Factures' : 'Devis';
+                    await permanentlyDeleteRecord(table, item.id);
                 }
-            });
-            loadDeletedItems();
-            refreshData();
-        }
+                loadDeletedItems();
+                refreshData();
+                setIsLoading(false);
+                toast.success("Corbeille vidée");
+            }
+        });
     };
 
     const filteredItems = deletedItems.filter(item => {
@@ -170,6 +211,7 @@ export default function TrashPage() {
                             <tr>
                                 <th className="px-6 py-4 font-medium">Type</th>
                                 <th className="px-6 py-4 font-medium">Numéro</th>
+                                <th className="px-6 py-4 font-medium">Client</th>
                                 <th className="px-6 py-4 font-medium">Date de suppression</th>
                                 <th className="px-6 py-4 font-medium">Montant TTC</th>
                                 <th className="px-6 py-4 font-medium text-right">Actions</th>
@@ -197,6 +239,9 @@ export default function TrashPage() {
                                     </td>
                                     <td className="px-6 py-4 font-medium text-foreground">
                                         {item.numero}
+                                    </td>
+                                    <td className="px-6 py-4 text-muted-foreground">
+                                        {(item as any).client?.nom || "Inconnu"}
                                     </td>
                                     <td className="px-6 py-4">
                                         {item.deletedAt

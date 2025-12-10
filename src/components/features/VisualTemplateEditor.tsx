@@ -149,9 +149,9 @@ export const VisualTemplateEditor: React.FC<VisualTemplateEditorProps> = ({
                 {/* Emitter */}
                 <div style={bodyStyle}>
                     <div style={{ ...titleStyle, fontSize: `${template.bodySize}pt`, marginBottom: '8px' }}>{societe.nom}</div>
-                    {societe.mentionLegale && (
+                    {societe.mentionsLegales && (
                         <p className="text-[10px] text-muted-foreground mt-4">
-                            {societe.mentionLegale}
+                            {societe.mentionsLegales}
                         </p>
                     )}
                     <div className="whitespace-pre-line text-gray-600">
@@ -159,7 +159,7 @@ export const VisualTemplateEditor: React.FC<VisualTemplateEditorProps> = ({
                         <br />
                         {societe.codePostal} {societe.ville}
                         <br />
-                        {societe.emailContact}
+                        {societe.email}
                     </div>
                 </div>
 
@@ -324,7 +324,7 @@ export const VisualTemplateEditor: React.FC<VisualTemplateEditorProps> = ({
                     <div className="text-center border-t pt-4 text-gray-400" style={{ fontSize: '8pt', fontFamily: template.fontFamily }}>
                         {societe.nom} - SIRET {societe.siret} - {societe.ville}
                         <br />
-                        {societe.mentionLegale || "TVA non applicable, art. 293 B du CGI"}
+                        {societe.mentionsLegales || "TVA non applicable, art. 293 B du CGI"}
                     </div>
                 )}
             </div>

@@ -3,6 +3,7 @@
 import { ClientEditor } from "@/components/features/ClientEditor";
 import { useData } from "@/components/data-provider";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { use, useEffect, useState } from "react";
 import { Client } from "@/types";
 import { ArrowLeft, Pencil, Mail, Phone, MapPin, Building, FileText, Globe } from "lucide-react";
@@ -10,7 +11,15 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
-export default function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ClientDetailsPageWrapper(props: any) {
+    return (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center">Chargement...</div>}>
+            <ClientDetailsPage {...props} />
+        </Suspense>
+    );
+}
+
+function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
     const { clients, invoices } = useData();
     const router = useRouter();
     const resolvedParams = use(params);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { Plus, Search, MoreHorizontal, Tag, Package, Upload, LayoutGrid, List as ListIcon, ArrowUpDown, Filter } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useData } from "@/components/data-provider";
@@ -9,14 +9,14 @@ import { Produit } from "@/types";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "GRID" | "LIST";
-type SortOption = "NAME_ASC" | "NAME_DESC" | "PRICE_ASC" | "PRICE_DESC";
+type SortOption = "NAME_ASC" | "NAME_DESC" | "PRICE_ASC" | "PRICE_DESC" | "SALES_DESC" | "SALES_ASC";
 
 export default function ProductsPage() {
-    const { products, refreshData, societe } = useData();
+    const { products, refreshData, societe, invoices } = useData();
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState("");
-    const [viewMode, setViewMode] = useState<ViewMode>("GRID");
-    const [sortOption, setSortOption] = useState<SortOption>("NAME_ASC");
+    const [viewMode, setViewMode] = useState<ViewMode>("LIST");
+    const [sortOption, setSortOption] = useState<SortOption>("SALES_DESC");
 
     // Metrics Calculation
     const totalProducts = products.length;
@@ -26,6 +26,36 @@ export default function ProductsPage() {
     const maxPriceProduct = products.length > 0
         ? products.reduce((prev, current) => (prev.prixUnitaire > current.prixUnitaire) ? prev : current)
         : null;
+
+    // Calculate Sales Volume per Product
+    const productSales = useMemo(() => {
+        const sales = new Map<string, number>();
+        invoices.forEach(invoice => {
+            try {
+                const items = invoice.items || [];
+                items.forEach((item: any) => {
+                    // Try to match by ID first (if we have it in items), otherwise by name
+                    // Assuming items have productId or we match by name for legacy/simplicity
+                    // Ideally invoices items should link to product ID.
+                    // If invoice items structure is { productId: string, name: string, quantity: number, ... }
+
+                    if (item.produitId) {
+                        sales.set(item.produitId, (sales.get(item.produitId) || 0) + (item.quantite || 0));
+                    } else if (item.nom || item.description) {
+                        // Fallback match by name/description if ID missing
+                        const identifier = item.nom || item.description;
+                        const product = products.find(p => p.nom === identifier);
+                        if (product) {
+                            sales.set(product.id, (sales.get(product.id) || 0) + (item.quantite || 0));
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error("Error parsing invoice items", e);
+            }
+        });
+        return sales;
+    }, [invoices, products]);
 
     // Filtering & Sorting
     const filteredProducts = products
@@ -38,13 +68,15 @@ export default function ProductsPage() {
                 case "NAME_DESC": return b.nom.localeCompare(a.nom);
                 case "PRICE_ASC": return a.prixUnitaire - b.prixUnitaire;
                 case "PRICE_DESC": return b.prixUnitaire - a.prixUnitaire;
+                case "SALES_DESC": return (productSales.get(b.id) || 0) - (productSales.get(a.id) || 0);
+                case "SALES_ASC": return (productSales.get(a.id) || 0) - (productSales.get(b.id) || 0);
                 default: return 0;
             }
         });
 
     return (
         <div className="space-y-8">
-            {/* Header & Metrics */}
+            {/* ... Header & Metrics ... */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2 space-y-1">
                     <h2 className="text-3xl font-bold tracking-tight text-foreground">Produits & Services</h2>
@@ -95,6 +127,8 @@ export default function ProductsPage() {
                             onChange={(e) => setSortOption(e.target.value as SortOption)}
                             className="h-10 pl-3 pr-8 rounded-lg text-sm appearance-none cursor-pointer text-foreground bg-white/5 border border-white/10 hover:bg-white/10 focus:ring-0 transition-colors"
                         >
+                            <option value="SALES_DESC" className="bg-[#1a1a1a]">Plus vendus</option>
+                            <option value="SALES_ASC" className="bg-[#1a1a1a]">Moins vendus</option>
                             <option value="NAME_ASC" className="bg-[#1a1a1a]">Nom (A-Z)</option>
                             <option value="NAME_DESC" className="bg-[#1a1a1a]">Nom (Z-A)</option>
                             <option value="PRICE_ASC" className="bg-[#1a1a1a]">Prix Croissant</option>
@@ -184,9 +218,10 @@ export default function ProductsPage() {
             ) : (
                 <div className="glass-card rounded-xl overflow-hidden">
                     <table className="w-full text-left text-sm">
-                        <thead className="bg-white/5 text-xs uppercase text-muted-foreground font-medium">
+                        <thead className="bg-primary/10 text-xs uppercase text-muted-foreground font-medium">
                             <tr>
                                 <th className="px-6 py-4">Nom du produit</th>
+                                <th className="px-6 py-4 text-center">Ventes</th>
                                 <th className="px-6 py-4">Description</th>
                                 <th className="px-6 py-4 text-right">Prix HT</th>
                                 <th className="px-6 py-4 text-center">TVA</th>
@@ -208,6 +243,11 @@ export default function ProductsPage() {
                                             </div>
                                             {produit.nom}
                                         </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/10">
+                                            {productSales.get(produit.id) || 0}
+                                        </span>
                                     </td>
                                     <td className="px-6 py-4 text-muted-foreground max-w-xs truncate">
                                         {produit.description || "-"}

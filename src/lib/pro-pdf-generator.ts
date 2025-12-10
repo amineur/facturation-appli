@@ -2,6 +2,15 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { ProTemplate, TemplateBlock, Facture, Societe, Client } from "@/types";
 
+const hexToRgb = (hex: string): [number, number, number] | null => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? [
+        parseInt(result[1], 16),
+        parseInt(result[2], 16),
+        parseInt(result[3], 16)
+    ] : null;
+};
+
 /**
  * Generates a PDF based on the Pro Template blocks.
  * Maps screen coordinates (mm) 1:1 to PDF coordinates.
@@ -23,16 +32,6 @@ export const generateProTemplatePDF = (
         format: pageSettings.format
     });
 
-    // Helper to convert hex to RGB
-    const hexToRgb = (hex: string) => {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? {
-            r: parseInt(result[1], 16),
-            g: parseInt(result[2], 16),
-            b: parseInt(result[3], 16)
-        } : null;
-    };
-
     // Render Blocks
     // Sort by zIndex if needed, though usually render order is enough
     template.blocks.forEach(block => {
@@ -49,16 +48,18 @@ const renderBlock = (doc: jsPDF, block: TemplateBlock, data?: any) => {
     const h = block.height;
 
     const style = block.style;
-    const rgb = style.color ? hexToRgb(style.color) : { r: 0, g: 0, b: 0 };
-    doc.setTextColor(rgb?.r || 0, rgb?.g || 0, rgb?.b || 0);
+    const rgb = (style.color ? hexToRgb(style.color) : null) || [0, 0, 0];
+    doc.setTextColor(rgb[0], rgb[1], rgb[2]);
 
     // Background Color
     if (style.backgroundColor && style.backgroundColor !== 'transparent') {
         const bgRgb = hexToRgb(style.backgroundColor);
-        doc.setFillColor(bgRgb?.r || 255, bgRgb?.g || 255, bgRgb?.b || 255);
+        if (bgRgb) {
+            doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
 
-        if (block.type === 'shape' || block.type === 'text') {
-            doc.rect(x, y, w, h, 'F');
+            if (block.type === 'shape' || block.type === 'text') {
+                doc.rect(x, y, w, h, 'F');
+            }
         }
     }
 
@@ -95,7 +96,8 @@ const renderBlock = (doc: jsPDF, block: TemplateBlock, data?: any) => {
             let lineX = x;
             if (style.textAlign === 'center') lineX = finalX - (textWidth / 2);
             if (style.textAlign === 'right') lineX = finalX - textWidth;
-            doc.setDrawColor(rgb?.r || 0, rgb?.g || 0, rgb?.b || 0);
+            if (style.textAlign === 'right') lineX = finalX - textWidth;
+            doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
             doc.line(lineX, y + (h / 2) + 2, lineX + textWidth, y + (h / 2) + 2);
         }
     }
@@ -109,7 +111,7 @@ const renderBlock = (doc: jsPDF, block: TemplateBlock, data?: any) => {
     }
 
     if (block.type === 'line') {
-        doc.setDrawColor(rgb?.r || 0, rgb?.g || 0, rgb?.b || 0);
+        doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
         doc.setLineWidth(0.5); // Fixed for now, could be dynamic
         doc.line(x, y + h / 2, x + w, y + h / 2);
     }
@@ -119,7 +121,7 @@ const renderBlock = (doc: jsPDF, block: TemplateBlock, data?: any) => {
         // Border
         if (style.borderColor) {
             const borderRgb = hexToRgb(style.borderColor);
-            doc.setDrawColor(borderRgb?.r || 0, borderRgb?.g || 0, borderRgb?.b || 0);
+            if (borderRgb) doc.setDrawColor(borderRgb[0], borderRgb[1], borderRgb[2]);
             doc.rect(x, y, w, h, 'FD'); // Fill and DrawStr
         } else {
             doc.rect(x, y, w, h, 'F');
@@ -140,11 +142,11 @@ const renderBlock = (doc: jsPDF, block: TemplateBlock, data?: any) => {
                 theme: 'plain',
                 styles: {
                     fontSize: style.fontSize || 10,
-                    textColor: rgb ? [rgb.r, rgb.g, rgb.b] : [0, 0, 0],
+                    textColor: rgb || [0, 0, 0],
                 },
                 headStyles: {
-                    fillColor: style.backgroundColor ? hexToRgb(style.backgroundColor) : undefined,
-                    textColor: style.color ? hexToRgb(style.color) : undefined,
+                    fillColor: (style.backgroundColor && hexToRgb(style.backgroundColor)) || undefined,
+                    textColor: (style.color && hexToRgb(style.color)) || undefined,
                     fontStyle: 'bold'
                 }
             });
@@ -166,11 +168,4 @@ const renderBlock = (doc: jsPDF, block: TemplateBlock, data?: any) => {
     }
 };
 
-const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : null;
-};
+

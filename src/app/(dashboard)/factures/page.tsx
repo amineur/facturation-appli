@@ -1,27 +1,34 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { Plus, Search, FileText, Calendar, ArrowRight, Trash2, Upload, Filter, Pencil, Download, Send, Eye } from "lucide-react";
+import { Plus, Search, Filter, ArrowUpRight, ArrowDownLeft, Clock, AlertCircle, FileText, MoreHorizontal, Download, Send, Trash2, Eye, CheckCircle, Pencil } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { cn } from "@/lib/utils";
 import { Facture, StatusFacture } from "@/types";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
+import { deleteRecord, updateInvoice, markInvoiceAsSent, createClient, createInvoice } from "@/app/actions";
+import { EmailComposer } from "@/components/features/EmailComposer";
+import { useInvoiceEmail } from "@/hooks/use-invoice-email";
+import { Minimize2, Maximize2, X } from "lucide-react";
+import { SidePanel } from "@/components/ui/SidePanel";
+import { CommunicationsPanel } from "@/components/features/CommunicationsPanel";
 
 
 const getStatusColor = (status: StatusFacture) => {
     switch (status) {
-        case "Payée": return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/20";
-        case "Envoyée": return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/20";
-        case "Retard": return "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/20";
-        case "Brouillon": return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/20";
-        case "Annulée": return "bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/10 dark:text-muted-foreground dark:border-white/10";
-        default: return "bg-gray-100 text-gray-500 dark:bg-gray-500/20 dark:text-muted-foreground";
+        case "Payée": return "bg-[#F0FDF4] text-[#15803D] border-[#DCFCE7] dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/20";
+        case "Envoyée": return "bg-[#EFF6FF] text-[#1D4ED8] border-[#DBEAFE] dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/20";
+        case "Retard": return "bg-[#FEF2F2] text-[#B91C1C] border-[#FEE2E2] dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/20";
+        case "Brouillon": return "bg-[#F9FAFB] text-[#6B7280] border-[#E5E7EB] dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/20";
+        case "Annulée": return "bg-[#F1F5F9] text-[#64748B] border-[#E2E8F0] dark:bg-white/10 dark:text-muted-foreground dark:border-white/10";
+        default: return "bg-[#F9FAFB] text-[#6B7280] border-[#E5E7EB] dark:bg-gray-500/20 dark:text-muted-foreground";
     }
 };
 
@@ -36,8 +43,16 @@ const formatDateSafe = (dateStr: string | undefined | null) => {
     }
 };
 
-export default function InvoicesPage() {
-    const { invoices, clients, refreshData, societe } = useData();
+export default function InvoicesPageWrapper() {
+    return (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center">Chargement...</div>}>
+            <InvoicesPage />
+        </Suspense>
+    );
+}
+
+function InvoicesPage() {
+    const { invoices, clients, societe, refreshData, logAction, confirm } = useData();
     const router = useRouter();
     const searchParams = useSearchParams();
     const [searchTerm, setSearchTerm] = useState("");
@@ -54,6 +69,16 @@ export default function InvoicesPage() {
     const [selectedInvoice, setSelectedInvoice] = useState<Facture | null>(null);
     const [newStatus, setNewStatus] = useState<StatusFacture>("Brouillon");
     const [paymentDate, setPaymentDate] = useState("");
+
+    // Compose Window State
+    const [composeInvoice, setComposeInvoice] = useState<Facture | null>(null);
+    const [isComposerOpen, setIsComposerOpen] = useState(false);
+    const { sendEmail, isUndoVisible, cancelSend } = useInvoiceEmail();
+    const [draftData, setDraftData] = useState<any>(null); // For restoring draft
+
+    // History Panel State
+    const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+    const [historyInvoice, setHistoryInvoice] = useState<Facture | null>(null);
 
     // Read status filter from URL on mount
     useEffect(() => {
@@ -77,7 +102,7 @@ export default function InvoicesPage() {
 
             const url = generateInvoicePDF(facture, societe, client, {
                 returnBlob: true,
-                config: facture.config
+                templateOverride: facture.config as any
             });
             if (url && typeof url === 'string') {
                 setPreviewUrl(url);
@@ -130,10 +155,21 @@ export default function InvoicesPage() {
     const totalFilteredTTC = filteredInvoices.reduce((sum, invoice) => sum + invoice.totalTTC, 0);
 
     const handleDelete = (id: string) => {
-        if (confirm("Êtes-vous sûr de vouloir supprimer cette facture ?")) {
-            dataService.deleteInvoice(id);
-            refreshData();
-        }
+        confirm({
+            title: "Supprimer la facture",
+            message: "Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.",
+            onConfirm: async () => {
+                const invoiceToDelete = invoices.find(i => i.id === id);
+                await deleteRecord('Factures', id);
+                dataService.deleteInvoice(id);
+                if (invoiceToDelete) {
+                    const clientName = clients.find(c => c.id === invoiceToDelete.clientId)?.nom || "Client inconnu";
+                    logAction('delete', 'facture', `A mis à la corbeille la facture ${invoiceToDelete.numero} pour ${clientName}`, id);
+                }
+                refreshData();
+                toast.success("Facture mise à la corbeille");
+            }
+        });
     };
 
     const handleStatusClick = (facture: Facture) => {
@@ -143,16 +179,21 @@ export default function InvoicesPage() {
         setStatusModalOpen(true);
     };
 
-    const handleStatusChange = () => {
+    const handleStatusChange = async () => {
         if (!selectedInvoice) return;
 
         const updatedInvoice = {
             ...selectedInvoice,
             statut: newStatus,
-            datePaiement: newStatus === "Payée" ? paymentDate : selectedInvoice.datePaiement
+            datePaiement: newStatus === "Payée" ? paymentDate : undefined
         };
 
+        await updateInvoice(updatedInvoice);
         dataService.saveInvoice(updatedInvoice);
+
+        const clientName = clients.find(c => c.id === selectedInvoice.clientId)?.nom || "Client inconnu";
+        logAction('update', 'facture', `Statut Facture ${selectedInvoice.numero} changé pour ${newStatus} (Client: ${clientName})`, selectedInvoice.id);
+
         refreshData();
         setStatusModalOpen(false);
         setSelectedInvoice(null);
@@ -204,9 +245,9 @@ export default function InvoicesPage() {
             return cleaned.trim();
         };
 
-        dataRows.forEach(rowStr => {
+        for (const rowStr of dataRows) {
             const row = parseCSVLine(rowStr, separator);
-            if (row.length < 5) return;
+            if (row.length < 5) continue;
 
             const numero = cleanString(row[0]);
             const clientName = cleanString(row[1]);
@@ -235,7 +276,7 @@ export default function InvoicesPage() {
             const totalTTC = cleanAmount(row[7]);
             const rawStatus = row[8]?.trim();
 
-            if (!numero || !clientName) return;
+            if (!numero || !clientName) continue;
 
             let clientId = "";
             const existingClient = updatedClients.find(c => c.nom.toLowerCase() === clientName.toLowerCase());
@@ -253,7 +294,8 @@ export default function InvoicesPage() {
                     ville: "",
                     societeId: "soc_1"
                 };
-                dataService.saveClient(newClient);
+                // dataService.saveClient(newClient); // Deprecated
+                await createClient(newClient); // Server Action
                 updatedClients.push(newClient);
                 clientId = newClient.id;
             }
@@ -280,9 +322,10 @@ export default function InvoicesPage() {
                 type: "Facture"
             };
 
-            dataService.saveInvoice(newInvoice);
+            // dataService.saveInvoice(newInvoice); // Deprecated
+            await createInvoice(newInvoice); // Server Action
             importCount++;
-        });
+        }
 
         if (importCount > 0) {
             refreshData();
@@ -334,12 +377,12 @@ export default function InvoicesPage() {
                             onChange={(e) => setStatusFilter(e.target.value as StatusFacture | "ALL")}
                             className="h-10 w-full rounded-lg px-4 pl-10 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-white/20 hover:border-white/30 focus:border-white/40 focus:ring-0 transition-colors"
                         >
-                            <option value="ALL" className="bg-[#1a1a1a] text-foreground">Tous les statuts</option>
-                            <option value="Brouillon" className="bg-[#1a1a1a] text-foreground">Brouillon</option>
-                            <option value="Envoyée" className="bg-[#1a1a1a] text-foreground">Envoyée</option>
-                            <option value="Payée" className="bg-[#1a1a1a] text-foreground">Payée</option>
-                            <option value="Retard" className="bg-[#1a1a1a] text-foreground">Retard</option>
-                            <option value="Annulée" className="bg-[#1a1a1a] text-foreground">Annulée</option>
+                            <option value="ALL" className="text-foreground bg-background">Tous les statuts</option>
+                            <option value="Brouillon" className="text-foreground bg-background">Brouillon</option>
+                            <option value="Envoyée" className="text-foreground bg-background">Envoyée</option>
+                            <option value="Payée" className="text-foreground bg-background">Payée</option>
+                            <option value="Retard" className="text-foreground bg-background">Retard</option>
+                            <option value="Annulée" className="text-foreground bg-background">Annulée</option>
                         </select>
                     </div>
                 </div>
@@ -348,9 +391,19 @@ export default function InvoicesPage() {
             <div className="space-y-8">
                 {sortedMonthKeys.map(month => {
                     const monthlyTotal = invoicesByMonth[month].reduce((sum, inv) => sum + inv.totalTTC, 0);
-                    const sortedInvoices = [...invoicesByMonth[month]].sort((a, b) =>
-                        new Date(b.dateEmission).getTime() - new Date(a.dateEmission).getTime()
-                    );
+                    const sortedInvoices = [...invoicesByMonth[month]].sort((a, b) => {
+                        // Priority: UpdatedAt -> CreatedAt -> DateEmission
+                        const dateA = new Date(a.updatedAt || a.createdAt || a.dateEmission).getTime();
+                        const dateB = new Date(b.updatedAt || b.createdAt || b.dateEmission).getTime();
+
+                        // 1. Sort by Last Modification Descending
+                        if (dateB !== dateA) {
+                            return dateB - dateA;
+                        }
+
+                        // 2. Sort by Invoice Number Descending as fallback
+                        return b.numero.localeCompare(a.numero, undefined, { numeric: true, sensitivity: 'base' });
+                    });
 
                     return (
                         <div key={month}>
@@ -362,18 +415,18 @@ export default function InvoicesPage() {
                             </div>
 
                             {/* Desktop Table View */}
-                            <div className="hidden md:block glass-card rounded-xl overflow-hidden">
+                            <div className="hidden md:block glass-card rounded-xl overflow-x-auto">
                                 <table className="w-full text-left text-sm text-muted-foreground">
-                                    <thead className="bg-white/5 text-xs uppercase text-muted-foreground">
+                                    <thead className="bg-primary/10 text-xs uppercase text-muted-foreground">
                                         <tr>
-                                            <th className="px-6 py-4 font-medium">Numéro</th>
-                                            <th className="px-6 py-4 font-medium">Client</th>
-                                            <th className="px-6 py-4 font-medium">Créée le</th>
-                                            <th className="px-6 py-4 font-medium">Échéance</th>
-                                            <th className="px-6 py-4 font-medium">Payée le</th>
-                                            <th className="px-6 py-4 font-medium">Montant TTC</th>
-                                            <th className="px-6 py-4 font-medium">Statut</th>
-                                            <th className="px-6 py-4 font-medium text-right">Action</th>
+                                            <th className="px-3 py-4 font-medium">Numéro</th>
+                                            <th className="px-3 py-4 font-medium">Client</th>
+                                            <th className="px-3 py-4 font-medium">Créée le</th>
+                                            <th className="px-3 py-4 font-medium">Échéance</th>
+                                            <th className="px-3 py-4 font-medium">Payée le</th>
+                                            <th className="px-3 py-4 font-medium">Montant TTC</th>
+                                            <th className="px-3 py-4 font-medium">Statut</th>
+                                            <th className="px-3 py-4 font-medium text-right w-[150px]">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
@@ -381,15 +434,31 @@ export default function InvoicesPage() {
                                             const client = clients.find(c => c.id === facture.clientId);
 
                                             const handleDownload = () => {
+                                                if (!societe) {
+                                                    toast.error("Informations de la société manquantes.");
+                                                    return;
+                                                }
                                                 if (client) {
                                                     generateInvoicePDF(facture, societe, client, {});
+                                                    logAction('read', 'facture', `Facture ${facture.numero} téléchargée`, facture.id);
+
+                                                    if (facture.statut === "Brouillon" || facture.statut === "Retard") {
+                                                        markInvoiceAsSent(facture.id).then((res) => {
+                                                            if (res.success) {
+                                                                logAction('update', 'facture', `Statut Facture ${facture.numero} changé pour Envoyée (Download)`, facture.id);
+                                                                refreshData();
+                                                            }
+                                                        });
+                                                    }
                                                 } else {
-                                                    alert("Client introuvable pour cette facture.");
+                                                    toast.error("Client introuvable pour cette facture.");
                                                 }
                                             };
 
                                             const handleSend = () => {
-                                                alert(`Facture ${facture.numero} envoyée à ${client?.email || "l'adresse du client"}`);
+                                                setComposeInvoice(facture);
+                                                setIsComposerOpen(true);
+                                                setDraftData(null); // Clear previous draft
                                             };
 
                                             return (
@@ -398,22 +467,22 @@ export default function InvoicesPage() {
                                                     onClick={() => handlePreview(facture)}
                                                     className="hover:bg-white/5 transition-colors group cursor-pointer"
                                                 >
-                                                    <td className="px-6 py-4 font-medium text-foreground">
+                                                    <td className="px-3 py-4 font-medium text-foreground">
                                                         <div className="flex items-center gap-2">
                                                             <FileText className="h-4 w-4 text-purple-500" />
                                                             {facture.numero}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4 max-w-[200px] truncate" title={client?.nom}>
+                                                    <td className="px-3 py-4 max-w-[200px] truncate" title={client?.nom}>
                                                         {client?.nom || "Inconnu"}
                                                     </td>
-                                                    <td className="px-6 py-4">{formatDateSafe(facture.dateEmission)}</td>
-                                                    <td className="px-6 py-4">{formatDateSafe(facture.echeance)}</td>
-                                                    <td className="px-6 py-4">{formatDateSafe(facture.datePaiement)}</td>
-                                                    <td className="px-6 py-4 font-bold text-foreground">
+                                                    <td className="px-3 py-4">{formatDateSafe(facture.dateEmission)}</td>
+                                                    <td className="px-3 py-4">{formatDateSafe(facture.echeance)}</td>
+                                                    <td className="px-3 py-4">{formatDateSafe(facture.datePaiement)}</td>
+                                                    <td className="px-3 py-4 font-bold text-foreground">
                                                         {facture.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                                     </td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-3 py-4">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -426,12 +495,13 @@ export default function InvoicesPage() {
                                                             </span>
                                                         </button>
                                                     </td>
-                                                    <td className="px-6 py-4 text-right">
+                                                    <td className="px-3 py-4 text-right relative z-10 whitespace-nowrap">
                                                         <div className="flex justify-end gap-1">
-                                                            <button onClick={(e) => { e.stopPropagation(); router.push(`/factures/${facture.id}`); }} className="p-1.5 text-muted-foreground hover:text-orange-500 hover:bg-orange-500/10 rounded-md transition-colors cursor-pointer" title="Modifier"><Pencil className="h-4 w-4" /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDownload(); }} className="p-1.5 text-muted-foreground hover:text-green-500 hover:bg-green-500/10 rounded-md transition-colors cursor-pointer" title="Télécharger"><Download className="h-4 w-4" /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleSend(); }} className="p-1.5 text-muted-foreground hover:text-indigo-500 hover:bg-indigo-500/10 rounded-md transition-colors cursor-pointer" title="Envoyer par email"><Send className="h-4 w-4" /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(facture.id); }} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer" title="Supprimer"><Trash2 className="h-4 w-4" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); router.push(`/factures/${facture.id}`); }} className="p-1.5 text-muted-foreground hover:text-orange-500 hover:bg-orange-500/10 rounded-md transition-colors" title="Modifier"><Pencil className="h-3.5 w-3.5" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDownload(); }} className="p-1.5 text-muted-foreground hover:text-green-500 hover:bg-green-500/10 rounded-md transition-colors" title="Télécharger"><Download className="h-3.5 w-3.5" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleSend(); }} className="p-1.5 text-muted-foreground hover:text-indigo-500 hover:bg-indigo-500/10 rounded-md transition-colors" title="Envoyer par email"><Send className="h-3.5 w-3.5" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); setHistoryInvoice(facture); setHistoryPanelOpen(true); }} className="p-1.5 text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 rounded-md transition-colors" title="Historique des envois"><Clock className="h-3.5 w-3.5" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(facture.id); }} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Supprimer"><Trash2 className="h-3.5 w-3.5" /></button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -480,7 +550,7 @@ export default function InvoicesPage() {
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <button onClick={(e) => { e.stopPropagation(); router.push(`/factures/${facture.id}`); }} className="p-2 bg-white/5 rounded-lg text-muted-foreground hover:text-orange-400 active:bg-white/10"><Pencil className="h-4 w-4" /></button>
-                                                    <button onClick={(e) => { e.stopPropagation(); if (client) generateInvoicePDF(facture, societe, client, {}); }} className="p-2 bg-white/5 rounded-lg text-muted-foreground hover:text-green-400 active:bg-white/10"><Download className="h-4 w-4" /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); if (client && societe) generateInvoicePDF(facture, societe, client, {}); }} className="p-2 bg-white/5 rounded-lg text-muted-foreground hover:text-green-400 active:bg-white/10"><Download className="h-4 w-4" /></button>
                                                 </div>
                                             </div>
                                         </div>
@@ -565,6 +635,90 @@ export default function InvoicesPage() {
                     </div>
                 )
             }
+            {/* Gmail-style Compose Window */}
+            {isComposerOpen && composeInvoice && (
+                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-[#1e1e1e] border border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+                    <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm font-medium">Nouveau message - {composeInvoice.numero}</span>
+                            <button
+                                className="px-2 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-full flex items-center gap-1 transition-colors border border-blue-500/20"
+                                title="Voir l'historique"
+                                onClick={(e) => { e.stopPropagation(); setHistoryInvoice(composeInvoice); setHistoryPanelOpen(true); }}
+                            >
+                                <Clock className="h-3 w-3" />
+                                Historique
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
+                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+                        <EmailComposer
+                            key={draftData ? 'draft-restore' : composeInvoice.id}
+                            defaultTo={draftData ? draftData.to : (clients.find(c => c.id === composeInvoice.clientId)?.email || "")}
+                            defaultSubject={draftData ? draftData.subject : `Facture ${composeInvoice.numero} - ${societe?.nom}`}
+                            defaultMessage={draftData ? draftData.message : `Madame, Monsieur,\n\nVeuillez trouver ci-joint votre facture n°${composeInvoice.numero}.\n\nCordialement,\n${societe?.nom || ""}`}
+                            mainAttachmentName={`Facture_${composeInvoice.numero}.pdf`}
+                            onSend={async (data) => {
+                                await sendEmail(composeInvoice, data, {
+                                    onSuccess: () => setIsComposerOpen(false)
+                                });
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Undo Notification */}
+            {isUndoVisible && (
+                <div className="fixed bottom-6 right-6 bg-[#1e1e1e] border border-white/10 text-foreground px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                    <div className="flex flex-col">
+                        <span className="font-medium">Message envoyé</span>
+                        <span className="text-xs text-muted-foreground">Envoi en cours...</span>
+                    </div>
+                    <button
+                        onClick={() => {
+                            const restored = cancelSend();
+                            if (restored && restored.invoiceId) {
+                                // Find invoice if we lost it?
+                                // We rely on 'composeInvoice' still being set? No, we might have closed.
+                                // But usually user stays on same page.
+                                // If composeInvoice is null, we can't open easily unless we find it.
+                                // Restored draft has invoiceId.
+                                const inv = invoices.find(i => i.id === restored.invoiceId);
+                                if (inv) {
+                                    setComposeInvoice(inv);
+                                    setDraftData(restored);
+                                    setIsComposerOpen(true);
+                                }
+                            }
+                        }}
+                        className="ml-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium rounded transition-colors"
+                    >
+                        Annuler
+                    </button>
+                </div>
+            )}
+
+            {/* History Side Panel */}
+            <SidePanel
+                isOpen={historyPanelOpen}
+                onClose={() => setHistoryPanelOpen(false)}
+                title={historyInvoice ? `Historique - ${historyInvoice.numero}` : "Historique"}
+            >
+                {historyInvoice && (
+                    <div key={historyInvoice.id}>
+                        <CommunicationsPanel
+                            invoice={historyInvoice}
+                            defaultComposeOpen={false}
+                            hideComposeButton={true}
+                        />
+                    </div>
+                )}
+            </SidePanel>
         </div>
     );
 }

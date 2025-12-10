@@ -8,9 +8,11 @@ import { cn } from "@/lib/utils";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
 import { Client } from "@/types";
+import { deleteRecord } from "@/app/actions";
+import { toast } from "sonner";
 
 export default function ClientsPage() {
-    const { clients, refreshData, societe } = useData();
+    const { clients, refreshData, societe, confirm, logAction } = useData();
     const router = useRouter(); // Add router
     const [searchTerm, setSearchTerm] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -22,10 +24,20 @@ export default function ClientsPage() {
 
     const handleDelete = (e: React.MouseEvent, id: string) => {
         e.stopPropagation(); // Prevent row click
-        if (confirm("Supprimer ce client ?")) {
-            dataService.deleteClient(id);
-            refreshData();
-        }
+        // Find client name for logging
+        const clientToDelete = clients.find(c => c.id === id);
+        const nom = clientToDelete?.nom || "Client";
+
+        confirm({
+            title: "Supprimer le client",
+            message: "Supprimer ce client ? Cette action est irréversible.",
+            onConfirm: async () => {
+                await deleteRecord('Clients', id);
+                dataService.deleteClient(id);
+                logAction('delete', 'client', `Client ${nom} supprimé`, id);
+                refreshData();
+            }
+        });
     };
 
     const handleImportClick = () => {
@@ -124,7 +136,9 @@ export default function ClientsPage() {
             }
 
             refreshData();
-            alert(`${count} clients importés avec succès !`);
+            const logMsg = count > 0 ? `${count} clients importés via CSV` : "Tentative d'import CSV (0 succès)";
+            logAction('create', 'client', logMsg, 'import-batch');
+            toast.success(`${count} clients importés avec succès !`);
             if (fileInputRef.current) fileInputRef.current.value = "";
         };
         reader.readAsText(file);
@@ -165,11 +179,11 @@ export default function ClientsPage() {
                 <div className="rounded-lg">
                     {/* Desktop Table */}
                     <table className="hidden md:table w-full text-left text-sm text-muted-foreground">
-                        <thead className="bg-white/5 text-xs uppercase text-muted-foreground">
+                        <thead className="bg-primary/10 text-xs uppercase text-muted-foreground">
                             <tr>
                                 <th className="px-6 py-4 font-medium">Nom</th>
                                 <th className="hidden md:table-cell px-6 py-4 font-medium">Contact</th>
-                                <th className="hidden lg:table-cell px-6 py-4 font-medium">Ville</th>
+                                <th className="hidden lg:table-cell px-6 py-4 font-medium">Adresse</th>
                                 <th className="px-6 py-4 font-medium text-right">Actions</th>
                             </tr>
                         </thead>
@@ -206,9 +220,13 @@ export default function ClientsPage() {
                                         </div>
                                     </td>
                                     <td className="hidden lg:table-cell px-6 py-4">
-                                        {(client.adresse || "").split(",").pop()?.trim() || "-"}
+                                        {client.adresse ? (
+                                            <span className="truncate max-w-[200px] block" title={`${client.adresse}, ${client.codePostal} ${client.ville}`}>
+                                                {client.adresse}, {client.codePostal} {client.ville}
+                                            </span>
+                                        ) : "-"}
                                     </td>
-                                    <td className="px-6 py-4 text-right">
+                                    <td className="px-6 py-4 text-right relative z-10">
                                         <div className="flex items-center justify-end gap-2">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); router.push(`/clients/${client.id}?edit=true`); }}
@@ -252,7 +270,7 @@ export default function ClientsPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-white/5">
+                                <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-border">
                                     <button
                                         onClick={(e) => { e.stopPropagation(); router.push(`/clients/${client.id}?edit=true`); }}
                                         className="p-2 bg-white/5 rounded-lg text-muted-foreground hover:text-blue-400 transition-colors"

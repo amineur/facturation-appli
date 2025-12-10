@@ -19,6 +19,7 @@ export const generateInvoicePDF = (
     client: Client,
     options?: {
         returnBlob?: boolean;
+        returnBase64?: boolean;
         templateOverride?: PdfTemplate;
     }
 ) => {
@@ -157,7 +158,7 @@ export const generateInvoicePDF = (
         });
         doc.text(`${societe.codePostal || ""} ${societe.ville || ""}`, template.marginLeft, yEmitter);
         yEmitter += 4.5;
-        if (societe.emailContact) doc.text(societe.emailContact, template.marginLeft, yEmitter + 4.5);
+        if (societe.email) doc.text(societe.email, template.marginLeft, yEmitter + 4.5);
 
         // Client
         const xClient = template.layoutMode === 'minimalist' ? 120 : PAGE_WIDTH / 2 + 10;
@@ -316,7 +317,16 @@ export const generateInvoicePDF = (
             doc.setFontSize(8);
             doc.setTextColor(150, 150, 150);
 
-            const legalLine = `${societe.nom} - ${societe.adresse?.replace(/\n/g, ', ')} - SIRET: ${societe.siret}`;
+            const parts = [
+                `${societe.nom.toUpperCase()} ${societe.formeJuridique || ""}`,
+                societe.capitalSocial ? `Capital: ${societe.capitalSocial}` : "",
+                societe.adresse ? societe.adresse.replace(/\n/g, ', ') : "",
+                societe.siret ? `SIRET: ${societe.siret}` : "",
+                societe.rcs ? `RCS: ${societe.rcs}` : "",
+                societe.tvaIntra ? `TVA: ${societe.tvaIntra}` : ""
+            ].filter(Boolean);
+
+            const legalLine = parts.join(' - ');
             doc.text(legalLine, PAGE_WIDTH / 2, yFooter, { align: "center" });
         }
 
@@ -326,11 +336,19 @@ export const generateInvoicePDF = (
         if (options?.returnBlob) {
             return doc.output('bloburl');
         }
+        if (options?.returnBase64) {
+            // Return base64 string without data prefix if needed, or with it.
+            // Nodemailer often likes buffer or base64 string.
+            // doc.output('datauristring') returns "data:application/pdf;filename=generated.pdf;base64,....."
+            // We can strip the prefix later or here.
+            const dataUri = doc.output('datauristring');
+            return dataUri.split(',')[1]; // Just the base64 part
+        }
 
         doc.save(`${documentTitle}_${documentNumber}.pdf`);
 
     } catch (error) {
         console.error("PDF generation error", error);
-        alert("Erreur lors de la génération du PDF");
+        // Alert removed to avoid intrusive notifications
     }
 };

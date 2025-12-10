@@ -1,0 +1,39 @@
+/* -----------------------------------------
+   [SECTION] LIGHT THEME
+   ----------------------------------------- */
+:root {
+    /* -- Colors -- */
+    --background: #FCFAF9;
+    /* Warm Off-White */
+    --foreground: #4A4541;
+    /* Dark Warm Grey (Espresso) */
+    --muted-foreground: #8D8580;
+    /* Warm Grey */
+    --primary: #A0816C;
+    /* Elegant Taupe/Nude */
+    --primary-foreground: #FFFFFF;
+    --border: #EBE5E1;
+    /* Warm Beige Border */
+
+    /* -- Semantics: Icons -- */
+    --icon-nav: #A0816C;
+    /* Taupe */
+    --icon-invoice: #10B981;
+    --icon-quote: #6366F1;
+    --icon-client: #F59E0B;
+
+    /* -- Semantics: Glass -- */
+    --glass-bg: rgba(255, 255, 255, 0.9);
+    --glass-dropdown-bg: #FFFFFF;
+    --glass-border: #EBE5E1;
+    --glass-shadow: 0 4px 6px -1px rgba(160, 129, 108, 0.08), 0 2px 4px -1px rgba(160, 129, 108, 0.04);
+
+    /* -- Semantics: Inputs -- */
+    --input-bg: #FFFFFF;
+    --input-border: #EBE5E1;
+    --input-text: #4A4541;
+
+    /* -- Visualization -- */
+    --bg-gradient: linear-gradient(135deg, #E7E5E4 0%, #F5F5F4 100%);
+    /* Warm Stone Gradient */
+}

@@ -1,43 +1,82 @@
 "use client";
 
-import { Search, Bell, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { Bell, Search, History, ChevronDown, User, Settings, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { dataService } from "@/lib/data-service";
+import { useData } from "@/components/data-provider";
 import { ModeToggle } from "@/components/mode-toggle";
+import { HistoryDropdown } from "@/components/features/HistoryDropdown";
 
 export function Header() {
+    const router = useRouter();
+    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const { user } = useData();
+
+    const handleLogout = () => {
+        dataService.logout();
+    };
+
     return (
         <header className="flex h-16 items-center justify-between border-b border-white/10 px-6 glass sticky top-0 z-10 w-full">
             <div className="flex w-full max-w-md items-center gap-4">
-                <div className="relative w-full">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Rechercher..."
-                        className="h-9 w-full rounded-full glass-input pl-9 pr-4 text-sm transition-all focus:w-[105%]"
-                    />
-                </div>
+                {/* Glassy Manage removed as requested */}
             </div>
 
             <div className="flex items-center gap-4">
+                <HistoryDropdown />
                 <ModeToggle />
-                <button className="relative rounded-full p-2 text-gray-400 hover:bg-white/10 hover:text-white transition-colors">
-                    <Bell className="h-5 w-5" />
-                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#0f172a]" />
-                </button>
 
                 <div className="h-8 w-[1px] bg-white/10 mx-2" />
 
-                <button className="flex items-center gap-3 rounded-full py-1 pl-1 pr-3 hover:bg-white/5 transition-colors">
-                    <img
-                        src="https://placehold.co/100x100"
-                        alt="User"
-                        className="h-8 w-8 rounded-full border border-white/20"
-                    />
-                    <div className="hidden text-left md:block">
-                        <p className="text-sm font-medium text-white">Admin User</p>
-                        <p className="text-xs text-gray-400">admin@company.com</p>
-                    </div>
-                    <ChevronDown className="h-4 w-4 text-gray-400" />
-                </button>
+                <div className="relative">
+                    <button
+                        onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                        className="flex items-center gap-3 rounded-full py-1 pl-1 pr-3 hover:bg-white/5 transition-colors cursor-pointer"
+                    >
+                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-500/20">
+                            {user?.fullName?.charAt(0) || "U"}
+                        </div>
+                        <div className="hidden text-left md:block">
+                            <p className="text-sm font-medium text-foreground">{user?.fullName || "Utilisateur"}</p>
+                            <p className="text-xs text-muted-foreground">{user?.email}</p>
+                        </div>
+                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isUserMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)} />
+                            <div className="absolute right-0 top-12 z-50 w-56 rounded-xl glass-dropdown p-1 overflow-hidden animate-in fade-in zoom-in-95 duration-200 shadow-2xl border border-white/10">
+                                <div className="px-2 py-1.5 text-sm font-semibold text-foreground border-b border-white/5 mb-1">
+                                    Mon Compte
+                                </div>
+                                <button
+                                    onClick={() => { setIsUserMenuOpen(false); router.push("/settings?view=PROFILE"); }}
+                                    className="flex w-full items-center px-2 py-1.5 text-sm text-foreground hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <User className="mr-2 h-4 w-4" />
+                                    Mon Profil
+                                </button>
+                                <button
+                                    onClick={() => { setIsUserMenuOpen(false); router.push("/settings"); }}
+                                    className="flex w-full items-center px-2 py-1.5 text-sm text-foreground hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <Settings className="mr-2 h-4 w-4" />
+                                    Paramètres
+                                </button>
+                                <div className="h-[1px] bg-white/5 my-1" />
+                                <button
+                                    onClick={handleLogout}
+                                    className="flex w-full items-center px-2 py-1.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                                >
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    Se déconnecter
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </header>
     );

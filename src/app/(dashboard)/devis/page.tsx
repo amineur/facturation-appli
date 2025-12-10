@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { Plus, Search, FileText, Calendar, ArrowRight, CheckCircle, Trash2, Upload, Filter, Eye, Pencil, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,20 +11,30 @@ import { useRouter } from "next/navigation";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { format } from "date-fns";
+import { deleteRecord, updateQuoteStatus, convertQuoteToInvoice } from "@/app/actions";
+import { toast } from "sonner";
 
 const getStatusColor = (status: StatusDevis) => {
     switch (status) {
-        case "Accepté": return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/20";
-        case "Envoyé": return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/20";
-        case "Facturé": return "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/20";
-        case "Refusé": return "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/20";
-        case "Brouillon": return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/20";
-        default: return "bg-gray-100 text-gray-500 dark:bg-gray-500/20 dark:text-gray-300";
+        case "Accepté":
+        case "Facturé": return "bg-[#F0FDF4] text-[#15803D] border-[#DCFCE7] dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/20";
+        case "Envoyé": return "bg-[#EFF6FF] text-[#1D4ED8] border-[#DBEAFE] dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/20";
+        case "Refusé": return "bg-[#FEF2F2] text-[#B91C1C] border-[#FEE2E2] dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/20";
+        case "Brouillon": return "bg-[#F9FAFB] text-[#6B7280] border-[#E5E7EB] dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/20";
+        default: return "bg-[#F9FAFB] text-[#6B7280] border-[#E5E7EB] dark:bg-gray-500/20 dark:text-gray-300";
     }
 };
 
-export default function DevisPage() {
-    const { quotes, clients, refreshData, societe } = useData();
+export default function DevisPageWrapper() {
+    return (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center">Chargement...</div>}>
+            <DevisPage />
+        </Suspense>
+    );
+}
+
+function DevisPage() {
+    const { quotes, clients, refreshData, societe, confirm, logAction } = useData();
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState<StatusDevis | "ALL">("ALL");
     const router = useRouter();
@@ -48,13 +58,18 @@ export default function DevisPage() {
     };
 
     const handleDownload = (devis: Devis) => {
-        const client = clients.find(c => c.id === devis.clientId);
-        if (client && societe) {
-            generateInvoicePDF(devis, societe, client);
-        } else {
-            alert("Impossible de générer le PDF : Client ou Société manquant.");
+        if (!societe) {
+            toast.error("Informations de la société manquantes");
+            return;
         }
-    }
+        const client = clients.find(c => c.id === devis.clientId);
+        if (client) {
+            generateInvoicePDF(devis, societe, client, {});
+            logAction('read', 'devis', `Devis ${devis.numero} téléchargé pour ${client.nom}`, devis.id);
+        } else {
+            toast.error("Client introuvable");
+        }
+    };
 
     const filteredDevis = quotes.filter(devis => {
         const client = clients.find(c => c.id === devis.clientId);
@@ -68,25 +83,46 @@ export default function DevisPage() {
 
         const matchesStatus = statusFilter === "ALL" || devis.statut === statusFilter;
         return matchesSearch && matchesStatus;
-    }).sort((a, b) => new Date(b.dateEmission).getTime() - new Date(a.dateEmission).getTime());
+    }).sort((a, b) => {
+        const dateDiff = new Date(b.dateEmission).getTime() - new Date(a.dateEmission).getTime();
+        if (dateDiff !== 0) return dateDiff;
+        // Secondary sort by number descending (higher number = newer)
+        return b.numero.localeCompare(a.numero, undefined, { numeric: true });
+    });
 
-    const handleConvert = (id: string) => {
-        if (confirm("Voulez-vous convertir ce devis en facture ?")) {
-            const newInvoice = dataService.convertQuoteToInvoice(id);
+    const handleMarkAsBilled = async (devis: Devis) => {
+        // Automatically convert to Invoice (Create Invoice + Set Status Facturé)
+        const res = await convertQuoteToInvoice(devis.id);
+
+        if (res.success && res.newInvoiceId) {
+            const client = clients.find(c => c.id === devis.clientId);
+            const clientName = client ? client.nom : "Client inconnu";
+            const invoiceRef = res.newInvoiceNumber || "???";
+            logAction('create', 'facture', `Devis ${devis.numero} converti en facture ${invoiceRef} pour ${clientName}`, res.newInvoiceId);
             refreshData();
-            if (newInvoice) {
-                alert("Devis converti avec succès en facture : " + newInvoice.numero);
-                router.push("/factures");
-            }
+            toast.success("Devis validé et Facture créée avec succès !");
+        } else {
+            toast.error("Erreur lors de la création de la facture : " + (res.error || "Inconnue"));
         }
     };
 
     const handleDelete = (id: string) => {
-        if (confirm("Mettre ce devis à la corbeille ?")) {
-            dataService.deleteQuote(id);
-            refreshData();
-        }
-    }
+        confirm({
+            title: "Supprimer le devis",
+            message: "Êtes-vous sûr de vouloir supprimer ce devis ?",
+            onConfirm: async () => {
+                const devisToDelete = quotes.find(q => q.id === id);
+                await deleteRecord('Devis', id);
+                dataService.deleteQuote(id);
+                if (devisToDelete) {
+                    const clientName = clients.find(c => c.id === devisToDelete.clientId)?.nom || "Client inconnu";
+                    logAction('delete', 'devis', `Devis ${devisToDelete.numero} supprimé pour ${clientName}`, id);
+                }
+                refreshData();
+                toast.success("Devis supprimé");
+            }
+        });
+    };
 
 
 
@@ -208,9 +244,9 @@ export default function DevisPage() {
 
         if (importCount > 0) {
             refreshData();
-            alert(`${importCount} devis importés avec succès !`);
+            toast.success(`${importCount} devis importés avec succès !`);
         } else {
-            alert("Aucun devis importé. Vérifiez le format.");
+            toast.info("Aucun devis importé. Vérifiez le format.");
         }
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
@@ -235,7 +271,7 @@ export default function DevisPage() {
         if (b === "Dates Invalides") return -1;
         const dateA = new Date(quotesByMonth[a][0].dateEmission);
         const dateB = new Date(quotesByMonth[b][0].dateEmission);
-        return dateB.getTime() - dateA.getTime();
+        return dateB.getTime() - dateA.getTime(); // Reverted to Descending (Newest First)
     });
 
     const totalFilteredTTC = filteredDevis.reduce((sum, item) => sum + item.totalTTC, 0);
@@ -282,12 +318,12 @@ export default function DevisPage() {
                             onChange={(e) => setStatusFilter(e.target.value as StatusDevis | "ALL")}
                             className="h-10 w-full rounded-lg px-4 pl-10 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-white/20 hover:border-white/30 focus:border-white/40 focus:ring-0 transition-colors"
                         >
-                            <option value="ALL" className="bg-[#1a1a1a] text-foreground">Tous les statuts</option>
-                            <option value="Brouillon" className="bg-[#1a1a1a] text-foreground">Brouillon</option>
-                            <option value="Envoyé" className="bg-[#1a1a1a] text-foreground">Envoyé</option>
-                            <option value="Accepté" className="bg-[#1a1a1a] text-foreground">Accepté</option>
-                            <option value="Refusé" className="bg-[#1a1a1a] text-foreground">Refusé</option>
-                            <option value="Facturé" className="bg-[#1a1a1a] text-foreground">Facturé</option>
+                            <option value="ALL" className="text-foreground bg-background">Tous les statuts</option>
+                            <option value="Brouillon" className="text-foreground bg-background">Brouillon</option>
+                            <option value="Envoyé" className="text-foreground bg-background">Envoyé</option>
+                            <option value="Accepté" className="text-foreground bg-background">Accepté</option>
+                            <option value="Refusé" className="text-foreground bg-background">Refusé</option>
+                            <option value="Facturé" className="text-foreground bg-background">Facturé</option>
                         </select>
                     </div>
                 </div>
@@ -307,7 +343,7 @@ export default function DevisPage() {
                         {/* Desktop Table */}
                         <div className="hidden md:block glass-card rounded-xl overflow-hidden">
                             <table className="w-full text-left text-sm text-muted-foreground">
-                                <thead className="bg-white/5 text-xs uppercase text-muted-foreground">
+                                <thead className="bg-primary/10 text-xs uppercase text-muted-foreground">
                                     <tr>
                                         <th className="px-6 py-4 font-medium">Numéro</th>
                                         <th className="px-6 py-4 font-medium">Client</th>
@@ -345,14 +381,14 @@ export default function DevisPage() {
                                                         {devis.statut}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <div className="flex justify-end gap-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); router.push(`/devis/${devis.id}`); }} className="p-1.5 text-muted-foreground hover:text-orange-500 hover:bg-orange-500/10 rounded-md transition-colors" title="Modifier"><Pencil className="h-4 w-4" /></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDownload(devis); }} className="p-1.5 text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 rounded-md transition-colors" title="Télécharger PDF"><Download className="h-4 w-4" /></button>
+                                                <td className="px-6 py-4 text-right relative z-10">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button onClick={(e) => { e.stopPropagation(); router.push(`/devis/${devis.id}`); }} className="p-2 text-muted-foreground hover:text-orange-500 hover:bg-orange-500/10 rounded-md transition-colors" title="Modifier"><Pencil className="h-4 w-4" /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDownload(devis); }} className="p-2 text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 rounded-md transition-colors" title="Télécharger PDF"><Download className="h-4 w-4" /></button>
                                                         {devis.statut !== "Facturé" && (
-                                                            <button onClick={(e) => { e.stopPropagation(); handleConvert(devis.id); }} className="p-1.5 text-muted-foreground hover:text-purple-500 hover:bg-purple-500/10 rounded-md transition-colors" title="Convertir en Facture"><CheckCircle className="h-4 w-4" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleMarkAsBilled(devis); }} className="p-2 text-muted-foreground hover:text-purple-500 hover:bg-purple-500/10 rounded-md transition-colors" title="Marquer comme Facturé"><CheckCircle className="h-4 w-4" /></button>
                                                         )}
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(devis.id); }} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Mettre à la corbeille"><Trash2 className="h-4 w-4" /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(devis.id); }} className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Mettre à la corbeille"><Trash2 className="h-4 w-4" /></button>
                                                     </div>
                                                 </td>
                                             </tr>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
     LayoutDashboard,
     Users,
@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useData } from "@/components/data-provider";
 import { ChevronDown, Building2 } from "lucide-react"; // Removed UserCircle, unused
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const navigation = [
     { name: "Tableau de bord", href: "/", icon: LayoutDashboard },
@@ -30,13 +30,50 @@ const navigation = [
 
 export function Sidebar() {
     const pathname = usePathname();
-    const { societe, societes, switchSociete, user } = useData();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const { societe, societes, switchSociete, user, isDirty, confirm } = useData();
     const [isSocieteMenuOpen, setIsSocieteMenuOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    // ... (useEffect remains the same)
+
+    const handleNavigation = (href: string) => {
+        // Allow navigation if we have search params (sub-views) to reset to main view
+        const hasParams = searchParams?.toString().length > 0;
+        if (pathname === href && !hasParams) return;
+
+        if (isDirty) {
+            confirm({
+                title: "Modifications non enregistrées",
+                message: "Vous avez des modifications non enregistrées. Voulez-vous vraiment quitter cette page ?",
+                onConfirm: () => {
+                    // Force navigation (dirty state will be cleared by unmount or next page init)
+                    router.push(href);
+                }
+            });
+        } else {
+            router.push(href);
+        }
+    };
+
+    const getActiveColor = (href: string) => {
+        if (href.startsWith("/factures")) return "text-[var(--icon-invoice)]";
+        if (href.startsWith("/devis")) return "text-[var(--icon-quote)]";
+        if (href.startsWith("/clients")) return "text-[var(--icon-client)]";
+        return "text-[var(--icon-nav)]";
+    };
+
+    const getActiveBg = (href: string) => {
+        // Using primary with low opacity or specific token if needed
+        return "bg-primary/10 text-primary shadow-lg shadow-black/5 border border-white/20";
+    };
 
     return (
         <div className="flex h-full w-64 flex-col glass border-r border-white/20 dark:border-white/10 text-foreground">
+            {/* Header section remains same */}
             <div className="p-4 border-b border-white/20 dark:border-white/10">
-                <div className="relative">
+                <div className="relative" ref={menuRef}>
                     <button
                         onClick={() => setIsSocieteMenuOpen(!isSocieteMenuOpen)}
                         className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors group"
@@ -47,7 +84,7 @@ export function Sidebar() {
                                     /* eslint-disable-next-line @next/next/no-img-element */
                                     <img src={societe.logoUrl} alt={societe.nom} className="w-full h-full object-contain" />
                                 ) : (
-                                    <Building2 className="h-5 w-5 text-purple-400" />
+                                    <Building2 className="h-5 w-5 text-[var(--icon-nav)]" />
                                 )}
                             </div>
                             <div className="text-left overflow-hidden">
@@ -59,7 +96,7 @@ export function Sidebar() {
                     </button>
 
                     {isSocieteMenuOpen && (
-                        <div className="absolute top-full left-0 w-full mt-2 p-1 glass border border-white/10 rounded-xl shadow-2xl z-50 backdrop-blur-xl bg-[#0a0a0a]/90">
+                        <div className="absolute top-full left-0 w-full mt-2 p-1 border border-border rounded-xl shadow-2xl z-50 bg-background animate-in fade-in zoom-in-95 duration-200">
                             <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Changer de société</div>
                             {societes.map(s => (
                                 <button
@@ -70,12 +107,12 @@ export function Sidebar() {
                                     }}
                                     className={cn(
                                         "w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors",
-                                        s.id === societe.id
-                                            ? "bg-purple-500/20 text-purple-400"
-                                            : "hover:bg-white/10 text-foreground"
+                                        s.id === societe?.id
+                                            ? "bg-primary/10 text-primary font-medium"
+                                            : "hover:bg-foreground/5 text-foreground"
                                     )}
                                 >
-                                    <div className="h-2 w-2 rounded-full bg-current" style={{ opacity: s.id === societe.id ? 1 : 0.3 }} />
+                                    <div className="h-2 w-2 rounded-full bg-current" style={{ opacity: s.id === societe?.id ? 1 : 0.3 }} />
                                     {s.nom}
                                 </button>
                             ))}
@@ -89,19 +126,19 @@ export function Sidebar() {
                     {navigation.map((item) => {
                         const isActive = pathname === item.href;
                         return (
-                            <Link
+                            <button
                                 key={item.name}
-                                href={item.href}
+                                onClick={() => handleNavigation(item.href)}
                                 className={cn(
-                                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                                    "w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                                     isActive
-                                        ? "bg-primary/10 text-primary shadow-lg shadow-purple-500/10 border border-white/20"
+                                        ? getActiveBg(item.href)
                                         : "text-muted-foreground hover:bg-white/10 hover:text-foreground"
                                 )}
                             >
-                                <item.icon className={cn("h-5 w-5", isActive ? "text-purple-600 dark:text-purple-400" : "text-muted-foreground group-hover:text-foreground")} />
+                                <item.icon className={cn("h-5 w-5", isActive ? getActiveColor(item.href) : "text-muted-foreground group-hover:text-foreground")} />
                                 {item.name}
-                            </Link>
+                            </button>
                         );
                     })}
                 </nav>
@@ -109,26 +146,16 @@ export function Sidebar() {
 
             <div className="p-4 border-t border-white/20 dark:border-white/10">
 
-                <div className="mt-2 pt-2 border-t border-white/10">
-                    <div className="flex items-center gap-3 px-3 py-2">
-                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-lg">
-                            {user?.fullName?.charAt(0) || "U"}
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                            <p className="text-sm font-medium text-foreground truncate">{user?.fullName || "Utilisateur"}</p>
-                            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-                        </div>
-                    </div>
-                </div>
+
 
                 <div className="mt-2 space-y-1">
-                    <Link
-                        href="/settings"
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-white/10 hover:text-purple-500 transition-colors"
+                    <button
+                        onClick={() => handleNavigation("/settings")}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-white/10 hover:text-[var(--icon-nav)] transition-colors"
                     >
                         <Settings className="h-5 w-5" />
                         Paramètres & Admin
-                    </Link>
+                    </button>
                     <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-white/10 hover:text-red-500 transition-colors">
                         <LogOut className="h-5 w-5" />
                         Déconnexion
