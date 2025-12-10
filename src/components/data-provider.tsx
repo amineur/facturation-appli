@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { dataService } from "@/lib/data-service";
-import { fetchClients, fetchProducts, fetchInvoices, fetchQuotes, fetchSocietes, createSociete as createSocieteAction, updateSociete as updateSocieteAction, getSociete, updateOverdueInvoices } from "@/app/actions";
+import { fetchClients, fetchProducts, fetchInvoices, fetchQuotes, fetchSocietes, createSociete as createSocieteAction, updateSociete as updateSocieteAction, getSociete, updateOverdueInvoices, fetchUserById } from "@/app/actions";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { Societe, Facture, Client, Produit, Devis, User } from "@/types";
 import { usePathname, useRouter } from "next/navigation"; // Added imports
@@ -95,9 +95,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // 0. Update Overdue Invoices
         await updateOverdueInvoices();
 
-        // Load User from LocalStorage (always client-side for now)
-        const currentUser = dataService.getCurrentUser();
-        setUser(currentUser);
+        // Load User: Sync from DB to ensure fresh data
+        const userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
+        if (userId) {
+            const userRes = await fetchUserById(userId);
+            if (userRes.success && userRes.data) {
+                setUser(userRes.data);
+                // Update localStorage cache
+                const users = dataService.getUsers();
+                const index = users.findIndex(u => u.id === userId);
+                if (index >= 0) {
+                    users[index] = userRes.data;
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem("glassy_users", JSON.stringify(users));
+                    }
+                }
+            } else {
+                // Fallback to localStorage if DB fetch fails
+                const currentUser = dataService.getCurrentUser();
+                setUser(currentUser);
+            }
+        } else {
+            const currentUser = dataService.getCurrentUser();
+            setUser(currentUser);
+        }
 
         // 1. Fetch real societes from DB first
         const societesRes = await fetchSocietes();

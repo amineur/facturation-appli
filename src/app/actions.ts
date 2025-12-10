@@ -75,6 +75,19 @@ export async function fetchAllUsers() {
     }
 }
 
+export async function fetchUserById(userId: string) {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: { societes: true }
+        });
+        if (!user) return { success: false, error: "Utilisateur introuvable" };
+        return { success: true, data: mapUser(user) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
 function mapUser(prismaUser: any): User {
     return {
         id: prismaUser.id,

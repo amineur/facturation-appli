@@ -155,9 +155,18 @@ class DataService {
     }
 
     async saveUser(user: User) {
-        if (user.id && !user.id.startsWith("usr_")) {
+        // Check if user exists in DB by attempting to find them
+        // IDs starting with "usr_" are legacy/local IDs (should update via updateUser)
+        // UUIDs are DB-generated IDs (should also update via updateUser if they exist)
+
+        if (user.id && user.id.startsWith("usr_")) {
+            // Legacy user, update in DB
+            await updateUser(user);
+        } else if (user.id) {
+            // UUID user, update
             await updateUser(user);
         } else {
+            // No ID, create new
             await registerUser(user);
         }
 
