@@ -99,8 +99,8 @@ Conformément à l'article 121-II de la loi n°2012-387 du 22 mars 2012 et au d�
 export const MOCK_USERS: User[] = [
     {
         id: "usr_1",
-        email: "admin@glassy.com",
-        fullName: "Admin Glassy",
+        email: "amine@euromedmultimedia.com",
+        fullName: "Amine Ben Abla",
         password: "admin",
         role: "admin",
         permissions: ["*"],

@@ -64,6 +64,22 @@ class DataService {
         }
         if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
             this.setItem(STORAGE_KEYS.USERS, MOCK_USERS);
+        } else {
+            // Migration: Update old "Admin Glassy" to "Amine Ben Abla"
+            const users = this.getItem<User>(STORAGE_KEYS.USERS);
+            let needsUpdate = false;
+
+            users.forEach(user => {
+                if (user.id === "usr_1" && (user.fullName === "Admin Glassy" || user.fullName === "Demo User" || user.email === "admin@glassy.com" || user.email === "demo@glassy.com")) {
+                    user.fullName = "Amine Ben Abla";
+                    user.email = "amine@euromedmultimedia.com";
+                    needsUpdate = true;
+                }
+            });
+
+            if (needsUpdate) {
+                this.setItem(STORAGE_KEYS.USERS, users);
+            }
         }
 
         // Set Default Active Societe if not set
