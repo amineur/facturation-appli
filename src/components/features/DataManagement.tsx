@@ -417,13 +417,13 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
             <div className="w-full">
                 <div className="flex items-center gap-2 mb-4">
                     <Database className="h-5 w-5 text-purple-400" />
-                    <h3 className="text-lg font-semibold text-white">Base de données</h3>
+                    <h3 className="text-lg font-semibold text-foreground">Base de données</h3>
                 </div>
 
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-4">
+                <div className="bg-muted/50 rounded-xl p-4 border border-border space-y-4 dark:bg-white/5 dark:border-white/10">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-white mb-1">Connexion Serveur</p>
+                            <p className="text-sm font-medium text-foreground mb-1">Connexion Serveur</p>
                             <div className="flex items-center gap-2">
                                 <div className="h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
                                 <span className="text-xs text-green-400">Connecté (SQLite)</span>
@@ -431,13 +431,13 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                         </div>
                         <button
                             onClick={checkConnection}
-                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-medium transition-colors border border-white/10"
+                            className="px-3 py-1.5 bg-background hover:bg-muted text-foreground rounded-lg text-xs font-medium transition-colors border border-border dark:bg-white/5 dark:hover:bg-white/10 dark:text-white dark:border-white/10"
                         >
                             Test Connexion
                         </button>
                     </div>
 
-                    <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                    <div className="flex items-center justify-between pt-4 border-t border-border dark:border-white/10">
                         <div>
                             <p className="text-sm font-medium text-red-400">Zone de danger</p>
                             <p className="text-xs text-muted-foreground">Supprimer toutes les données de cette société</p>
@@ -455,13 +455,13 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
 
             <div className="grid md:grid-cols-2 gap-6">
                 {/* DEVIS SECTION */}
-                <div className="glass-card p-6 rounded-2xl space-y-6 border border-white/10">
-                    <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+                <div className="glass-card p-6 rounded-2xl space-y-6 border border-border dark:border-white/10">
+                    <div className="flex items-center gap-3 border-b border-border dark:border-white/10 pb-4">
                         <div className="p-2 rounded-lg bg-orange-500/10">
                             <FileText className="h-5 w-5 text-orange-400" />
                         </div>
                         <div>
-                            <h3 className="text-lg font-semibold text-white">Devis</h3>
+                            <h3 className="text-lg font-semibold text-foreground">Devis</h3>
                             <p className="text-xs text-muted-foreground">{quotes.length} devis enregistrés</p>
                         </div>
                     </div>
@@ -477,7 +477,7 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                             />
                             <button
                                 onClick={() => fileInputRefDevis.current?.click()}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-muted/50 border border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10"
                             >
                                 <Upload className="h-4 w-4" />
                                 Importer CSV Devis
@@ -502,13 +502,13 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                 </div>
 
                 {/* FACTURES SECTION */}
-                <div className="glass-card p-6 rounded-2xl space-y-6 border border-white/10">
-                    <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+                <div className="glass-card p-6 rounded-2xl space-y-6 border border-border dark:border-white/10">
+                    <div className="flex items-center gap-3 border-b border-border dark:border-white/10 pb-4">
                         <div className="p-2 rounded-lg bg-emerald-500/10">
                             <Receipt className="h-5 w-5 text-emerald-400" />
                         </div>
                         <div>
-                            <h3 className="text-lg font-semibold text-white">Factures</h3>
+                            <h3 className="text-lg font-semibold text-foreground">Factures</h3>
                             <p className="text-xs text-muted-foreground">{invoices.length} factures enregistrées</p>
                         </div>
                     </div>
@@ -524,7 +524,7 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                             />
                             <button
                                 onClick={() => fileInputRefFactures.current?.click()}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-muted/50 border border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10"
                             >
                                 <Upload className="h-4 w-4" />
                                 Importer CSV Factures
@@ -549,13 +549,13 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                 </div>
 
                 {/* CLIENTS SECTION */}
-                <div className="glass-card p-6 rounded-2xl space-y-6 border border-white/10">
-                    <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+                <div className="glass-card p-6 rounded-2xl space-y-6 border border-border dark:border-white/10">
+                    <div className="flex items-center gap-3 border-b border-border dark:border-white/10 pb-4">
                         <div className="p-2 rounded-lg bg-blue-500/10">
                             <Users className="h-5 w-5 text-blue-400" />
                         </div>
                         <div>
-                            <h3 className="text-lg font-semibold text-white">Clients</h3>
+                            <h3 className="text-lg font-semibold text-foreground">Clients</h3>
                             <p className="text-xs text-muted-foreground">{clients.length} clients enregistrés</p>
                         </div>
                     </div>
@@ -571,7 +571,7 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                             />
                             <button
                                 onClick={() => fileInputRefClients.current?.click()}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-muted/50 border border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10"
                             >
                                 <Upload className="h-4 w-4" />
                                 Importer CSV Clients
@@ -597,13 +597,13 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                 </div>
 
                 {/* PRODUITS SECTION */}
-                <div className="glass-card p-6 rounded-2xl space-y-6 border border-white/10">
-                    <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+                <div className="glass-card p-6 rounded-2xl space-y-6 border border-border dark:border-white/10">
+                    <div className="flex items-center gap-3 border-b border-border dark:border-white/10 pb-4">
                         <div className="p-2 rounded-lg bg-pink-500/10">
                             <Package className="h-5 w-5 text-pink-400" />
                         </div>
                         <div>
-                            <h3 className="text-lg font-semibold text-white">Produits</h3>
+                            <h3 className="text-lg font-semibold text-foreground">Produits</h3>
                             <p className="text-xs text-muted-foreground">{products.length} produits enregistrés</p>
                         </div>
                     </div>
@@ -619,7 +619,7 @@ export function DataManagement({ onBack }: { onBack?: () => void }) {
                             />
                             <button
                                 onClick={() => fileInputRefProduits.current?.click()}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-muted/50 border border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10"
                             >
                                 <Upload className="h-4 w-4" />
                                 Importer CSV Produits

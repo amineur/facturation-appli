@@ -66,6 +66,41 @@ export async function updateUser(userData: any) {
     }
 }
 
+export async function upsertUser(userData: any) {
+    try {
+        // Enforce DB constraints via Prisma Upsert
+        // If id matches, Update. If not, Create.
+        // We match on ID primarily. 
+
+        const user = await prisma.user.upsert({
+            where: { id: userData.id || "new_user" }, // Fallback to avoid error, but usage should provide ID
+            update: {
+                email: userData.email,
+                fullName: userData.fullName,
+                password: userData.password,
+                role: userData.role
+            },
+            create: {
+                id: userData.id, // Explicit ID allowed (e.g. usr_1)
+                email: userData.email,
+                fullName: userData.fullName,
+                password: userData.password,
+                role: userData.role || "user",
+                societes: {
+                    connect: userData.societes?.map((id: string) => ({ id })) || []
+                }
+            },
+            include: { societes: true }
+        });
+
+        // Ensure we always return the fresh DB state
+        return { success: true, user: mapUser(user) };
+    } catch (error: any) {
+        console.error("Upsert User Failed:", error);
+        return { success: false, error: error.message };
+    }
+}
+
 export async function fetchAllUsers() {
     try {
         const users = await prisma.user.findMany({ include: { societes: true } });
@@ -97,8 +132,21 @@ function mapUser(prismaUser: any): User {
         permissions: [], // Default or stored in DB
         societes: prismaUser.societes.map((s: any) => s.id),
         currentSocieteId: prismaUser.currentSocieteId || prismaUser.societes[0]?.id,
+        lastReadHistory: prismaUser.lastReadHistory ? prismaUser.lastReadHistory.toISOString() : undefined,
         password: prismaUser.password // Returning password to client is BAD practice in real app, but needed for current Local Logic to pre-fill
     };
+}
+
+export async function markHistoryAsRead(userId: string) {
+    try {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { lastReadHistory: new Date() }
+        });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
 }
 
 // --- Connection Check ---
@@ -192,6 +240,33 @@ async function ensureProductsExist(items: any[], societeId: string) {
 }
 
 // --- Fetch Actions ---
+
+export interface ActionState<T = any> {
+    success: boolean;
+    data?: T;
+    error?: string;
+    fieldErrors?: Record<string, string>;
+    id?: string; // For create actions
+}
+
+function handleActionError(error: any): ActionState {
+    console.error("Server Action Error:", error);
+
+    // Prisma Unique Constraint Error
+    if (error.code === 'P2002') {
+        const field = error.meta?.target?.[0] || 'Unknown';
+        return {
+            success: false,
+            error: `La valeur pour ${field} existe déjà.`
+        };
+    }
+
+    // Generic fallback
+    return {
+        success: false,
+        error: "Une erreur technique est survenue. Veuillez réessayer."
+    };
+}
 
 export async function fetchSocietes(): Promise<{ success: boolean, data?: any[], error?: string }> {
     try {
@@ -447,7 +522,16 @@ export async function fetchHistory(limit: number = 50, societeId?: string) {
             where: whereClause,
             take: limit,
             orderBy: { timestamp: 'desc' },
-            include: { user: { select: { fullName: true } } } // Fetch user name
+            select: {
+                id: true,
+                userId: true,
+                action: true,
+                entityType: true,
+                entityId: true,
+                description: true,
+                timestamp: true,
+                user: { select: { fullName: true } }
+            }
         });
 
         const mapped = history.map((h: any) => ({
@@ -623,7 +707,7 @@ export async function createInvoice(invoice: Facture) {
         revalidatePath("/", "layout");
         return { success: true, id: res.id };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return handleActionError(error);
     }
 }
 
@@ -662,7 +746,7 @@ export async function updateInvoice(invoice: Facture) {
         revalidatePath("/", "layout");
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return handleActionError(error);
     }
 }
 
@@ -690,7 +774,7 @@ export async function createQuote(quote: Devis) {
         revalidatePath("/", "layout");
         return { success: true, id: res.id };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return handleActionError(error);
     }
 }
 
@@ -724,7 +808,7 @@ export async function updateQuote(quote: Devis) {
         revalidatePath("/", "layout");
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return handleActionError(error);
     }
 }
 

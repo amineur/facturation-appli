@@ -44,7 +44,7 @@ export function SidePanel({ isOpen, onClose, title, children, className }: SideP
             <div
                 ref={panelRef}
                 className={cn(
-                    "relative w-full max-w-2xl h-full bg-[#1e1e1e] border-l border-white/10 shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col",
+                    "relative w-full max-w-2xl h-full bg-background dark:bg-[#1e1e1e] border-l border-border dark:border-white/10 shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col",
                     className
                 )}
             >

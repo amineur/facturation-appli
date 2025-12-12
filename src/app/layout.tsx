@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DataProvider } from "@/components/data-provider";
 import { Toaster } from "sonner";
+import { FaviconUpdater } from "@/components/features/FaviconUpdater";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,13 +16,49 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: {
-    template: "%s | Gestion Facturation",
-    default: "Gestion Facturation",
-  },
-  description: "Application de gestion de facturation simple et efficace",
-};
+import { fetchSocietes } from "@/app/actions";
+
+export async function generateMetadata(): Promise<Metadata> {
+  let icons: any = {
+    icon: '/favicon.ico', // Default fallback
+    apple: '/favicon.ico',
+  };
+
+  try {
+    const result = await fetchSocietes();
+    if (result.success && result.data && result.data.length > 0) {
+      const societe = result.data[0];
+      if (societe.logoUrl) {
+        // Use the logo directly. 
+        // Note: For Data URIs, this works fine in metadata.
+        // For server-side rendering, we can't easily "cache bust" with a timestamp 
+        // unless we want to invalidate caching frequently, but for initial load it's fine.
+        icons = {
+          icon: societe.logoUrl,
+          apple: societe.logoUrl,
+          shortcut: societe.logoUrl,
+        };
+
+        // Add specific support for SVG if detected
+        if (societe.logoUrl.endsWith('.svg') || societe.logoUrl.startsWith('data:image/svg')) {
+          // Metadata types for specific icons are a bit complex, strictly typing 'any' above helps
+          // but ideally we'd construct the object carefully.
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Failed to fetch metadata icons", error);
+  }
+
+  return {
+    title: {
+      template: "%s | Gestion Facturation",
+      default: "Gestion Facturation",
+    },
+    description: "Application de gestion de facturation simple et efficace",
+    icons: icons,
+  };
+}
 
 export default function RootLayout({
   children,
@@ -40,6 +77,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <DataProvider>
+            <FaviconUpdater />
             {children}
             <Toaster position="top-right" richColors theme="system" />
           </DataProvider>

@@ -46,16 +46,16 @@ export function EmailSenderModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-background glass-card w-full max-w-lg rounded-xl shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-200">
+            <div className="bg-background glass-card w-full max-w-lg rounded-xl shadow-xl dark:shadow-2xl overflow-hidden border border-neutral-200 dark:border-white/10 animate-in fade-in zoom-in duration-200">
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-white/10 bg-primary/5">
+                <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-white/10 bg-muted/20 dark:bg-primary/5">
                     <div className="flex items-center gap-2 text-primary">
                         <Mail className="h-5 w-5" />
                         <h3 className="font-semibold">Envoyer par email</h3>
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-1 hover:bg-white/10 rounded-full transition-colors text-muted-foreground hover:text-foreground"
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-muted-foreground hover:text-foreground"
                     >
                         <X className="h-5 w-5" />
                     </button>
@@ -70,7 +70,7 @@ export function EmailSenderModal({
                             required
                             value={to}
                             onChange={(e) => setTo(e.target.value)}
-                            className="w-full h-10 rounded-lg glass-input px-3 text-sm text-foreground focus:ring-1 focus:ring-primary/50 border-white/10"
+                            className="w-full h-10 rounded-lg glass-input px-3 text-sm text-foreground focus:ring-1 focus:ring-primary/50 border-neutral-200 dark:border-white/10"
                             placeholder="email@client.com"
                         />
                     </div>
@@ -83,7 +83,7 @@ export function EmailSenderModal({
                             required
                             value={subject}
                             onChange={(e) => setSubject(e.target.value)}
-                            className="w-full h-10 rounded-lg glass-input px-3 text-sm text-foreground focus:ring-1 focus:ring-primary/50 border-white/10"
+                            className="w-full h-10 rounded-lg glass-input px-3 text-sm text-foreground focus:ring-1 focus:ring-primary/50 border-neutral-200 dark:border-white/10"
                             placeholder="Sujet de l'email"
                         />
                     </div>
@@ -96,7 +96,7 @@ export function EmailSenderModal({
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
                             rows={6}
-                            className="w-full rounded-lg glass-input p-3 text-sm text-foreground focus:ring-1 focus:ring-primary/50 border-white/10 resize-none"
+                            className="w-full rounded-lg glass-input p-3 text-sm text-foreground focus:ring-1 focus:ring-primary/50 border-neutral-200 dark:border-white/10 resize-none"
                             placeholder="Votre message..."
                         />
                     </div>
@@ -117,7 +117,7 @@ export function EmailSenderModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
+                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"
                         >
                             Annuler
                         </button>

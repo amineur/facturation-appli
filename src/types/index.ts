@@ -109,6 +109,7 @@ export interface User {
     permissions: string[]; // e.g. 'create:invoice', 'delete:client'
     societes: string[]; // IDs of permitted societes
     currentSocieteId?: string; // Last active society
+    lastReadHistory?: string; // ISO Date of last check
 }
 
 export interface HistoryEntry {
@@ -202,6 +203,7 @@ export interface Facture {
 
     createdAt?: string;
     updatedAt?: string;
+
 
     emails?: EmailLog[]; // History of sent emails
 }

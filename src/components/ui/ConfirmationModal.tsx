@@ -33,7 +33,7 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }
             />
 
             {/* Modal Content */}
-            <div className="relative w-full max-w-md glass-card p-6 rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200 border border-white/10 bg-[#0A0A0A]/90">
+            <div className="relative w-full max-w-md glass-card p-6 rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200 border border-border dark:border-white/10 bg-background dark:bg-[#0A0A0A]/90">
                 <div className="flex items-start gap-4">
                     <div className="p-3 rounded-full bg-orange-500/10 text-orange-500">
                         <AlertTriangle className="h-6 w-6" />

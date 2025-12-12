@@ -108,7 +108,7 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                     <span>{user.email}</span>
                                     <span>•</span>
-                                    <span className="capitalize px-2 py-0.5 rounded-full bg-white/5 border border-white/10 flex items-center gap-1">
+                                    <span className="capitalize px-2 py-0.5 rounded-full bg-muted border border-border flex items-center gap-1 dark:bg-white/5 dark:border-white/10">
                                         {user.role === 'admin' && <Shield className="h-3 w-3 text-purple-400" />}
                                         {user.role}
                                     </span>
@@ -279,7 +279,7 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
                                         "flex items-center p-3 rounded-xl border cursor-pointer transition-all duration-200",
                                         selectedSocietes.includes(soc.id)
                                             ? "bg-purple-500/20 border-purple-500/50"
-                                            : "glass-card border-white/5 hover:bg-white/5"
+                                            : "glass-card border-border hover:bg-muted/50 dark:border-white/5 dark:hover:bg-white/5"
                                     )}
                                 >
                                     <div className={cn(

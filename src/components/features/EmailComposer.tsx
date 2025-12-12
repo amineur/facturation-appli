@@ -14,6 +14,7 @@ interface EmailComposerProps {
     defaultSubject: string;
     defaultMessage: string;
     mainAttachmentName: string;
+
     onSend: (data: { to: string; subject: string; message: string; additionalAttachments: File[]; scheduledAt?: string }) => Promise<void>;
 }
 
@@ -22,6 +23,7 @@ export function EmailComposer({
     defaultSubject,
     defaultMessage,
     mainAttachmentName,
+
     onSend
 }: EmailComposerProps) {
     const { clients } = useData();
@@ -163,11 +165,11 @@ export function EmailComposer({
     };
 
     return (
-        <form onSubmit={handleSubmit} className="flex flex-col h-full bg-[#1e1e1e] text-foreground">
+        <form onSubmit={handleSubmit} className="flex flex-col h-full bg-background dark:bg-[#1e1e1e] text-foreground">
             {/* Fields Area */}
             <div className="px-4">
                 {/* Recipients */}
-                <div className="flex items-center gap-2 border-b border-white/10 min-h-[48px] py-1">
+                <div className="flex items-center gap-2 border-b border-border dark:border-white/10 min-h-[48px] py-1">
                     <span className="text-sm text-muted-foreground w-8">À</span>
                     <div className="flex-1 flex flex-wrap gap-2 items-center relative">
                         {recipients.map((email, index) => (
@@ -187,7 +189,7 @@ export function EmailComposer({
                         />
                         {/* Suggestions */}
                         {showSuggestions && suggestions.length > 0 && (
-                            <div className="absolute top-full left-0 z-20 w-64 mt-1 bg-[#2b2b2b] border border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                            <div className="absolute top-full left-0 z-20 w-64 mt-1 bg-background dark:bg-[#2b2b2b] border border-border dark:border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
                                 {suggestions.map((email, index) => {
                                     const client = clients.find(c => c.email === email);
                                     return (
@@ -204,7 +206,7 @@ export function EmailComposer({
                 </div>
 
                 {/* Subject */}
-                <div className="flex items-center border-b border-white/10 h-[48px]">
+                <div className="flex items-center border-b border-border dark:border-white/10 h-[48px]">
                     <input
                         type="text"
                         value={subject}
@@ -245,7 +247,7 @@ export function EmailComposer({
             )}
 
             {/* Footer Toolbar */}
-            <div className="p-3 flex items-center justify-between border-t border-white/10 bg-[#1e1e1e]">
+            <div className="p-3 flex items-center justify-between border-t border-border dark:border-white/10 bg-muted/30 dark:bg-[#1e1e1e]">
                 <div className="flex items-center gap-2">
                     {/* Split Send Button */}
                     <div className="flex items-center relative" ref={menuRef}>
@@ -271,7 +273,7 @@ export function EmailComposer({
 
                         {/* Dropdown Menu */}
                         {showScheduleMenu && (
-                            <div className="absolute left-0 bottom-full mb-2 w-56 bg-[#1e1e1e] border border-white/10 rounded-lg shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-200">
+                            <div className="absolute left-0 bottom-full mb-2 w-56 bg-white dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-lg shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-200">
                                 <button
                                     type="button"
                                     onClick={() => { setShowScheduleMenu(false); setShowScheduleModal(true); setCustomDateMode(false); }}
@@ -306,9 +308,9 @@ export function EmailComposer({
             {/* Scheduling Modal - Portal */}
             {showScheduleModal && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div ref={modalRef} className="w-full max-w-sm bg-[#1e1e1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div ref={modalRef} className="w-full max-w-sm bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         {/* Same Modal Content as before */}
-                        <div className="p-4 border-b border-white/10 flex justify-between items-center">
+                        <div className="p-4 border-b border-border dark:border-white/10 flex justify-between items-center">
                             <h3 className="text-lg font-semibold">Programmer l'envoi</h3>
                             <button onClick={() => setShowScheduleModal(false)}>
                                 <X className="h-5 w-5 text-muted-foreground hover:text-foreground" />

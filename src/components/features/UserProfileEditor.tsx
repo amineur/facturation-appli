@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
 import { User, Shield, Mail, Key, Save, User as UserIcon } from "lucide-react";
@@ -17,12 +16,22 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
     const { user, refreshData } = useData();
     const [isSaving, setIsSaving] = useState(false);
 
-    const { register, handleSubmit, formState: { errors } } = useForm<ProfileFormData>({
+    const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormData>({
         defaultValues: {
             fullName: user?.fullName || "",
             email: user?.email || ""
         }
     });
+
+    useEffect(() => {
+        if (user) {
+            reset({
+                fullName: user.fullName,
+                email: user.email,
+                newPassword: ""
+            });
+        }
+    }, [user, reset]);
 
     const onSubmit = async (data: ProfileFormData) => {
         if (!user) return;

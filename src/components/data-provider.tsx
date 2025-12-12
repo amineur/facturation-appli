@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { dataService } from "@/lib/data-service";
-import { fetchClients, fetchProducts, fetchInvoices, fetchQuotes, fetchSocietes, createSociete as createSocieteAction, updateSociete as updateSocieteAction, getSociete, updateOverdueInvoices, fetchUserById } from "@/app/actions";
+import { fetchClients, fetchProducts, fetchInvoices, fetchQuotes, fetchSocietes, createSociete as createSocieteAction, updateSociete as updateSocieteAction, getSociete, updateOverdueInvoices, fetchUserById, markHistoryAsRead } from "@/app/actions";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { Societe, Facture, Client, Produit, Devis, User } from "@/types";
-import { usePathname, useRouter } from "next/navigation"; // Added imports
+import { usePathname, useRouter } from "next/navigation";
 
 export interface ConfirmOptions {
     title: string;
@@ -24,20 +24,21 @@ interface DataContextType {
     switchSociete: (id: string) => void;
     createSociete: (nom: string) => Promise<any>;
     updateSociete: (societe: Societe) => Promise<any>;
-    refreshData: () => void;
+    refreshData: (silent?: boolean) => Promise<void>;
     isLoading: boolean;
     isDirty: boolean;
     setIsDirty: (dirty: boolean) => void;
-    history: any[]; // Avoid circular dep for now or import HistoryEntry
+    history: any[];
     logAction: (action: 'create' | 'update' | 'delete' | 'read' | 'other', entityType: 'facture' | 'devis' | 'client' | 'produit' | 'societe' | 'settings', description: string, entityId?: string) => void;
     confirm: (options: ConfirmOptions) => void;
+    markHistoryAsRead: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-    const router = useRouter(); // Added router
-    const pathname = usePathname(); // Added pathname
+    const router = useRouter();
+    const pathname = usePathname();
     const [clients, setClients] = useState<Client[]>([]);
     const [products, setProducts] = useState<Produit[]>([]);
     const [invoices, setInvoices] = useState<Facture[]>([]);
@@ -45,103 +46,86 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const [societe, setSociete] = useState<Societe | null>(null);
     const [societes, setSocietes] = useState<Societe[]>([]);
     const [user, setUser] = useState<any>(null);
+    const [history, setHistory] = useState<any[]>([]);
 
     const [isLoading, setIsLoading] = useState(true);
-    const [version, setVersion] = useState(0); // Trigger re-fetches
 
-    useEffect(() => {
-        dataService.initialize();
+    const fetchData = async (silent: boolean = false) => {
+        if (process.env.NODE_ENV !== "production") console.time("TotalLoadTime");
+        if (!silent) setIsLoading(true);
 
-        // Auth Check
-        const currentUser = dataService.getCurrentUser();
-        // If no user found AND we are not arguably on the login page (or public page if any)
-        if (!currentUser && pathname !== "/login") {
-            // Check if we really have no user (DataService might return default mock if not logged out properly, but login() clears it?)
-            // Actually getCurrentUser returns MOCK[0] if not set in some cases? 
-            // In data-service.ts: getCurrentUser() checks localStorage. if undefined returns MOCK_USERS[0]. 
-            // We need to fix getCurrentUser to return NULL if no ID is set.
-            // But let's assume valid ID means valid session for now.
-            // If we want strict auth, we should check logic in DataService.
-
-            // Re-checking DataService logic: 
-            // const userId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-            // return users.find(...) || users[0]; -> It falls back to users[0]!
-            // This defeats the protection. 
-            // I need to fix DataService.getCurrentUser() first or handle it here by checking RAW storage?
-            // BETTER: Use dataService.isLoggedIn() helper if it existed.
-            // I will check Raw Storage here for safety or rely on the fix I will apply to DataService next.
-
-            const userId = localStorage.getItem("glassy_current_user_id"); // Hardcoded key check
-            if (!userId) {
-                router.push("/login");
-                setIsLoading(false);
-                return;
-            }
-        }
-
-        refreshData();
-        setIsLoading(false);
-    }, [pathname]); // Re-run on path change to protect routes? Or just mount? 
-    // Usually mount + check. pathname dep might cause loops if not careful.
-    // Effect should be safe as long as we push only if condition met.
-
-    const refreshData = async () => {
-        setIsLoading(true);
-
-        // Fetch local data for Societe and non-Airtable items
-        // setSociete(dataService.getSociete()); 
-        // setSocietes(dataService.getSocietes());
-
-        // 0. Update Overdue Invoices
-        await updateOverdueInvoices();
-
-        // Load User: Sync from DB to ensure fresh data
         const userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
+
+        // 1. Parallelize Initial Independent Fetches
+        // We catch errors individually to avoid one failure blocking the whole app
+        const [overdueRes, userResResult, societesRes] = await Promise.all([
+            updateOverdueInvoices().catch(e => { console.error("Overdue error", e); return null; }),
+            userId ? fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; }) : Promise.resolve(null),
+            fetchSocietes().catch(e => { console.error("Societes fetch error", e); return { success: false, data: [] }; })
+        ]);
+
+        // 2. Process User
+        let finalUser = null;
         if (userId) {
-            const userRes = await fetchUserById(userId);
-            if (userRes.success && userRes.data) {
-                setUser(userRes.data);
-                // Update localStorage cache
+            let processedUserRes = userResResult;
+
+            // Auto-create/restore strategy if not found
+            if (!processedUserRes || !processedUserRes.success || !processedUserRes.data) {
+                console.log("User not found in DB, attempting auto-creation/restoration...");
+                const defaultUser = {
+                    id: userId,
+                    email: "amine@urbanhit.fr",
+                    fullName: "Amine Ben Abla",
+                    role: "admin",
+                    societes: []
+                };
+                const createRes = await import("@/app/actions").then(m => m.upsertUser(defaultUser));
+                if (createRes.success && createRes.user) {
+                    processedUserRes = { success: true, data: createRes.user };
+                }
+            }
+
+            if (processedUserRes && processedUserRes.success && processedUserRes.data) {
+                finalUser = processedUserRes.data;
+                setUser(finalUser);
+
+                // Update LocalStorage cache
                 const users = dataService.getUsers();
                 const index = users.findIndex(u => u.id === userId);
                 if (index >= 0) {
-                    users[index] = userRes.data;
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem("glassy_users", JSON.stringify(users));
-                    }
+                    users[index] = finalUser;
+                } else {
+                    users.push(finalUser);
+                }
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem("glassy_users", JSON.stringify(users));
                 }
             } else {
-                // Fallback to localStorage if DB fetch fails
-                const currentUser = dataService.getCurrentUser();
-                setUser(currentUser);
+                // Fallback
+                finalUser = dataService.getCurrentUser();
+                setUser(finalUser);
             }
         } else {
-            const currentUser = dataService.getCurrentUser();
-            setUser(currentUser);
+            finalUser = dataService.getCurrentUser();
+            setUser(finalUser);
         }
 
-        // 1. Fetch real societes from DB first
-        const societesRes = await fetchSocietes();
+        // 3. Process Societes & Entity Data
         let validSocietes: Societe[] = [];
         let activeSociete: Societe | undefined;
 
-        if (societesRes.success && societesRes.data && societesRes.data.length > 0) {
+        if (societesRes && societesRes.success && societesRes.data && societesRes.data.length > 0) {
             validSocietes = societesRes.data as Societe[];
             setSocietes(validSocietes);
 
-            // 2. Get active ID from LocalStorage (Source of Truth for SELECTION, not DATA)
             let storedId = dataService.getActiveSocieteId();
-
-            // 3. Find it in the REAL list
             activeSociete = validSocietes.find(s => s.id === storedId);
 
             if (!activeSociete) {
-                // If ID invalid or not found in DB, default to first valid one
                 activeSociete = validSocietes[0];
-                dataService.switchSociete(activeSociete.id); // Update LS
+                dataService.switchSociete(activeSociete.id);
             }
         } else {
-            // DB Empty - No fallback to local storage
             console.warn("No societies found in Database.");
             setSocietes([]);
             setSociete(null);
@@ -151,7 +135,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             setSociete(activeSociete);
             const currentSocieteId = activeSociete.id;
 
-            // Fetch everything else based on this validated ID
+            // Parallelize Entity Fetches (already done, but keeping structure)
             const [clientsRes, productsRes, invoicesRes, quotesRes] = await Promise.all([
                 fetchClients(currentSocieteId),
                 fetchProducts(currentSocieteId),
@@ -165,17 +149,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
             if (quotesRes.success && quotesRes.data) setQuotes(quotesRes.data);
         }
 
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
+        if (process.env.NODE_ENV !== "production") console.timeEnd("TotalLoadTime");
+
+        // Lazy load history (15 items) to not block UI
+        const historyData = await dataService.getHistory(15);
+        setHistory(historyData);
     };
 
-    // Listen for version changes if we want to force updates from outside
     useEffect(() => {
-        refreshData();
-    }, [version]);
+        dataService.initialize();
+
+        const currentUser = dataService.getCurrentUser();
+        if (!currentUser && pathname !== "/login") {
+            const userId = localStorage.getItem("glassy_current_user_id");
+            if (!userId) {
+                router.push("/login");
+                setIsLoading(false);
+                return;
+            }
+        }
+
+        fetchData();
+    }, [pathname]);
 
     const [isDirty, setIsDirty] = useState(false);
 
-    // Generic Confirmation State
     const [confirmState, setConfirmState] = useState<{
         isOpen: boolean;
         title: string;
@@ -200,16 +199,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
     };
 
-    const handleRefresh = () => {
-        setVersion(v => v + 1);
+    const handleRefresh = async (silent: boolean = false) => {
+        await fetchData(silent);
     };
 
-    // Protect against closing window with unsaved changes
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             if (isDirty) {
                 e.preventDefault();
-                e.returnValue = ''; // Modern browsers require this
+                e.returnValue = '';
             }
         };
         window.addEventListener('beforeunload', handleBeforeUnload);
@@ -239,7 +237,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (res.success && res.data) {
             const newId = (res.data as any).id;
             dataService.switchSociete(newId);
-            refreshData();
+            fetchData();
             router.push("/settings");
             setIsLoading(false);
             return res.data;
@@ -254,7 +252,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setIsLoading(true);
         const res = await updateSocieteAction(data);
         if (res.success) {
-            refreshData();
+            fetchData();
         } else {
             console.error(res.error);
         }
@@ -262,24 +260,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return res;
     };
 
-    const [history, setHistory] = useState<any[]>([]);
-
-    useEffect(() => {
-        dataService.getHistory(300).then(data => setHistory(data));
-    }, [version]);
-
     // Cron Ticker for Scheduled Emails
+    const handleMarkHistoryRead = async () => {
+        const currentUser = user || dataService.getCurrentUser();
+        if (currentUser && currentUser.id) {
+            await markHistoryAsRead(currentUser.id);
+            // Optimistically update local user state
+            const updatedUser = { ...currentUser, lastReadHistory: new Date().toISOString() };
+            setUser(updatedUser);
+            // Also update local storage cache if needed
+            const users = dataService.getUsers();
+            const idx = users.findIndex(u => u.id === currentUser.id);
+            if (idx >= 0) {
+                users[idx] = updatedUser;
+                localStorage.setItem("glassy_users", JSON.stringify(users));
+            }
+        }
+    };
+
     useEffect(() => {
         const checkScheduled = async () => {
             try {
                 await fetch('/api/cron/process-scheduled-emails');
             } catch (e) {
-                // Silent fail to not annoy user in console if offline
+                // Silent fail
             }
         };
-        // Check immediately on mount
         checkScheduled();
-        // Check every 60 seconds
         const interval = setInterval(checkScheduled, 60000);
         return () => clearInterval(interval);
     }, []);
@@ -306,13 +313,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 console.log(`[DataProvider] logAction called: ${action} ${entityType} - User:`, currentUser);
                 if (currentUser) {
                     await dataService.logAction(currentUser, action, entityType, description, entityId);
-                    // Force refresh to ensure HistoryDropdown updates
-                    setVersion(v => v + 1);
+                    await fetchData(true);
                 } else {
                     console.error("[DataProvider] Action NOT logged: No user identified");
                 }
             },
-            confirm
+            confirm,
+            markHistoryAsRead: handleMarkHistoryRead
         }}>
             {children}
             <ConfirmationModal

@@ -85,7 +85,7 @@ export function EmailSettings() {
 
     return (
         <div className="glass-card p-6 rounded-2xl space-y-6">
-            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3 border-b border-border dark:border-white/10 pb-4">
                 <div className="p-2 rounded-lg bg-orange-500/10">
                     <Mail className="h-5 w-5 text-orange-400" />
                 </div>

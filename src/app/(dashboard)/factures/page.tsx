@@ -637,8 +637,8 @@ function InvoicesPage() {
             }
             {/* Gmail-style Compose Window */}
             {isComposerOpen && composeInvoice && (
-                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-[#1e1e1e] border border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
-                    <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
+                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+                    <div className="flex items-center justify-between px-4 py-2 bg-muted/50 dark:bg-[#1e1e1e] border-b border-border dark:border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
                         <div className="flex items-center gap-3">
                             <span className="text-sm font-medium">Nouveau message - {composeInvoice.numero}</span>
                             <button
@@ -655,7 +655,7 @@ function InvoicesPage() {
                             <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+                    <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
                         <EmailComposer
                             key={draftData ? 'draft-restore' : composeInvoice.id}
                             defaultTo={draftData ? draftData.to : (clients.find(c => c.id === composeInvoice.clientId)?.email || "")}
@@ -674,7 +674,7 @@ function InvoicesPage() {
 
             {/* Undo Notification */}
             {isUndoVisible && (
-                <div className="fixed bottom-6 right-6 bg-[#1e1e1e] border border-white/10 text-foreground px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                <div className="fixed bottom-6 right-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
                     <div className="flex flex-col">
                         <span className="font-medium">Message envoyé</span>
                         <span className="text-xs text-muted-foreground">Envoi en cours...</span>

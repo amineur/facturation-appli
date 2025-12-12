@@ -23,6 +23,8 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
     const { clients, societe, refreshData, logAction } = useData();
     const client = clients.find(c => c.id === invoice.clientId);
 
+
+
     // State pour gérer les relances
     const [resendingEmail, setResendingEmail] = useState<EmailLog | null>(null);
     const [isComposerOpen, setIsComposerOpen] = useState(defaultComposeOpen);
@@ -201,7 +203,7 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
         <div className="h-full relative flex flex-col">
             {/* History List */}
             <div className="flex-1 space-y-4 p-4 pb-24"> {/* pb-24 for space for Floating Button */}
-                <div className="glass-card rounded-xl p-6 border border-white/10">
+                <div className="glass-card rounded-xl p-6 border border-border dark:border-white/10">
                     <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                         <Mail className="h-5 w-5 text-muted-foreground" />
                         Historique
@@ -228,20 +230,20 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
 
             {/* Compose Window */}
             {isComposerOpen && (
-                <div className="absolute bottom-0 left-4 right-4 h-[500px] bg-[#1e1e1e] border border-white/10 rounded-t-xl shadow-2xl z-20 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
-                    <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
+                <div className="absolute bottom-0 left-4 right-4 h-[500px] bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-t-xl shadow-2xl z-20 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+                    <div className="flex items-center justify-between px-4 py-2 bg-muted/50 dark:bg-[#1e1e1e] border-b border-border dark:border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
                         <span className="text-sm font-medium">Nouveau message</span>
                         <div className="flex items-center gap-2 text-muted-foreground">
-                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}>
+                            <button className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}>
                                 <Minimize2 className="h-4 w-4" />
                             </button>
-                            <button className="p-1 hover:bg-white/10 rounded hover:text-red-400" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}>
+                            <button className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded hover:text-red-400" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}>
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+                    <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
                         <EmailComposer
                             key={resendingEmail ? `resend-${resendingEmail.id}` : 'new-email'}
                             defaultTo={resendingEmail ? resendingEmail.to : (client?.email || "")}
@@ -256,9 +258,9 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
                 </div>
             )}
 
-            {/* Undo Notification */}
+            {/* Undo Notification - Theme Aware */}
             {isUndoVisible && (
-                <div className="absolute bottom-6 right-6 left-6 bg-[#1e1e1e] border border-white/10 text-foreground px-4 py-3 rounded-lg shadow-2xl z-30 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300">
+                <div className="absolute bottom-6 right-6 left-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-4 py-3 rounded-lg shadow-2xl z-30 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300">
                     <div className="flex flex-col">
                         <span className="font-medium text-sm">Envoyé</span>
                     </div>
@@ -278,6 +280,7 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
                     </button>
                 </div>
             )}
+
         </div>
     );
 }

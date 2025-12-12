@@ -1,13 +1,47 @@
 import { History, Clock, ArrowRight } from "lucide-react";
 import { useData } from "@/components/data-provider";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export function HistoryDropdown() {
-    const { history } = useData();
+    const { history, refreshData, user, markHistoryAsRead } = useData();
     const [isOpen, setIsOpen] = useState(false);
+    const [hasUnread, setHasUnread] = useState(false);
+
+    // Load last read from USER object (DB)
+    useEffect(() => {
+        if (user && user.lastReadHistory && history.length > 0) {
+            const lastRead = new Date(user.lastReadHistory).getTime();
+            const latest = new Date(history[0].timestamp).getTime();
+            // If latest activity is newer than last read time
+            if (latest > lastRead) {
+                setHasUnread(true);
+            } else {
+                setHasUnread(false);
+            }
+        } else {
+            // Default to no unread if user not loaded or empty history
+            setHasUnread(false);
+        }
+    }, [history, user]);
+
+    // Mark as read when opened (Server Action via Context)
+    // Kept split to avoid infinite loop
+    useEffect(() => {
+        if (isOpen && user) {
+            markHistoryAsRead();
+            setHasUnread(false);
+        }
+    }, [isOpen, user, markHistoryAsRead, history]);
+
+    // Trigger refresh ONLY when opening
+    useEffect(() => {
+        if (isOpen) {
+            refreshData(true);
+        }
+    }, [isOpen]);
 
     // Get last 5 items
     const recentHistory = history.slice(0, 5);
@@ -19,8 +53,8 @@ export function HistoryDropdown() {
                 className="relative rounded-full p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
             >
                 <History className="h-5 w-5" />
-                {recentHistory.length > 0 && (
-                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-500 ring-2 ring-[#0f172a]" />
+                {hasUnread && (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#0f172a]" />
                 )}
             </button>
 

@@ -38,9 +38,9 @@ export function PDFPreviewModal({ isOpen, onClose, pdfUrl, invoiceNumber }: PDFP
             />
 
             {/* Modal Content */}
-            <div className="relative w-[95vw] h-[95vh] flex flex-col glass-card rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="relative w-[95vw] h-[95vh] flex flex-col glass-card bg-background dark:bg-[#0A0A0A]/90 rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 border border-border dark:border-white/10">
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                <div className="flex items-center justify-between p-4 border-b border-border dark:border-white/10 bg-muted/50 dark:bg-white/5">
                     <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                         <span>Aperçu</span>
                         <span className="text-muted-foreground">•</span>

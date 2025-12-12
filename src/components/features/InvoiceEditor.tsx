@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray, Control, useWatch, FormProvider } from "react-hook-form";
-import { Plus, Trash2, Calendar as CalendarIcon, Save, Send, Download, Check, ChevronsUpDown, X, Search, ArrowLeft, Eye, Tag, Settings, Type, GripVertical } from "lucide-react";
+import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Facture, Devis, Client, LigneItem, Produit, Societe, StatusFacture } from "@/types";
 import { Reorder } from "framer-motion";
@@ -52,25 +52,63 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const methods = useForm<InvoiceFormValues>({
         defaultValues: {
             numero: getNextNumber(),
-            dateEmission: new Date().toISOString().split("T")[0],
-            conditionsPaiement: "30 jours", // Default to 30 days
+            conditionsPaiement: (() => {
+                if (!initialData) return "30 jours";
+
+                const emissionDateStr = initialData.dateEmission;
+                const echeanceDateStr = (initialData as any).echeance || (initialData as any).dateValidite;
+
+                if (!emissionDateStr || !echeanceDateStr) return "30 jours";
+
+                const emission = new Date(emissionDateStr);
+                const target = new Date(echeanceDateStr);
+
+                if (isNaN(emission.getTime()) || isNaN(target.getTime())) return "30 jours";
+
+                const diffTime = target.getTime() - emission.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 0) return "À réception";
+                if (diffDays === 15) return "15 jours";
+                if (diffDays === 30) return "30 jours";
+                if (diffDays === 45) return "45 jours";
+                if (diffDays === 60) return "60 jours";
+                return "Personnalisé";
+            })(),
             echeance: (() => {
+                // Return existing formatted date if available
+                if (initialData && 'echeance' in initialData && (initialData as any).echeance) {
+                    const val = (initialData as any).echeance;
+                    return typeof val === 'string' ? val.split('T')[0] : new Date(val).toISOString().split('T')[0];
+                }
+
                 // Calculate default due date (Today + 30 days)
                 const date = new Date();
                 date.setDate(date.getDate() + 30);
                 return date.toISOString().split("T")[0];
             })(),
-            ...initialData, // Apply initial data if provided
+            ...initialData,
+            // Explicitly overwrite dates with formatted versions if they exist
+            dateEmission: initialData?.dateEmission
+                ? (typeof initialData.dateEmission === 'string' ? initialData.dateEmission.split("T")[0] : new Date(initialData.dateEmission).toISOString().split("T")[0])
+                : new Date().toISOString().split("T")[0],
+            ...(type !== 'Facture' && initialData && 'dateValidite' in initialData ? {
+                dateValidite: (initialData as any).dateValidite ? (typeof (initialData as any).dateValidite === 'string' ? (initialData as any).dateValidite.split("T")[0] : new Date((initialData as any).dateValidite).toISOString().split("T")[0]) : ""
+            } : {}),
             // Ensure items are correctly initialized if initialData has them
             items: initialData?.items || [{ description: "", quantite: 1, prixUnitaire: 0, tva: 20, totalLigne: 0, produitId: "", type: 'produit', remise: 0, remiseType: 'pourcentage' }]
         }
     });
 
-    const { register, control, handleSubmit, setValue, watch, getValues, formState: { errors, isDirty } } = methods;
+    const { register, control, handleSubmit, setValue, watch, getValues, setError, clearErrors, formState: { errors, isDirty } } = methods;
 
     const { fields, append, remove, replace } = useFieldArray({
         control,
-        name: "items"
+        name: "items",
+        rules: {
+            required: "Ajoutez au moins un produit.",
+            validate: (value) => (value && value.length > 0) || "Ajoutez au moins un produit."
+        }
     });
 
     const [isClientOpen, setIsClientOpen] = useState(false);
@@ -144,23 +182,37 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     });
 
     // Close settings on click outside
+    // Close settings on click outside
     const settingsRef = useRef<HTMLDivElement>(null);
+    const clientDropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
                 setIsSettingsOpen(false);
             }
+            if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target as Node)) {
+                setIsClientOpen(false);
+            }
         };
 
-        if (isSettingsOpen) {
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setIsSettingsOpen(false);
+                setIsClientOpen(false);
+            }
+        };
+
+        if (isSettingsOpen || isClientOpen) {
             document.addEventListener("mousedown", handleClickOutside);
+            document.addEventListener("keydown", handleEscape);
         }
 
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("keydown", handleEscape);
         };
-    }, [isSettingsOpen]);
+    }, [isSettingsOpen, isClientOpen]);
 
     // Clear line discounts when disabled
     useEffect(() => {
@@ -275,23 +327,60 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     };
 
     const onSubmit = async (data: InvoiceFormValues) => {
+        setIsSaving(true);
         try {
-            setIsSaving(true);
+            // --- 1. Client-Side Validation ---
 
-            // Validate required fields
+            // Client Check
+            // RHF handles required, but safe to keep as sanity check before server call
             if (!data.clientId) {
-                alert("Veuillez sélectionner un client.");
+                // Should not happen if required:true worked
+                toast.error("Veuillez sélectionner un client.");
                 setIsSaving(false);
                 return;
             }
 
+            // Items Check - (Relying on RHF validation, but keeping check for payload safety)
             if (!data.items || data.items.length === 0) {
-                alert("Veuillez ajouter au moins une ligne.");
+                // Manual fallback if RHF didn't catch it for some reason (rare but possible with dynamic fields)
+                setError("items", { type: "manual", message: "Ajoutez au moins un produit." });
+                toast.error("Veuillez ajouter au moins une ligne.");
                 setIsSaving(false);
                 return;
             }
 
-            // Construct document
+            // Detailed Item Validation
+            let hasInvalidItems = false;
+            data.items.forEach((item, index) => {
+                // Ensure numbers
+                const q = Number(item.quantite);
+                const p = Number(item.prixUnitaire);
+
+                if (isNaN(q) || q <= 0) {
+                    toast.error(`Ligne ${index + 1}: Quantité invalide.`);
+                    hasInvalidItems = true;
+                }
+                if (isNaN(p) || p < 0) {
+                    toast.error(`Ligne ${index + 1}: Prix invalide.`);
+                    hasInvalidItems = true;
+                }
+            });
+
+            if (hasInvalidItems) {
+                setIsSaving(false);
+                return;
+            }
+
+            // Date validation
+            const emissionDate = new Date(data.dateEmission);
+            if (isNaN(emissionDate.getTime())) {
+                toast.error("Date d'émission invalide.");
+                setIsSaving(false);
+                return;
+            }
+
+
+            // --- 2. Data Construction ---
             const documentData = {
                 id: initialData?.id, // Keep existing ID if update, otherwise undefined (Prisma generates on create)
                 ...data, // Contains basic form fields
@@ -328,6 +417,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 })
             } as unknown as Facture | Devis;
 
+            // --- 3. Server Submission ---
             let result;
             if (type === "Facture") {
                 if (initialData?.id) {
@@ -343,8 +433,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 }
             }
 
+            // --- 4. Result Handling ---
             if (!result.success) {
-                throw new Error(result.error || "Erreur inconnue");
+                // Display sanitized error from server action
+                toast.error(result.error || "Une erreur est survenue.");
+                // We keep isSaving=true for a moment or specific logic, here just stop
+                setIsSaving(false);
+                return;
             }
 
             // Log Action for Recent Activity
@@ -352,7 +447,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             const actionType = initialData?.id ? 'update' : 'create';
             const entityType = type === 'Facture' ? 'facture' : 'devis';
             const clientName = clients.find(c => c.id === data.clientId)?.nom || "Client";
-            const description = `${actionType === 'create' ? 'Création' : 'Modification'} ${type === 'Facture' ? 'de la facture' : 'du devis'} ${documentData.numero} pour ${clientName}`;
+            const description = `${actionType === 'create' ? 'Création' : 'Modification'} ${type === 'Facture' ? 'de la facture' : 'du devis'} ${documentData.numero} pour ${clientName} `;
 
             await logAction(actionType, entityType, description, savedId);
 
@@ -360,16 +455,18 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             // Simulate a brief delay to show the loading state
             await new Promise(resolve => setTimeout(resolve, 500));
-
-            toast.success(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès !`);
+            toast.success(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès!`);
             router.push(type === "Facture" ? "/factures" : "/devis");
         } catch (error: any) {
-            console.error("Error saving:", error);
-            toast.error("Erreur lors de l'enregistrement: " + error.message);
+            console.error("Critical Error saving:", error);
+            // This catches unexpected client-side crashes not handled by result.success
+            toast.error("Erreur critique: " + error.message);
         } finally {
             setIsSaving(false);
         }
     };
+
+
 
     const handleGeneratePDF = async () => {
         const formData = watch();
@@ -400,7 +497,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 } else {
                     await updateQuote({ ...documentData as Devis, statut: 'Envoyé' });
                 }
-                logAction('update', type === 'Facture' ? 'facture' : 'devis', `${type} téléchargé (Statut passé à Envoyé)`, initialData.id);
+                logAction('update', type === 'Facture' ? 'facture' : 'devis', `${type} téléchargé(Statut passé à Envoyé)`, initialData.id);
                 refreshData();
             } catch (error) {
                 console.error("Error updating status on download:", error);
@@ -459,11 +556,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const selectedClient = clients.find(c => c.id === selectedClientId);
 
     const isEditMode = !!initialData?.id;
-    const isReadOnly = type === "Devis" && initialData?.statut === "Facturé";
-
     const pageTitle = type === "Facture"
         ? (isEditMode ? "Modifier la Facture" : "Nouvelle Facture")
-        : (isEditMode ? (isReadOnly ? "Devis Facturé (Lecture Seule)" : "Modifier le Devis") : "Nouveau Devis");
+        : (isEditMode ? "Modifier le Devis" : "Nouveau Devis");
+
+    const isReadOnly = false;
 
     // Unsaved Changes Modal State
     const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
@@ -489,9 +586,31 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
     };
 
+    const onInvalid = (errors: any) => {
+        console.error("Form Validation Errors:", errors);
+
+        const fieldLabels: Record<string, string> = {
+            clientId: "Client",
+            items: "Lignes",
+            dateEmission: type === "Facture" ? "Date d'émission" : "Date de création",
+            echeance: type === "Facture" ? "Échéance" : "Date de validité",
+            numero: "Numéro"
+        };
+
+        const missingFields = Object.keys(errors)
+            .map(key => fieldLabels[key] || key)
+            .filter((value, index, self) => self.indexOf(value) === index); // Unique (cas où items.root et items coincident)
+
+        if (missingFields.length > 0) {
+            toast.error(`Champs obligatoires manquants : ${missingFields.join(", ")}`);
+        } else {
+            toast.error("Veuillez vérifier les champs du formulaire.");
+        }
+    };
+
     return (
         <FormProvider {...methods}>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <button
@@ -517,7 +636,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 <Settings className="h-5 w-5" />
                             </button>
                             {isSettingsOpen && (
-                                <div className="absolute right-0 top-12 z-50 w-72 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="absolute right-0 top-12 z-50 w-72 rounded-xl border border-border dark:border-white/10 bg-background dark:bg-slate-900/95 backdrop-blur-xl shadow-xl p-4 animate-in fade-in zoom-in-95 duration-200">
                                     <h4 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
                                         <Settings className="h-4 w-4" />
                                         Configuration
@@ -537,7 +656,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         onChange={(e) => setShowDateColumn(e.target.checked)}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                                    <div className="w-9 h-5 bg-muted dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                                                 </label>
                                             </div>
 
@@ -550,7 +669,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         onChange={(e) => setShowTTCColumn(e.target.checked)}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                                    <div className="w-9 h-5 bg-muted dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                                                 </label>
                                             </div>
 
@@ -563,14 +682,14 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         onChange={(e) => setDiscountEnabled(e.target.checked)}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                                    <div className="w-9 h-5 bg-muted dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                                                 </label>
                                             </div>
                                         </div>
 
                                         {discountEnabled && (
                                             <>
-                                                <div className="h-px bg-white/10" />
+                                                <div className="h-px bg-border dark:bg-white/10" />
 
                                                 {/* Line Discount Type */}
                                                 <div className="space-y-2">
@@ -592,7 +711,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                             className={cn(
                                                                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                                                                 discountType === 'pourcentage'
-                                                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                                                                    ? "bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-500/30"
                                                                     : "text-muted-foreground border-white/10 hover:bg-white/5"
                                                             )}
                                                         >
@@ -614,8 +733,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                             className={cn(
                                                                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                                                                 discountType === 'montant'
-                                                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                                                                    : "text-muted-foreground border-white/10 hover:bg-white/5"
+                                                                    ? "bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-500/30"
+                                                                    : "text-muted-foreground border-border dark:border-white/10 hover:bg-muted/50 dark:hover:bg-white/5"
                                                             )}
                                                         >
                                                             Montant (€)
@@ -627,7 +746,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             </>
                                         )}
 
-                                        <div className="flex items-center justify-between py-2 border-b border-white/10">
+                                        <div className="flex items-center justify-between py-2 border-b border-border dark:border-white/10">
                                             <span className="text-sm font-medium text-foreground">TVA par défaut</span>
                                             <div className="flex items-center gap-2">
                                                 <div className="relative w-24">
@@ -644,7 +763,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                                 setValue("items", updatedItems);
                                                             }
                                                         }}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-right text-foreground focus:ring-1 focus:ring-blue-500 focus:border-blue-500 pr-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border dark:bg-white/5 dark:border-white/10 px-3 text-right text-foreground focus:ring-1 focus:ring-blue-500 focus:border-blue-500 pr-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                     />
                                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
                                                 </div>
@@ -691,9 +810,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 </button>
                             </>
                         )}
+
                         <button
-                            type="button"
-                            onClick={handleSubmit(onSubmit)}
+                            type="submit"
                             disabled={isSaving || isReadOnly}
                             className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-emerald-600"
                         >
@@ -720,14 +839,15 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <label className="block text-sm font-medium text-muted-foreground">Client</label>
 
                             {/* Custom Combobox */}
-                            <div className="relative">
+                            <div className="relative" ref={clientDropdownRef}>
                                 <button
                                     type="button"
                                     onClick={() => !isReadOnly && setIsClientOpen(!isClientOpen)}
                                     disabled={isReadOnly}
                                     className={cn(
                                         "w-full h-11 rounded-lg glass-input px-4 text-foreground text-left flex items-center justify-between focus:ring-1 focus:ring-white/20",
-                                        isReadOnly && "opacity-60 cursor-not-allowed"
+                                        isReadOnly && "opacity-60 cursor-not-allowed",
+                                        errors.clientId && "ring-1 ring-red-500 border-red-500/50"
                                     )}
                                 >
                                     <span className={!selectedClient ? "text-muted-foreground" : ""}>
@@ -737,8 +857,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 </button>
 
                                 {isClientOpen && (
-                                    <div className="absolute z-50 mt-1 w-full rounded-lg border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                                        <div className="p-2 border-b border-white/5">
+                                    <div className="absolute z-50 mt-1 w-full rounded-lg border border-border dark:border-white/10 bg-background dark:bg-slate-900/95 backdrop-blur-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                        <div className="p-2 border-b border-border dark:border-white/5">
                                             <div className="relative">
                                                 <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                                                 <input
@@ -781,7 +901,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                 ))
                                             )}
                                         </div>
-                                        <div className="p-2 border-t border-white/5 bg-white/5">
+                                        <div className="p-2 border-t border-border dark:border-white/5 bg-muted/50 dark:bg-white/5">
                                             <Link
                                                 href="/clients/new"
                                                 className="w-full px-3 py-2 rounded-md text-sm flex items-center gap-2 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 transition-colors"
@@ -794,8 +914,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 )}
 
                                 {/* Hidden select for form registration/validation if needed, or just rely on setValue above */}
-                                <input type="hidden" {...register("clientId", { required: true })} />
+                                <input type="hidden" {...register("clientId", { required: "Veuillez sélectionner un client." })} />
                             </div>
+                            {errors.clientId && (
+                                <p className="text-xs text-red-500 mt-1 animate-in slide-in-from-left-1">{errors.clientId.message}</p>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-3 gap-4">
@@ -804,12 +927,42 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 <input {...register("numero")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Date d'émission</label>
-                                <input type="date" {...register("dateEmission")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
+                                <label className="block text-sm font-medium text-muted-foreground">
+                                    {type === "Facture" ? "Date d'émission" : "Date de création"}
+                                </label>
+                                <input type="date" {...register("dateEmission", { required: true })} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Échéance</label>
-                                <input type="date" {...register("echeance")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
+                                <label className="block text-sm font-medium text-muted-foreground">
+                                    {type === "Facture" ? "Échéance" : "Date de validité"}
+                                </label>
+                                <input
+                                    type="date"
+                                    {...register("echeance", {
+                                        onChange: (e) => {
+                                            if (type !== "Facture") {
+                                                const newDate = new Date(e.target.value);
+                                                const emissionDate = new Date(getValues("dateEmission"));
+
+                                                if (!isNaN(newDate.getTime()) && !isNaN(emissionDate.getTime())) {
+                                                    const diffTime = newDate.getTime() - emissionDate.getTime();
+                                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                                                    let period = "Personnalisé";
+                                                    if (diffDays === 0) period = "À réception";
+                                                    else if (diffDays === 15) period = "15 jours";
+                                                    else if (diffDays === 30) period = "30 jours";
+                                                    else if (diffDays === 45) period = "45 jours";
+                                                    else if (diffDays === 60) period = "60 jours";
+
+                                                    setValue("conditionsPaiement", period);
+                                                }
+                                            }
+                                        }
+                                    })}
+                                    disabled={isReadOnly}
+                                    className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")}
+                                />
                             </div>
                         </div>
 
@@ -827,10 +980,30 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-muted-foreground">Conditions de paiement</label>
+                                        <label className="block text-sm font-medium text-muted-foreground">
+                                            {type === "Facture" ? "Conditions de paiement" : "Période de validité"}
+                                        </label>
                                         <select
-                                            {...register("conditionsPaiement")}
+                                            {...register("conditionsPaiement", {
+                                                onChange: (e) => {
+                                                    const val = e.target.value;
+                                                    // Auto-calc echeance if needed
+                                                    if (val) {
+                                                        const match = val.match(/(\d+) jours/);
+                                                        const days = match ? parseInt(match[1]) : 0;
+                                                        if (days > 0) {
+                                                            const emissionDate = getValues("dateEmission");
+                                                            if (emissionDate) {
+                                                                const targetDate = new Date(emissionDate);
+                                                                targetDate.setDate(targetDate.getDate() + days);
+                                                                setValue("echeance", targetDate.toISOString().split('T')[0]);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            })}
                                             className="w-full h-11 rounded-lg glass-input px-4 text-foreground cursor-pointer"
+                                            disabled={isReadOnly}
                                         >
                                             <option value="">Sélectionner...</option>
                                             <option value="À réception">À réception</option>
@@ -838,6 +1011,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             <option value="30 jours">30 jours</option>
                                             <option value="45 jours">45 jours</option>
                                             <option value="60 jours">60 jours</option>
+                                            <option value="Personnalisé">Personnalisé</option>
                                         </select>
                                     </div>
                                     <div className="space-y-2">
@@ -846,6 +1020,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             {...register("numeroEnregistrement")}
                                             placeholder="Ex : RC123456"
                                             className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
+                                            disabled={isReadOnly}
                                         />
                                     </div>
                                 </div>
@@ -880,6 +1055,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         });
                                                     }}
                                                     className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                                                    disabled={isReadOnly}
                                                 >
                                                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -978,7 +1154,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="text"
                                                         value={editedClientData.prenomContact || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, prenomContact: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div>
@@ -987,7 +1163,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="text"
                                                         value={editedClientData.nomContact || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, nomContact: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div className="col-span-2">
@@ -996,7 +1172,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="email"
                                                         value={editedClientData.email || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, email: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div className="col-span-2">
@@ -1005,7 +1181,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="tel"
                                                         value={editedClientData.telephone || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, telephone: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div>
@@ -1015,7 +1191,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         value={editedClientData.siret || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, siret: e.target.value })}
                                                         placeholder="Ex: 123 456 789 00012"
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div>
@@ -1025,7 +1201,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         value={editedClientData.rcs || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, rcs: e.target.value })}
                                                         placeholder="Ex: RCS Paris 123 456 789"
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div className="col-span-2">
@@ -1034,7 +1210,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="text"
                                                         value={editedClientData.adresse || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, adresse: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div>
@@ -1043,7 +1219,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="text"
                                                         value={editedClientData.codePostal || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, codePostal: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                                 <div>
@@ -1052,7 +1228,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         type="text"
                                                         value={editedClientData.ville || ""}
                                                         onChange={(e) => setEditedClientData({ ...editedClientData, ville: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500"
+                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
                                                     />
                                                 </div>
                                             </div>
@@ -1067,6 +1243,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-foreground">Lignes de facturation</h3>
+                            {errors.items && (
+                                <p className="text-xs text-red-500 animate-in slide-in-from-left-1">{errors.items.root?.message || errors.items.message}</p>
+                            )}
                         </div>
                         <div className="grid gap-4 px-2 py-3 text-sm font-medium text-muted-foreground pl-8"
                             style={{
@@ -1122,34 +1301,40 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <div className="flex gap-4 mt-4">
                                 <button
                                     type="button"
-                                    onClick={() => append({
-                                        id: uuidv4(),
-                                        description: "",
-                                        quantite: 1,
-                                        prixUnitaire: 0,
-                                        tva: defaultTva,
-                                        totalLigne: 0,
-                                        produitId: "",
-                                        type: 'produit',
-                                        remise: 0,
-                                        remiseType: 'pourcentage'
-                                    })}
+                                    onClick={() => {
+                                        clearErrors("items");
+                                        append({
+                                            id: uuidv4(),
+                                            description: "",
+                                            quantite: 1,
+                                            prixUnitaire: 0,
+                                            tva: defaultTva,
+                                            totalLigne: 0,
+                                            produitId: "",
+                                            type: 'produit',
+                                            remise: 0,
+                                            remiseType: 'pourcentage'
+                                        })
+                                    }}
                                     className="flex items-center gap-2 text-sm text-blue-500 hover:text-blue-600 transition-colors"
                                 >
                                     <Plus className="h-4 w-4" /> Ajouter un produit
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => append({
-                                        id: uuidv4(),
-                                        description: "",
-                                        quantite: 0,
-                                        prixUnitaire: 0,
-                                        tva: 0,
-                                        totalLigne: 0,
-                                        produitId: "",
-                                        type: 'texte'
-                                    })}
+                                    onClick={() => {
+                                        clearErrors("items");
+                                        append({
+                                            id: uuidv4(),
+                                            description: "",
+                                            quantite: 0,
+                                            prixUnitaire: 0,
+                                            tva: 0,
+                                            totalLigne: 0,
+                                            produitId: "",
+                                            type: 'texte'
+                                        })
+                                    }}
                                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                                 >
                                     <Type className="h-4 w-4" /> Ajouter du texte
@@ -1169,6 +1354,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 checked={(watchedRemiseGlobale || 0) > 0}
                                 onChange={(e) => setValue("remiseGlobale", e.target.checked ? 5 : 0)}
                                 className="w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                                disabled={isReadOnly}
                             />
                             <label htmlFor="applyGlobalDiscount" className="text-sm font-medium text-foreground cursor-pointer">
                                 Appliquer une remise globale
@@ -1188,6 +1374,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             max={watchedRemiseGlobaleType === 'pourcentage' ? "100" : undefined}
                                             {...register("remiseGlobale", { valueAsNumber: true })}
                                             className="flex-1 h-10 rounded-lg bg-white/5 border border-white/10 px-3 text-foreground focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            disabled={isReadOnly}
                                         />
                                         <div className="flex rounded-lg bg-white/5 border border-white/10 p-1">
                                             <button
@@ -1204,6 +1391,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         ? "bg-blue-500 text-white"
                                                         : "text-muted-foreground hover:text-foreground"
                                                 )}
+                                                disabled={isReadOnly}
                                             >
                                                 %
                                             </button>
@@ -1221,6 +1409,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                         ? "bg-blue-500 text-white"
                                                         : "text-muted-foreground hover:text-foreground"
                                                 )}
+                                                disabled={isReadOnly}
                                             >
                                                 €
                                             </button>
@@ -1308,8 +1497,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             {/* Gmail-style Compose Window */}
             {isComposerOpen && initialData && (type === "Facture" || type === "Devis") && (
-                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-[#1e1e1e] border border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
-                    <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border-b border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
+                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+                    <div className="flex items-center justify-between px-4 py-2 bg-muted/50 dark:bg-[#1e1e1e] border-b border-border dark:border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
                         <div className="flex items-center gap-3">
                             <span className="text-sm font-medium">Nouveau message - {initialData.numero}</span>
                             <button
@@ -1326,12 +1515,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+                    <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
                         <EmailComposer
+
                             key={draftData ? 'draft-restore' : initialData.id}
                             defaultTo={draftData ? draftData.to : (clients.find(c => c.id === initialData.clientId)?.email || "")}
-                            defaultSubject={draftData ? draftData.subject : `${type} ${initialData.numero} - ${societe?.nom}`}
-                            defaultMessage={draftData ? draftData.message : `Madame, Monsieur,\n\nVeuillez trouver ci-joint votre ${type === 'Facture' ? 'facture' : 'devis'} n°${initialData.numero}.\n\nCordialement,\n${societe?.nom || ""}`}
+                            defaultSubject={draftData ? draftData.subject : `${type} ${initialData.numero} - ${societe?.nom} `}
+                            defaultMessage={draftData ? draftData.message : `Madame, Monsieur, \n\nVeuillez trouver ci - joint votre ${type === 'Facture' ? 'facture' : 'devis'} n°${initialData.numero}.\n\nCordialement, \n${societe?.nom || ""} `}
                             mainAttachmentName={`${type}_${initialData.numero}.pdf`}
                             onSend={async (data) => {
                                 await sendEmail(initialData as Facture | Devis, data, {
@@ -1345,7 +1535,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             {/* Undo Notification */}
             {isUndoVisible && (
-                <div className="fixed bottom-6 right-6 bg-[#1e1e1e] border border-white/10 text-foreground px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                <div className="fixed bottom-6 right-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
                     <div className="flex flex-col">
                         <span className="font-medium">Message envoyé</span>
                         <span className="text-xs text-muted-foreground">Envoi en cours...</span>
@@ -1369,7 +1559,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             <SidePanel
                 isOpen={historyPanelOpen}
                 onClose={() => setHistoryPanelOpen(false)}
-                title={initialData ? `Historique - ${initialData.numero}` : "Historique"}
+                title={initialData ? `Historique - ${initialData.numero} ` : "Historique"}
             >
                 {initialData && (type === "Facture" || type === "Devis") && (
                     <div key={initialData.id}>

@@ -1,7 +1,7 @@
 import { Client, Facture, Devis, Produit, Societe, User, PdfTemplate, DEFAULT_PDF_TEMPLATE, StatusFacture, HistoryEntry } from "@/types";
 import { MOCK_CLIENTS, MOCK_FACTURES, MOCK_PRODUITS, MOCK_DEVIS, MOCK_SOCIETES, MOCK_USERS } from "./mock-data";
 import { generateNextInvoiceNumber } from "@/lib/invoice-utils";
-import { loginUser, registerUser, updateUser, createHistoryEntry, fetchHistory } from '@/app/actions';
+import { loginUser, registerUser, updateUser, upsertUser, createHistoryEntry, fetchHistory } from '@/app/actions';
 
 const STORAGE_KEYS = {
     CLIENTS: "glassy_clients",
@@ -62,25 +62,7 @@ class DataService {
         if (!localStorage.getItem(STORAGE_KEYS.SOCIETES)) {
             this.setItem(STORAGE_KEYS.SOCIETES, MOCK_SOCIETES);
         }
-        if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-            this.setItem(STORAGE_KEYS.USERS, MOCK_USERS);
-        } else {
-            // Migration: Update old "Admin Glassy" to "Amine Ben Abla"
-            const users = this.getItem<User>(STORAGE_KEYS.USERS);
-            let needsUpdate = false;
 
-            users.forEach(user => {
-                if (user.id === "usr_1" && (user.fullName === "Admin Glassy" || user.fullName === "Demo User" || user.email === "admin@glassy.com" || user.email === "demo@glassy.com")) {
-                    user.fullName = "Amine Ben Abla";
-                    user.email = "amine@euromedmultimedia.com";
-                    needsUpdate = true;
-                }
-            });
-
-            if (needsUpdate) {
-                this.setItem(STORAGE_KEYS.USERS, users);
-            }
-        }
 
         // Set Default Active Societe if not set
         if (!localStorage.getItem(STORAGE_KEYS.ACTIVE_SOCIETE_ID)) {
@@ -155,31 +137,31 @@ class DataService {
     }
 
     async saveUser(user: User) {
-        // Check if user exists in DB by attempting to find them
-        // IDs starting with "usr_" are legacy/local IDs (should update via updateUser)
-        // UUIDs are DB-generated IDs (should also update via updateUser if they exist)
+        // DB FIRST STRATEGY
+        // We defer to the server action to handle "create if new, update if exists"
+        const result = await upsertUser(user);
 
-        if (user.id && user.id.startsWith("usr_")) {
-            // Legacy user, update in DB
-            await updateUser(user);
-        } else if (user.id) {
-            // UUID user, update
-            await updateUser(user);
-        } else {
-            // No ID, create new
-            await registerUser(user);
-        }
+        if (result.success && result.user) {
+            // DB Write Success -> Update Local State to match DB
+            const savedUser = result.user;
 
-        // Update local cache
-        const users = this.getUsers();
-        const index = users.findIndex(u => u.id === user.id);
-        if (index >= 0) {
-            users[index] = user;
+            const users = this.getUsers();
+            const index = users.findIndex(u => u.id === savedUser.id);
+            if (index >= 0) {
+                users[index] = savedUser;
+            } else {
+                users.push(savedUser);
+            }
+            this.setItem(STORAGE_KEYS.USERS, users);
+            return savedUser;
         } else {
-            users.push(user);
+            console.error("Failed to save user to DB:", result.error);
+            // OPTIONAL: Throw error or return null to signal failure to UI
+            // For now, we do NOT update local state if DB fails, to avoid "illusion" of save.
+            throw new Error(result.error || "Erreur de sauvegarde base de données");
         }
-        this.setItem(STORAGE_KEYS.USERS, users);
     }
+
 
     async login(email: string, password?: string): Promise<User | null> {
         if (!password) return null;
