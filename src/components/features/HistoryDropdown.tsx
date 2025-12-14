@@ -1,7 +1,7 @@
 import { History, Clock, ArrowRight } from "lucide-react";
 import { useData } from "@/components/data-provider";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -29,18 +29,31 @@ export function HistoryDropdown() {
 
     // Mark as read when opened (Server Action via Context)
     // Kept split to avoid infinite loop
+    const hasMarkedRef = useRef(false);
+
+    // Reset ref when closed
     useEffect(() => {
-        if (isOpen && user) {
+        if (!isOpen) {
+            hasMarkedRef.current = false;
+        }
+    }, [isOpen]);
+
+    // Mark as read when opened (Server Action via Context)
+    // Guarded execution to allow safe dependency array
+    useEffect(() => {
+        if (isOpen && user && !hasMarkedRef.current) {
+            hasMarkedRef.current = true;
             markHistoryAsRead();
             setHasUnread(false);
         }
-    }, [isOpen, user, markHistoryAsRead, history]);
+    }, [isOpen, user, markHistoryAsRead]);
 
     // Trigger refresh ONLY when opening
     useEffect(() => {
         if (isOpen) {
             refreshData(true);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
     // Get last 5 items
