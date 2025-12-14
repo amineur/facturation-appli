@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray, Control, useWatch, FormProvider } from "react-hook-form";
-import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical } from "lucide-react";
+import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical, Lock, Unlock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Facture, Devis, Client, LigneItem, Produit, Societe, StatusFacture } from "@/types";
 import { Reorder } from "framer-motion";
@@ -14,7 +14,7 @@ import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoic
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { InvoiceLineItem } from "./InvoiceLineItem";
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { createInvoice, updateInvoice, createQuote, updateQuote } from "@/app/actions";
+import { createInvoice, updateInvoice, createQuote, updateQuote, toggleQuoteLock } from "@/app/actions";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
 import { SidePanel } from "@/components/ui/SidePanel";
@@ -49,58 +49,115 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             : generateNextQuoteNumber(quotes);
     };
 
-    const methods = useForm<InvoiceFormValues>({
-        defaultValues: {
-            numero: getNextNumber(),
-            conditionsPaiement: (() => {
-                if (!initialData) return "30 jours";
-
-                const emissionDateStr = initialData.dateEmission;
-                const echeanceDateStr = (initialData as any).echeance || (initialData as any).dateValidite;
-
-                if (!emissionDateStr || !echeanceDateStr) return "30 jours";
-
-                const emission = new Date(emissionDateStr);
-                const target = new Date(echeanceDateStr);
-
-                if (isNaN(emission.getTime()) || isNaN(target.getTime())) return "30 jours";
-
-                const diffTime = target.getTime() - emission.getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                if (diffDays <= 0) return "À réception";
-                if (diffDays === 15) return "15 jours";
-                if (diffDays === 30) return "30 jours";
-                if (diffDays === 45) return "45 jours";
-                if (diffDays === 60) return "60 jours";
-                return "Personnalisé";
-            })(),
-            echeance: (() => {
-                // Return existing formatted date if available
-                if (initialData && 'echeance' in initialData && (initialData as any).echeance) {
-                    const val = (initialData as any).echeance;
-                    return typeof val === 'string' ? val.split('T')[0] : new Date(val).toISOString().split('T')[0];
-                }
-
-                // Calculate default due date (Today + 30 days)
-                const date = new Date();
-                date.setDate(date.getDate() + 30);
-                return date.toISOString().split("T")[0];
-            })(),
-            ...initialData,
-            // Explicitly overwrite dates with formatted versions if they exist
-            dateEmission: initialData?.dateEmission
-                ? (typeof initialData.dateEmission === 'string' ? initialData.dateEmission.split("T")[0] : new Date(initialData.dateEmission).toISOString().split("T")[0])
-                : new Date().toISOString().split("T")[0],
-            ...(type !== 'Facture' && initialData && 'dateValidite' in initialData ? {
-                dateValidite: (initialData as any).dateValidite ? (typeof (initialData as any).dateValidite === 'string' ? (initialData as any).dateValidite.split("T")[0] : new Date((initialData as any).dateValidite).toISOString().split("T")[0]) : ""
-            } : {}),
-            // Ensure items are correctly initialized if initialData has them
-            items: initialData?.items || [{ description: "", quantite: 1, prixUnitaire: 0, tva: 20, totalLigne: 0, produitId: "", type: 'produit', remise: 0, remiseType: 'pourcentage' }]
+    // Robust defaults builder
+    const buildFormDefaults = (data?: Facture | Devis): InvoiceFormValues => {
+        if (!data) {
+            // Default fresh state
+            const date = new Date();
+            date.setDate(date.getDate() + 30);
+            return {
+                numero: getNextNumber(),
+                clientId: "",
+                dateEmission: new Date().toISOString().split("T")[0],
+                echeance: date.toISOString().split("T")[0],
+                conditionsPaiement: "30 jours",
+                items: [{
+                    id: uuidv4(), // Generate ID once here
+                    description: "",
+                    quantite: 1,
+                    prixUnitaire: 0,
+                    tva: 20,
+                    totalLigne: 0,
+                    produitId: "",
+                    type: 'produit',
+                    remise: 0,
+                    remiseType: 'pourcentage'
+                }]
+            };
         }
+
+        // Helper to format date safely
+        const formatDate = (dateVal: string | Date | undefined) => {
+            if (!dateVal) return "";
+            try {
+                return typeof dateVal === 'string' ? dateVal.split('T')[0] : new Date(dateVal).toISOString().split('T')[0];
+            } catch (e) {
+                return "";
+            }
+        };
+
+        const emissionDate = formatDate(data.dateEmission) || new Date().toISOString().split("T")[0];
+
+        // Handle Echeance / Date Validite
+        let echeanceDate = "";
+        if ('echeance' in data && data.echeance) {
+            echeanceDate = formatDate(data.echeance);
+        } else if ('dateValidite' in data && (data as any).dateValidite) {
+            echeanceDate = formatDate((data as any).dateValidite);
+        }
+
+        if (!echeanceDate) {
+            const d = new Date();
+            d.setDate(d.getDate() + 30);
+            echeanceDate = d.toISOString().split("T")[0];
+        }
+
+        // Calculate conditions conditionsPaiement if missing
+        let conditions = data.conditionsPaiement || "30 jours";
+        if (!data.conditionsPaiement && emissionDate && echeanceDate) {
+            // Logic repeated from before
+            const start = new Date(emissionDate);
+            const end = new Date(echeanceDate);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+                const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                if (diff <= 0) conditions = "À réception";
+                else if (diff === 15) conditions = "15 jours";
+                else if (diff === 30) conditions = "30 jours";
+                else if (diff === 45) conditions = "45 jours";
+                else if (diff === 60) conditions = "60 jours";
+                else conditions = "Personnalisé";
+            }
+        }
+
+        return {
+            numero: data.numero,
+            clientId: data.clientId,
+            dateEmission: emissionDate,
+            echeance: echeanceDate,
+            conditionsPaiement: conditions,
+            numeroEnregistrement: data.numeroEnregistrement,
+            codeService: data.codeService,
+            remiseGlobale: data.remiseGlobale,
+            remiseGlobaleType: data.remiseGlobaleType,
+            items: (data.items || []).map(item => ({
+                ...item,
+                id: item.id || uuidv4(), // Ensure IDs exist
+                // Ensure strict number types to match form expectations and avoid string/number mismatch dirty states
+                quantite: typeof item.quantite === 'string' ? parseFloat(item.quantite) : (item.quantite || 1),
+                prixUnitaire: typeof item.prixUnitaire === 'string' ? parseFloat(item.prixUnitaire) : (item.prixUnitaire || 0),
+                remise: typeof item.remise === 'string' ? parseFloat(item.remise) : (item.remise || 0),
+                tva: typeof item.tva === 'string' ? parseFloat(item.tva) : (item.tva || 20),
+                description: item.description || ""
+            }))
+        };
+    };
+
+    const methods = useForm<InvoiceFormValues>({
+        defaultValues: buildFormDefaults(initialData)
     });
 
-    const { register, control, handleSubmit, setValue, watch, getValues, setError, clearErrors, formState: { errors, isDirty } } = methods;
+    const { register, control, handleSubmit, setValue, watch, getValues, setError, clearErrors, reset, formState: { errors, isDirty, dirtyFields } } = methods;
+
+
+
+    // Reset form when initialData loads or ID changes (Robust Reset)
+    useEffect(() => {
+        if (initialData?.id) {
+            console.log("[RESET_DEBUG] Resetting form with initialData", initialData.id);
+            const defaults = buildFormDefaults(initialData);
+            reset(defaults, { keepDirty: false, keepTouched: false });
+        }
+    }, [initialData?.id, reset]); // Dependency on ID is key
 
     const { fields, append, remove, replace } = useFieldArray({
         control,
@@ -114,6 +171,171 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const [isClientOpen, setIsClientOpen] = useState(false);
     const [clientSearch, setClientSearch] = useState("");
     const [isSaving, setIsSaving] = useState(false);
+    const [isTogglingLock, setIsTogglingLock] = useState(false);
+
+    // Robust Initialization:
+    // Only locked if explicitly isLocked=true OR (Facturé AND not explicitly unlocked yet)
+    // But since we want to allow unlocking Facturé, we rely on isLocked state basically.
+    // Initial state:
+    const [isLocked, setIsLocked] = useState<boolean>(() => {
+        if (type !== "Devis") return false;
+        const quote = initialData as Devis;
+        // Default to locked if isLocked is true OR status is Facturé 
+        // (Assuming if it's Facturé it SHOULD start locked unless we have local state saying otherwise, 
+        // but here it's fresh init).
+        return !!quote?.isLocked || quote?.statut === "Facturé";
+    });
+
+    const handleToggleLock = async (e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
+
+        if (isTogglingLock) return; // Prevent double clicks
+
+        setIsTogglingLock(true);
+        const nextLocked = !isLocked;
+
+        console.log("[LOCK_TOGGLE] START", {
+            before: isLocked,
+            after: nextLocked,
+            docId: initialData?.id
+        });
+
+        if (type !== "Devis" || !initialData?.id) {
+            setIsTogglingLock(false);
+            return;
+        }
+
+        // Optimistic UI Update: Set state BEFORE async call
+        setIsLocked(nextLocked);
+        console.log("[LOCK_TOGGLE] setIsLocked", { nextLocked });
+
+        if (isLocked) {
+            // --- UNLOCK FLOW ---
+            try {
+                const res = await toggleQuoteLock(initialData.id, false);
+                console.log("[LOCK_TOGGLE] api unlock result :", res);
+
+                if (res.success) {
+                    // Success: State already correct, just notify
+                    toast.success("Devis déverrouillé");
+                    // refreshData() skipped to avoid overriding local optimistic state?
+                    // Safe to call refresh if we trust server returns updated data matching local state.
+                    refreshData();
+                } else {
+                    console.error("[LOCK_TOGGLE] Unlock failed:", res.error);
+                    toast.error(res.error || "Erreur lors du déverrouillage");
+                    // Revert state on error
+                    setIsLocked(isLocked); // Revert to previous (true)
+                    console.log("[LOCK_TOGGLE] REVERTING state to", { isLocked });
+                }
+            } catch (error: any) {
+                console.error("[LOCK_TOGGLE] Unlock Exception:", error);
+                toast.error("Erreur technique: " + error.message);
+                // Revert state on error
+                setIsLocked(isLocked);
+                console.log("[LOCK_TOGGLE] REVERTING state to", { isLocked });
+            } finally {
+                setIsTogglingLock(false);
+            }
+        } else {
+            // --- LOCK FLOW ---
+            const saveAndLock = handleSubmit(async (data) => {
+                // For LOCK, we already optimistically set to TRUE above (nextLocked).
+                // But validation happens here. If validation fails, we must REVERT.
+
+                try {
+                    // 1. Custom Validation 
+                    let hasInvalidItems = false;
+                    data.items.forEach((item) => {
+                        const q = typeof item.quantite === 'string' ? parseFloat(item.quantite) : item.quantite;
+                        const p = typeof item.prixUnitaire === 'string' ? parseFloat(item.prixUnitaire) : item.prixUnitaire;
+                        if (isNaN(q) || q <= 0) hasInvalidItems = true;
+                        if (isNaN(p) || p < 0) hasInvalidItems = true;
+                    });
+
+                    if (hasInvalidItems) {
+                        toast.error("Veuillez corriger les lignes (quantité/prix) avant de verrouiller.");
+                        setIsLocked(false); // Revert
+                        console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Validation)");
+                        setIsTogglingLock(false);
+                        return;
+                    }
+
+                    // ... (keep date validation) ...
+                    const emissionDate = new Date(data.dateEmission);
+                    if (isNaN(emissionDate.getTime())) {
+                        toast.error("Date d'émission invalide.");
+                        setIsLocked(false); // Revert
+                        console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Date)");
+                        setIsTogglingLock(false);
+                        return;
+                    }
+
+                    // 2. Data Persistence
+                    const documentData = {
+                        id: initialData.id,
+                        ...data,
+                        totalHT: totals.ht,
+                        totalTVA: totals.tva,
+                        totalTTC: totals.ttc,
+                        config: {
+                            showDateColumn,
+                            showTTCColumn,
+                            discountEnabled,
+                            discountType,
+                            defaultTva,
+                            showOptionalFields
+                        },
+                        remiseGlobale: data.remiseGlobale || 0,
+                        remiseGlobaleMontant: totals.remiseGlobale,
+                        clientId: data.clientId,
+                        societeId: societe?.id || "",
+                        items: data.items.map(item => ({
+                            ...item,
+                            id: item.id || uuidv4(),
+                        })),
+                        statut: initialData.statut || "Brouillon",
+                        dateValidite: (data as any).dateValidite || "",
+                        isLocked: true
+                    } as unknown as Devis;
+
+                    const res = await updateQuote(documentData);
+                    console.log("[LOCK_TOGGLE] api lock result :", res);
+
+                    if (res.success) {
+                        // Success: State already correct (true)
+                        toast.success("Devis enregistré et verrouillé");
+                        // Update form state to clean
+                        const currentValues = getValues();
+                        reset(currentValues, { keepDirty: false, keepTouched: false });
+                        refreshData();
+                    } else {
+                        console.error("[LOCK_TOGGLE] Lock Persistence Failed:", res.error);
+                        toast.error("Erreur lors de l'enregistrement: " + res.error);
+                        setIsLocked(false); // Revert
+                        console.log("[LOCK_TOGGLE] REVERTING state to FALSE (API Error)");
+                    }
+                } catch (e: any) {
+                    console.error("[LOCK_TOGGLE] Lock Exception:", e);
+                    toast.error("Erreur technique: " + e.message);
+                    setIsLocked(false); // Revert
+                    console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Exception)");
+                } finally {
+                    setIsTogglingLock(false);
+                }
+            }, (errors) => {
+                console.error("[LOCK_TOGGLE] Validation Failed:", errors);
+                toast.error("Veuillez remplir les champs obligatoires avant de verrouiller.");
+                setIsLocked(false); // Revert
+                console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Form Errors)");
+                setIsTogglingLock(false);
+            });
+
+            await saveAndLock();
+        }
+    };
+
+
     // Load Global Config for defaults if not editing specific invoice config
     const globalConfig = dataService.getGlobalConfig();
 
@@ -158,7 +380,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             // Only update if different to avoid triggering isDirty on load
             if (getValues("echeance") !== formattedDueDate) {
-                setValue("echeance", formattedDueDate);
+                setValue("echeance", formattedDueDate, { shouldDirty: false });
             }
         }
     }, [watchDateEmission, watchConditionsPaiement, setValue, getValues]);
@@ -217,7 +439,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     // Clear line discounts when disabled
     useEffect(() => {
         if (!discountEnabled) {
-            setValue("items", watchedItems.map(item => ({ ...item, remise: 0 })));
+            // Only update if there are items with non-zero discount to avoid initial dirtying
+            const hasDiscounts = watchedItems.some(item => item.remise && item.remise > 0);
+            if (hasDiscounts) {
+                setValue("items", watchedItems.map(item => ({ ...item, remise: 0 })), { shouldDirty: true });
+            }
         }
     }, [discountEnabled]); // Only depend on enabled state to avoid loop
 
@@ -308,9 +534,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const handleProductChange = (index: number, productId: string) => {
         const product = products.find(p => p.id === productId);
         if (product) {
-            setValue(`items.${index}.description`, product.nom);
-            setValue(`items.${index}.prixUnitaire`, product.prixUnitaire);
-            setValue(`items.${index}.tva`, product.tva);
+            setValue(`items.${index}.description`, product.nom, { shouldDirty: true });
+            setValue(`items.${index}.prixUnitaire`, product.prixUnitaire, { shouldDirty: true });
+            setValue(`items.${index}.tva`, product.tva, { shouldDirty: true });
         }
     };
 
@@ -320,9 +546,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         // Check if the entered text matches a product name
         const matchingProduct = products.find(p => p.nom.toLowerCase() === value.toLowerCase());
         if (matchingProduct) {
-            setValue(`items.${index}.prixUnitaire`, matchingProduct.prixUnitaire);
-            setValue(`items.${index}.tva`, matchingProduct.tva);
-            setValue(`items.${index}.produitId`, matchingProduct.id);
+            setValue(`items.${index}.prixUnitaire`, matchingProduct.prixUnitaire, { shouldDirty: true });
+            setValue(`items.${index}.tva`, matchingProduct.tva, { shouldDirty: true });
+            setValue(`items.${index}.produitId`, matchingProduct.id, { shouldDirty: true });
         }
     };
 
@@ -413,7 +639,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     resteAPayer: totals.ttc
                 } : {
                     statut: initialData?.statut || "Brouillon",
-                    dateValidite: (data as any).dateValidite || ""
+                    dateValidite: (data as any).dateValidite || "",
+                    isLocked: isLocked
                 })
             } as unknown as Facture | Devis;
 
@@ -560,7 +787,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         ? (isEditMode ? "Modifier la Facture" : "Nouvelle Facture")
         : (isEditMode ? "Modifier le Devis" : "Nouveau Devis");
 
-    const isReadOnly = false;
+    const isReadOnly = type === "Devis" && isLocked;
 
     // Unsaved Changes Modal State
     const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
@@ -630,11 +857,26 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <div className="relative" ref={settingsRef}>
                             <button
                                 type="button"
-                                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                                className="p-2 text-muted-foreground hover:text-foreground glass rounded-lg transition-colors cursor-pointer"
+                                onClick={() => {
+                                    if (isReadOnly) {
+                                        toast.error("Devis verrouillé : déverrouillez pour modifier la configuration.");
+                                        return;
+                                    }
+                                    setIsSettingsOpen(!isSettingsOpen);
+                                }}
+                                disabled={isReadOnly}
+                                className={cn(
+                                    "p-2 rounded-lg transition-colors",
+                                    isReadOnly
+                                        ? "text-muted-foreground opacity-50 cursor-not-allowed"
+                                        : "text-muted-foreground hover:text-foreground glass cursor-pointer"
+                                )}
                             >
                                 <Settings className="h-5 w-5" />
                             </button>
+
+
+
                             {isSettingsOpen && (
                                 <div className="absolute right-0 top-12 z-50 w-72 rounded-xl border border-border dark:border-white/10 bg-background dark:bg-slate-900/95 backdrop-blur-xl shadow-xl p-4 animate-in fade-in zoom-in-95 duration-200">
                                     <h4 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -773,6 +1015,31 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 </div>
                             )}
                         </div>
+
+                        {/* LOCK TOGGLE (Devis Only) */}
+                        {type === "Devis" && initialData?.id && (
+                            <button
+                                type="button"
+                                onClick={handleToggleLock}
+                                disabled={isTogglingLock}
+                                className={cn(
+                                    "p-2 rounded-lg transition-colors cursor-pointer",
+                                    isLocked
+                                        ? "text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                                        : "text-muted-foreground hover:text-foreground glass",
+                                    isTogglingLock && "opacity-50 cursor-not-allowed"
+                                )}
+                                title={isLocked ? "Déverrouiller le devis" : "Verrouiller le devis"}
+                            >
+                                {isTogglingLock ? (
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                ) : isLocked ? (
+                                    <Lock className="h-5 w-5" />
+                                ) : (
+                                    <Unlock className="h-5 w-5" />
+                                )}
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={handlePreview}
@@ -955,7 +1222,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                     else if (diffDays === 45) period = "45 jours";
                                                     else if (diffDays === 60) period = "60 jours";
 
-                                                    setValue("conditionsPaiement", period);
+                                                    setValue("conditionsPaiement", period, { shouldDirty: true, shouldTouch: true });
                                                 }
                                             }
                                         }
@@ -976,267 +1243,254 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             {showOptionalFields ? "Masquer" : "Afficher"} les informations complémentaires
                         </button>
 
-                        {showOptionalFields && (
-                            <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-muted-foreground">
-                                            {type === "Facture" ? "Conditions de paiement" : "Période de validité"}
-                                        </label>
-                                        <select
-                                            {...register("conditionsPaiement", {
-                                                onChange: (e) => {
-                                                    const val = e.target.value;
-                                                    // Auto-calc echeance if needed
-                                                    if (val) {
-                                                        const match = val.match(/(\d+) jours/);
-                                                        const days = match ? parseInt(match[1]) : 0;
-                                                        if (days > 0) {
-                                                            const emissionDate = getValues("dateEmission");
-                                                            if (emissionDate) {
-                                                                const targetDate = new Date(emissionDate);
-                                                                targetDate.setDate(targetDate.getDate() + days);
-                                                                setValue("echeance", targetDate.toISOString().split('T')[0]);
-                                                            }
+                        <div className={cn("space-y-4 animate-in fade-in slide-in-from-top-2 duration-200", !showOptionalFields && "hidden")}>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-muted-foreground">
+                                        {type === "Facture" ? "Conditions de paiement" : "Période de validité"}
+                                    </label>
+                                    <select
+                                        {...register("conditionsPaiement", {
+                                            onChange: (e) => {
+                                                const val = e.target.value;
+                                                // Auto-calc echeance if needed
+                                                if (val) {
+                                                    const match = val.match(/(\d+) jours/);
+                                                    const days = match ? parseInt(match[1]) : 0;
+                                                    if (days > 0) {
+                                                        const emissionDate = getValues("dateEmission");
+                                                        if (emissionDate) {
+                                                            const targetDate = new Date(emissionDate);
+                                                            targetDate.setDate(targetDate.getDate() + days);
+                                                            setValue("echeance", targetDate.toISOString().split('T')[0], {
+                                                                shouldDirty: true,
+                                                                shouldTouch: true
+                                                            });
                                                         }
                                                     }
                                                 }
-                                            })}
-                                            className="w-full h-11 rounded-lg glass-input px-4 text-foreground cursor-pointer"
-                                            disabled={isReadOnly}
-                                        >
-                                            <option value="">Sélectionner...</option>
-                                            <option value="À réception">À réception</option>
-                                            <option value="15 jours">15 jours</option>
-                                            <option value="30 jours">30 jours</option>
-                                            <option value="45 jours">45 jours</option>
-                                            <option value="60 jours">60 jours</option>
-                                            <option value="Personnalisé">Personnalisé</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-muted-foreground">Numéro d'enregistrement</label>
-                                        <input
-                                            {...register("numeroEnregistrement")}
-                                            placeholder="Ex : RC123456"
-                                            className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
-                                            disabled={isReadOnly}
-                                        />
-                                    </div>
+                                            }
+                                        })}
+                                        className="w-full h-11 rounded-lg glass-input px-4 text-foreground cursor-pointer"
+                                        disabled={isReadOnly}
+                                    >
+                                        <option value="">Sélectionner...</option>
+                                        <option value="À réception">À réception</option>
+                                        <option value="15 jours">15 jours</option>
+                                        <option value="30 jours">30 jours</option>
+                                        <option value="45 jours">45 jours</option>
+                                        <option value="60 jours">60 jours</option>
+                                        <option value="Personnalisé">Personnalisé</option>
+                                    </select>
                                 </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-muted-foreground">Numéro d'enregistrement</label>
+                                    <input
+                                        {...register("numeroEnregistrement")}
+                                        placeholder="Ex : RC123456"
+                                        className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
+                                        disabled={isReadOnly}
+                                    />
+                                </div>
+                            </div>
 
-                                {/* Client Billing Information */}
-                                {selectedClient && (
-                                    <div className="glass-card rounded-xl p-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            {/* Client Billing Information */}
+                            {selectedClient && (
+                                <div className="glass-card rounded-xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                            Informations de facturation
+                                        </h4>
+                                        {!isEditingClient ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsEditingClient(true);
+                                                    setIsEditingClient(true);
+                                                    setEditedClientData({
+                                                        nom: selectedClient.nom,
+                                                        prenomContact: selectedClient.prenomContact,
+                                                        nomContact: selectedClient.nomContact,
+                                                        email: selectedClient.email,
+                                                        telephone: selectedClient.telephone,
+                                                        adresse: selectedClient.adresse,
+                                                        codePostal: selectedClient.codePostal,
+                                                        ville: selectedClient.ville,
+                                                        siret: selectedClient.siret,
+                                                        rcs: selectedClient.rcs
+                                                    });
+                                                }}
+                                                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                                                disabled={isReadOnly}
+                                            >
+                                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                 </svg>
-                                                Informations de facturation
-                                            </h4>
-                                            {!isEditingClient ? (
+                                                Modifier
+                                            </button>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        setIsEditingClient(true);
-                                                        setIsEditingClient(true);
-                                                        setEditedClientData({
-                                                            nom: selectedClient.nom,
-                                                            prenomContact: selectedClient.prenomContact,
-                                                            nomContact: selectedClient.nomContact,
-                                                            email: selectedClient.email,
-                                                            telephone: selectedClient.telephone,
-                                                            adresse: selectedClient.adresse,
-                                                            codePostal: selectedClient.codePostal,
-                                                            ville: selectedClient.ville,
-                                                            siret: selectedClient.siret,
-                                                            rcs: selectedClient.rcs
-                                                        });
+                                                        // Save changes to client
+                                                        const updatedClient = { ...selectedClient, ...editedClientData };
+                                                        dataService.saveClient(updatedClient);
+                                                        refreshData();
+                                                        setIsEditingClient(false);
                                                     }}
-                                                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
-                                                    disabled={isReadOnly}
+                                                    className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 transition-colors"
                                                 >
-                                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                    </svg>
-                                                    Modifier
+                                                    <Check className="h-3.5 w-3.5" />
+                                                    Enregistrer
                                                 </button>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            // Save changes to client
-                                                            const updatedClient = { ...selectedClient, ...editedClientData };
-                                                            dataService.saveClient(updatedClient);
-                                                            refreshData();
-                                                            setIsEditingClient(false);
-                                                        }}
-                                                        className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 transition-colors"
-                                                    >
-                                                        <Check className="h-3.5 w-3.5" />
-                                                        Enregistrer
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setIsEditingClient(false)}
-                                                        className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
-                                                    >
-                                                        <X className="h-3.5 w-3.5" />
-                                                        Annuler
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                        {!isEditingClient ? (
-                                            <div className="grid grid-cols-2 gap-3 text-sm">
-                                                <div>
-                                                    <span className="text-muted-foreground">Client :</span>
-                                                    <p className="text-foreground font-medium">{selectedClient.nom}</p>
-                                                </div>
-                                                {(selectedClient.prenomContact || selectedClient.nomContact) && (
-                                                    <div>
-                                                        <span className="text-muted-foreground">Contact :</span>
-                                                        <p className="text-foreground">{selectedClient.prenomContact} {selectedClient.nomContact}</p>
-                                                    </div>
-                                                )}
-                                                {selectedClient.email && (
-                                                    <div>
-                                                        <span className="text-muted-foreground">Email :</span>
-                                                        <p className="text-foreground">{selectedClient.email}</p>
-                                                    </div>
-                                                )}
-                                                {selectedClient.telephone && (
-                                                    <div>
-                                                        <span className="text-muted-foreground">Téléphone :</span>
-                                                        <p className="text-foreground">{selectedClient.telephone}</p>
-                                                    </div>
-                                                )}
-                                                {selectedClient.siret && (
-                                                    <div>
-                                                        <span className="text-muted-foreground">SIRET :</span>
-                                                        <p className="text-foreground">{selectedClient.siret}</p>
-                                                    </div>
-                                                )}
-                                                {selectedClient.rcs && (
-                                                    <div>
-                                                        <span className="text-muted-foreground">RCS :</span>
-                                                        <p className="text-foreground">{selectedClient.rcs}</p>
-                                                    </div>
-                                                )}
-                                                {selectedClient.adresse && (
-                                                    <div className="col-span-2">
-                                                        <span className="text-muted-foreground">Adresse :</span>
-                                                        <p className="text-foreground">{selectedClient.adresse}</p>
-                                                        {(selectedClient.codePostal || selectedClient.ville) && (
-                                                            <p className="text-foreground">
-                                                                {selectedClient.codePostal} {selectedClient.ville}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="col-span-2">
-                                                    <label className="block text-xs text-muted-foreground mb-1">Client / Société</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.nom || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, nom: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-3 text-sm text-foreground focus:ring-1 focus:ring-blue-500 font-medium"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-muted-foreground mb-1">Prénom Contact</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.prenomContact || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, prenomContact: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-muted-foreground mb-1">Nom Contact</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.nomContact || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, nomContact: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div className="col-span-2">
-                                                    <label className="block text-xs text-muted-foreground mb-1">Email</label>
-                                                    <input
-                                                        type="email"
-                                                        value={editedClientData.email || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, email: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div className="col-span-2">
-                                                    <label className="block text-xs text-muted-foreground mb-1">Téléphone</label>
-                                                    <input
-                                                        type="tel"
-                                                        value={editedClientData.telephone || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, telephone: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-muted-foreground mb-1">SIRET</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.siret || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, siret: e.target.value })}
-                                                        placeholder="Ex: 123 456 789 00012"
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-muted-foreground mb-1">RCS</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.rcs || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, rcs: e.target.value })}
-                                                        placeholder="Ex: RCS Paris 123 456 789"
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div className="col-span-2">
-                                                    <label className="block text-xs text-muted-foreground mb-1">Adresse</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.adresse || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, adresse: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-muted-foreground mb-1">Code postal</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.codePostal || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, codePostal: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-muted-foreground mb-1">Ville</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editedClientData.ville || ""}
-                                                        onChange={(e) => setEditedClientData({ ...editedClientData, ville: e.target.value })}
-                                                        className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
-                                                    />
-                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsEditingClient(false)}
+                                                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                    Annuler
+                                                </button>
                                             </div>
                                         )}
                                     </div>
-                                )}
-                            </div>
-                        )}
+
+                                    {isEditingClient ? (
+                                        <div className="grid grid-cols-2 gap-4 animate-in fade-in zoom-in-95 duration-200">
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">Adresse</label>
+                                                <input
+                                                    type="text"
+                                                    value={editedClientData.adresse || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, adresse: e.target.value })}
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">Ville</label>
+                                                <input
+                                                    type="text"
+                                                    value={editedClientData.ville || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, ville: e.target.value })}
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">Code Postal</label>
+                                                <input
+                                                    type="text"
+                                                    value={editedClientData.codePostal || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, codePostal: e.target.value })}
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">Pays</label>
+                                                <input
+                                                    type="text"
+                                                    value={editedClientData.pays || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, pays: e.target.value })}
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">Email</label>
+                                                <input
+                                                    type="email"
+                                                    value={editedClientData.email || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, email: e.target.value })}
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">Téléphone</label>
+                                                <input
+                                                    type="tel"
+                                                    value={editedClientData.telephone || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, telephone: e.target.value })}
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">SIRET</label>
+                                                <input
+                                                    type="text"
+                                                    value={editedClientData.siret || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, siret: e.target.value })}
+                                                    placeholder="Ex: 123 456 789 00012"
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">RCS</label>
+                                                <input
+                                                    type="text"
+                                                    value={editedClientData.rcs || ""}
+                                                    onChange={(e) => setEditedClientData({ ...editedClientData, rcs: e.target.value })}
+                                                    placeholder="Ex: RCS Paris 123 456 789"
+                                                    className="w-full h-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:ring-1 focus:ring-blue-500 dark:bg-white/5 dark:border-white/10"
+                                                />
+                                            </div>
+                                            <div className="col-span-2">
+                                                {/* Placeholder for any strictly full-width field if needed, or just closure */}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <span className="text-muted-foreground">Client :</span>
+                                                <p className="text-foreground font-medium">{selectedClient.nom}</p>
+                                            </div>
+                                            {(selectedClient.prenomContact || selectedClient.nomContact) && (
+                                                <div>
+                                                    <span className="text-muted-foreground">Contact :</span>
+                                                    <p className="text-foreground">{selectedClient.prenomContact} {selectedClient.nomContact}</p>
+                                                </div>
+                                            )}
+                                            {selectedClient.email && (
+                                                <div>
+                                                    <span className="text-muted-foreground">Email :</span>
+                                                    <p className="text-foreground">{selectedClient.email}</p>
+                                                </div>
+                                            )}
+                                            {selectedClient.telephone && (
+                                                <div>
+                                                    <span className="text-muted-foreground">Téléphone :</span>
+                                                    <p className="text-foreground">{selectedClient.telephone}</p>
+                                                </div>
+                                            )}
+                                            {selectedClient.siret && (
+                                                <div>
+                                                    <span className="text-muted-foreground">SIRET :</span>
+                                                    <p className="text-foreground">{selectedClient.siret}</p>
+                                                </div>
+                                            )}
+                                            {selectedClient.rcs && (
+                                                <div>
+                                                    <span className="text-muted-foreground">RCS :</span>
+                                                    <p className="text-foreground">{selectedClient.rcs}</p>
+                                                </div>
+                                            )}
+                                            {selectedClient.adresse && (
+                                                <div className="col-span-2">
+                                                    <span className="text-muted-foreground">Adresse :</span>
+                                                    <p className="text-foreground">{selectedClient.adresse}</p>
+                                                    {(selectedClient.codePostal || selectedClient.ville) && (
+                                                        <p className="text-foreground">
+                                                            {selectedClient.codePostal} {selectedClient.ville}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Lines */}
@@ -1496,64 +1750,68 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             </form>
 
             {/* Gmail-style Compose Window */}
-            {isComposerOpen && initialData && (type === "Facture" || type === "Devis") && (
-                <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
-                    <div className="flex items-center justify-between px-4 py-2 bg-muted/50 dark:bg-[#1e1e1e] border-b border-border dark:border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
-                        <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium">Nouveau message - {initialData.numero}</span>
-                            <button
-                                className="px-2 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-full flex items-center gap-1 transition-colors border border-blue-500/20"
-                                title="Voir l'historique"
-                                onClick={(e) => { e.stopPropagation(); setHistoryPanelOpen(true); }}
-                            >
-                                <Clock className="h-3 w-3" />
-                                Historique
-                            </button>
+            {
+                isComposerOpen && initialData && (type === "Facture" || type === "Devis") && (
+                    <div className="fixed bottom-0 right-10 w-[600px] h-[600px] bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-t-xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+                        <div className="flex items-center justify-between px-4 py-2 bg-muted/50 dark:bg-[#1e1e1e] border-b border-border dark:border-white/10 cursor-pointer" onClick={() => setIsComposerOpen(false)}>
+                            <div className="flex items-center gap-3">
+                                <span className="text-sm font-medium">Nouveau message - {initialData.numero}</span>
+                                <button
+                                    className="px-2 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-full flex items-center gap-1 transition-colors border border-blue-500/20"
+                                    title="Voir l'historique"
+                                    onClick={(e) => { e.stopPropagation(); setHistoryPanelOpen(true); }}
+                                >
+                                    <Clock className="h-3 w-3" />
+                                    Historique
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                                <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
+                                <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
-                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
-                        <EmailComposer
+                        <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
+                            <EmailComposer
 
-                            key={draftData ? 'draft-restore' : initialData.id}
-                            defaultTo={draftData ? draftData.to : (clients.find(c => c.id === initialData.clientId)?.email || "")}
-                            defaultSubject={draftData ? draftData.subject : `${type} ${initialData.numero} - ${societe?.nom} `}
-                            defaultMessage={draftData ? draftData.message : `Madame, Monsieur, \n\nVeuillez trouver ci - joint votre ${type === 'Facture' ? 'facture' : 'devis'} n°${initialData.numero}.\n\nCordialement, \n${societe?.nom || ""} `}
-                            mainAttachmentName={`${type}_${initialData.numero}.pdf`}
-                            onSend={async (data) => {
-                                await sendEmail(initialData as Facture | Devis, data, {
-                                    onSuccess: () => setIsComposerOpen(false)
-                                });
-                            }}
-                        />
+                                key={draftData ? 'draft-restore' : initialData.id}
+                                defaultTo={draftData ? draftData.to : (clients.find(c => c.id === initialData.clientId)?.email || "")}
+                                defaultSubject={draftData ? draftData.subject : `${type} ${initialData.numero} - ${societe?.nom} `}
+                                defaultMessage={draftData ? draftData.message : `Madame, Monsieur, \n\nVeuillez trouver ci - joint votre ${type === 'Facture' ? 'facture' : 'devis'} n°${initialData.numero}.\n\nCordialement, \n${societe?.nom || ""} `}
+                                mainAttachmentName={`${type}_${initialData.numero}.pdf`}
+                                onSend={async (data) => {
+                                    await sendEmail(initialData as Facture | Devis, data, {
+                                        onSuccess: () => setIsComposerOpen(false)
+                                    });
+                                }}
+                            />
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Undo Notification */}
-            {isUndoVisible && (
-                <div className="fixed bottom-6 right-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
-                    <div className="flex flex-col">
-                        <span className="font-medium">Message envoyé</span>
-                        <span className="text-xs text-muted-foreground">Envoi en cours...</span>
+            {
+                isUndoVisible && (
+                    <div className="fixed bottom-6 right-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                        <div className="flex flex-col">
+                            <span className="font-medium">Message envoyé</span>
+                            <span className="text-xs text-muted-foreground">Envoi en cours...</span>
+                        </div>
+                        <button
+                            onClick={() => {
+                                const restored = cancelSend();
+                                if (restored) {
+                                    setDraftData(restored);
+                                    setIsComposerOpen(true);
+                                }
+                            }}
+                            className="ml-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium rounded transition-colors"
+                        >
+                            Annuler
+                        </button>
                     </div>
-                    <button
-                        onClick={() => {
-                            const restored = cancelSend();
-                            if (restored) {
-                                setDraftData(restored);
-                                setIsComposerOpen(true);
-                            }
-                        }}
-                        className="ml-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium rounded transition-colors"
-                    >
-                        Annuler
-                    </button>
-                </div>
-            )}
+                )
+            }
 
             {/* History Side Panel */}
             <SidePanel
@@ -1575,14 +1833,12 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             <ConfirmationModal
                 isOpen={isUnsavedModalOpen}
                 onClose={() => setIsUnsavedModalOpen(false)}
-                onConfirm={() => {
-                    // Force navigation even if dirty
-                    setIsUnsavedModalOpen(false);
-                    router.back();
-                }}
+                onConfirm={() => router.back()}
                 title="Modifications non enregistrées"
-                message="Vous avez des modifications en cours. Si vous quittez cette page maintenant, toutes vos modifications seront perdues."
+                description="Des modifications ont été apportées. Êtes-vous sûr de vouloir quitter sans enregistrer ?"
+                confirmText="Quitter sans enregistrer"
+                cancelText="Rester"
             />
-        </FormProvider>
+        </FormProvider >
     );
 }

@@ -18,7 +18,7 @@ interface InvoiceLineItemProps {
     isReadOnly?: boolean;
 }
 
-const PriceInput = ({ value, onChange, onBlur, inputRef, className }: any) => {
+const PriceInput = ({ value, onChange, onBlur, inputRef, className, disabled }: any) => {
     const [localValue, setLocalValue] = useState(value !== undefined ? value.toFixed(2).replace('.', ',') : "0,00");
 
     useEffect(() => {
@@ -42,6 +42,7 @@ const PriceInput = ({ value, onChange, onBlur, inputRef, className }: any) => {
                 }
             }}
             className={className}
+            disabled={disabled}
         />
     );
 };
@@ -210,7 +211,7 @@ export const InvoiceLineItem = ({
                                         onChange={onChange}
                                         onBlur={onBlur}
                                         inputRef={ref}
-                                        // disabled={isReadOnly} // PriceInput needs to handle disabled if standard input doesn't
+                                        disabled={isReadOnly}
                                         className={cn(
                                             "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-5",
                                             isReadOnly && "disabled:border-transparent disabled:opacity-80 pointer-events-none"

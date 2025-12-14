@@ -213,6 +213,7 @@ export interface Devis extends Omit<Facture, 'type' | 'statut' | 'echeance'> {
     statut: StatusDevis;
     dateValidite: string; // ISO Date
     emails?: EmailLog[]; // History of sent emails
+    isLocked?: boolean;
 }
 
 // Configuration globale app

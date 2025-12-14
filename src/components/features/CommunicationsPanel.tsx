@@ -6,7 +6,7 @@ import { EmailComposer } from "@/components/features/EmailComposer";
 import { Send, Mail, Pencil, X, Minimize2, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
-import { updateInvoice, updateQuote } from "@/app/actions";
+import { updateInvoice, updateQuote, getDocumentEmailHistory } from "@/app/actions";
 import { v4 as uuidv4 } from "uuid";
 import { useState, useRef, useEffect } from "react";
 import { EmailLog, Facture, Devis } from "@/types";
@@ -22,6 +22,18 @@ interface CommunicationsPanelProps {
 export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideComposeButton = false }: CommunicationsPanelProps) {
     const { clients, societe, refreshData, logAction } = useData();
     const client = clients.find(c => c.id === invoice.clientId);
+    const [historyEmails, setHistoryEmails] = useState<EmailLog[]>(invoice.emails || []);
+
+    // Fetch fresh history on mount
+    useEffect(() => {
+        const fetchHistory = async () => {
+            const result = await getDocumentEmailHistory(invoice.type === 'Devis' ? 'devis' : 'facture', invoice.id);
+            if (result.success && result.data) {
+                setHistoryEmails(result.data);
+            }
+        };
+        fetchHistory();
+    }, [invoice.id, invoice.type]);
 
 
 
@@ -108,6 +120,7 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
                 }
 
                 toast.success(`Email programmé pour le ${format(new Date(emailData.scheduledAt), "d MMM à HH:mm", { locale: fr })}`);
+                setHistoryEmails(prev => [...prev, scheduledLog]);
                 refreshData();
                 setResendingEmail(null);
                 return;
@@ -169,7 +182,9 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
                     }
 
                     const actionLabel = isRelance ? 'Relance envoyée' : 'Email envoyé';
-                    logAction('update', isDevis ? 'devis' : 'facture', `${actionLabel} à ${emailData.to}`, invoice.id);
+                    logAction('update', isDevis ? 'devis' : 'facture', `${actionLabel} pour ${isDevis ? 'le devis' : 'la facture'} ${invoice.numero} à ${emailData.to}`, invoice.id);
+                    toast.success(isRelance ? "Relance envoyée avec succès" : "Email envoyé avec succès");
+                    setHistoryEmails(prev => [...prev, newEmailLog]);
                     refreshData();
 
                 } catch (error: any) {
@@ -208,10 +223,10 @@ export function CommunicationsPanel({ invoice, defaultComposeOpen = false, hideC
                         <Mail className="h-5 w-5 text-muted-foreground" />
                         Historique
                         <span className="text-sm font-normal text-muted-foreground ml-2">
-                            ({invoice.emails?.length || 0})
+                            ({historyEmails.length})
                         </span>
                     </h2>
-                    <EmailHistoryView emails={invoice.emails || []} />
+                    <EmailHistoryView emails={historyEmails} />
                 </div>
             </div>
 

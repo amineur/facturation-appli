@@ -573,8 +573,8 @@ class DataService {
     }
 
     // -- History / Audit Log --
-    async getHistory(limit: number = 50): Promise<HistoryEntry[]> {
-        const activeSocieteId = this.getActiveSocieteId();
+    async getHistory(limit: number = 50, societeIdOverride?: string): Promise<HistoryEntry[]> {
+        const activeSocieteId = societeIdOverride || this.getActiveSocieteId();
         const res = await fetchHistory(limit, activeSocieteId);
         if (res.success && res.data) {
             return res.data as HistoryEntry[];

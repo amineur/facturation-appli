@@ -109,7 +109,8 @@ export function useInvoiceEmail() {
 
                     if (result.previewUrl) window.open(result.previewUrl, '_blank');
 
-                    logAction('update', isDevis ? 'devis' : 'facture', `${isRelance ? 'Relance' : 'Email'} envoyé à ${emailData.to}`, invoice.id);
+                    toast.success(isRelance ? "Relance envoyée avec succès" : "Email envoyé avec succès");
+                    logAction('update', isDevis ? 'devis' : 'facture', `${isRelance ? 'Relance' : 'Email'} envoyé pour ${isDevis ? 'le devis' : 'la facture'} ${invoice.numero} à ${emailData.to}`, invoice.id);
                     refreshData();
                 } catch (e: any) {
                     toast.error("Erreur envoi: " + e.message);

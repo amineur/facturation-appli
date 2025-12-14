@@ -27,7 +27,7 @@ export default function EditDevisPage({ params }: { params: Promise<{ id: string
         }
     }, [id, quotes, isDataLoading, router]);
 
-    if (loading || isDataLoading) {
+    if (loading && !quote) {
         return <div className="p-8 text-center text-muted-foreground">Chargement du devis...</div>;
     }
 

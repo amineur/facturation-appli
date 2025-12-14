@@ -178,6 +178,8 @@ model Devis {
   
   conditions      String?
   notes           String?
+  
+  isLocked        Boolean   @default(false)
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

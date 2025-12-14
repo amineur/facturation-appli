@@ -422,7 +422,8 @@ export async function fetchQuotes(societeId: string): Promise<{ success: boolean
                 emails: emails,
                 type: "Devis",
                 createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
-                updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined
+                updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
+                isLocked: q.isLocked
             };
         });
         return { success: true, data: mapped };
@@ -494,6 +495,32 @@ export async function createHistoryEntry(entry: {
     }
 
     try {
+        let finalSocieteId = entry.societeId;
+
+        // Backend Inference: If entityId is present, try to deduce the REAL societeId from the DB entity
+        // This fixes bugs where frontend might pass the wrong context or no context.
+        if (entry.entityId) {
+            let fetchedSocieteId: string | undefined | null;
+
+            if (entry.entityType === 'facture') {
+                const item = await prisma.facture.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            } else if (entry.entityType === 'devis') {
+                const item = await prisma.devis.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            } else if (entry.entityType === 'client') {
+                const item = await prisma.client.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            } else if (entry.entityType === 'produit') {
+                const item = await prisma.produit.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            }
+
+            if (fetchedSocieteId) {
+                finalSocieteId = fetchedSocieteId;
+            }
+        }
+
         await prisma.historyEntry.create({
             data: {
                 userId: entry.userId,
@@ -501,12 +528,9 @@ export async function createHistoryEntry(entry: {
                 entityType: entry.entityType,
                 description: entry.description,
                 entityId: entry.entityId,
-                societeId: entry.societeId
+                societeId: finalSocieteId
             }
         });
-        // We don't necessarily need to revalidate path for history as it's often pulled client-side or on specific pages,
-        // but if RecentActivity is server component, we might.
-        // revalidatePath("/"); 
         return { success: true };
     } catch (error: any) {
         console.error("Failed to create history entry:", error);
@@ -768,7 +792,8 @@ export async function createQuote(quote: Devis) {
                 itemsJSON: itemsJson,
                 emailsJSON: JSON.stringify(quote.emails || []),
                 societeId: societeId,
-                clientId: quote.clientId
+                clientId: quote.clientId,
+                isLocked: quote.isLocked || false
             }
         });
         revalidatePath("/", "layout");
@@ -802,7 +827,8 @@ export async function updateQuote(quote: Devis) {
 
                 itemsJSON: itemsJson,
                 emailsJSON: JSON.stringify(quote.emails || []),
-                clientId: quote.clientId
+                clientId: quote.clientId,
+                isLocked: quote.isLocked
             }
         });
         revalidatePath("/", "layout");
@@ -1044,6 +1070,46 @@ export async function updateQuoteStatus(id: string, statut: string) {
         });
         revalidatePath("/", "layout");
         return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+
+}
+
+
+export async function toggleQuoteLock(id: string, isLocked: boolean) {
+    try {
+        await prisma.devis.update({
+            where: { id },
+            data: { isLocked }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        console.error("[toggleQuoteLock] FULL ERROR:", error);
+        return { success: false, error: error.message || 'Erreur technique lors du verrouillage' };
+    }
+}
+
+export async function getDocumentEmailHistory(type: 'facture' | 'devis', id: string) {
+    try {
+        if (type === 'facture') {
+            const doc = await prisma.facture.findUnique({
+                where: { id },
+                select: { emailsJSON: true }
+            });
+            if (!doc) return { success: false, error: "Document introuvable" };
+            const emails = doc.emailsJSON ? JSON.parse(doc.emailsJSON) : [];
+            return { success: true, data: emails };
+        } else {
+            const doc = await prisma.devis.findUnique({
+                where: { id },
+                select: { emailsJSON: true }
+            });
+            if (!doc) return { success: false, error: "Document introuvable" };
+            const emails = doc.emailsJSON ? JSON.parse(doc.emailsJSON) : [];
+            return { success: true, data: emails };
+        }
     } catch (error: any) {
         return { success: false, error: error.message };
     }

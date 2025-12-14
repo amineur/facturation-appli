@@ -153,7 +153,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (process.env.NODE_ENV !== "production") console.timeEnd("TotalLoadTime");
 
         // Lazy load history (15 items) to not block UI
-        const historyData = await dataService.getHistory(15);
+        // Explicitly pass the resolved currentSocieteId to ensure we are fetching for the right scope
+        const historyData = await dataService.getHistory(15, activeSociete ? activeSociete.id : undefined);
         setHistory(historyData);
     };
 

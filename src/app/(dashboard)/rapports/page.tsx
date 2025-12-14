@@ -234,15 +234,19 @@ export default function RapportsPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center gap-3 bg-black/5 dark:bg-white/5 p-1.5 rounded-xl border border-border">
-                    <div className="flex items-center gap-1">
+                    <div className="flex bg-muted/50 rounded-lg p-1">
                         <button
                             onClick={() => {
                                 setDateRange("month");
                                 setCustomStart(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd"));
                                 setCustomEnd(format(new Date(), "yyyy-MM-dd"));
                             }}
-                            className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                                dateRange === "month" ? "bg-primary text-white shadow-sm dark:bg-emerald-500/20 dark:text-emerald-300 dark:border dark:border-emerald-500/20" : "hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground")}
+                            className={cn(
+                                "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                dateRange === "month"
+                                    ? "bg-primary/10 text-primary shadow-sm"
+                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            )}
                         >
                             Ce Mois
                         </button>
@@ -252,8 +256,12 @@ export default function RapportsPage() {
                                 setCustomStart(format(subMonths(new Date(), 3), "yyyy-MM-dd"));
                                 setCustomEnd(format(new Date(), "yyyy-MM-dd"));
                             }}
-                            className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                                dateRange === "3months" ? "bg-primary text-white shadow-sm dark:bg-emerald-500/20 dark:text-emerald-300 dark:border dark:border-emerald-500/20" : "hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground")}
+                            className={cn(
+                                "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                dateRange === "3months"
+                                    ? "bg-primary/10 text-primary shadow-sm"
+                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            )}
                         >
                             3 Derniers Mois
                         </button>

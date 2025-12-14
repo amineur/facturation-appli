@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InvoiceStatusChart } from "@/components/features/InvoiceStatusChart";
+import { QuoteStatusChart } from "@/components/features/QuoteStatusChart";
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfDay, endOfDay, isBefore } from "date-fns";
 
 type DateRangeType = "month" | "custom";
@@ -27,8 +28,10 @@ export default function DashboardPage() {
     // -- Date Filter State --
     // Default to Current Month
     const [dateRange, setDateRange] = useState<DateRangeType>("month");
+
     const [customStart, setCustomStart] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
     const [customEnd, setCustomEnd] = useState<string>(format(endOfDay(new Date()), "yyyy-MM-dd"));
+    const [chartMode, setChartMode] = useState<"factures" | "devis">("factures");
 
     // -- Filtering Logic --
     const filteredData = useMemo(() => {
@@ -190,14 +193,49 @@ export default function DashboardPage() {
                 {/* Chart takes 2/3 width */}
                 <div className="lg:col-span-2 glass-card rounded-2xl p-6 flex flex-col min-h-[400px]">
                     <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-foreground">Répartition des Factures</h3>
+                        <div className="flex items-center gap-4">
+                            <h3 className="text-lg font-semibold text-foreground">
+                                Répartition des {chartMode === "factures" ? "Factures" : "Devis"}
+                            </h3>
+                            <div className="flex bg-muted/50 rounded-lg p-1">
+                                <button
+                                    onClick={() => setChartMode("factures")}
+                                    className={cn(
+                                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                        chartMode === "factures"
+                                            ? "bg-primary/10 text-primary shadow-sm"
+                                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                                    )}
+                                >
+                                    Factures
+                                </button>
+                                <button
+                                    onClick={() => setChartMode("devis")}
+                                    className={cn(
+                                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                        chartMode === "devis"
+                                            ? "bg-primary/10 text-primary shadow-sm"
+                                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                                    )}
+                                >
+                                    Devis
+                                </button>
+                            </div>
+                        </div>
+
                         <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-1 rounded-full">
-                            {filteredData.invoices.length} factures
+                            {chartMode === "factures"
+                                ? `${filteredData.invoices.length} factures`
+                                : `${filteredData.quotes.length} devis`}
                         </span>
                     </div>
                     <div className="flex-1 flex items-center justify-center">
                         {/* Ensure chart uses Filtered Data */}
-                        <InvoiceStatusChart invoices={filteredData.invoices} globalInvoices={globalInvoices} />
+                        {chartMode === "factures" ? (
+                            <InvoiceStatusChart invoices={filteredData.invoices} globalInvoices={globalInvoices} />
+                        ) : (
+                            <QuoteStatusChart quotes={filteredData.quotes} globalQuotes={quotes} />
+                        )}
                     </div>
                 </div>
 
@@ -375,6 +413,6 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
