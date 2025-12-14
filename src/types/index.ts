@@ -1,5 +1,5 @@
-export type StatusFacture = 'Brouillon' | 'Envoyée' | 'Payée' | 'Retard' | 'Annulée';
-export type StatusDevis = 'Brouillon' | 'Envoyé' | 'Accepté' | 'Refusé' | 'Facturé' | 'Converti';
+export type StatusFacture = 'Brouillon' | 'Envoyée' | 'Payée' | 'Retard' | 'Annulée' | 'Archivée';
+export type StatusDevis = 'Brouillon' | 'Envoyé' | 'Accepté' | 'Refusé' | 'Facturé' | 'Converti' | 'Archivé';
 export type InvoiceStatus = StatusFacture; // Backward compatibility alias if needed
 export type InvoiceType = 'Facture' | 'Devis';
 
@@ -110,6 +110,7 @@ export interface User {
     societes: string[]; // IDs of permitted societes
     currentSocieteId?: string; // Last active society
     lastReadHistory?: string; // ISO Date of last check
+    avatarUrl?: string | null;
 }
 
 export interface HistoryEntry {
@@ -155,6 +156,7 @@ export interface Facture {
     echeance: string; // ISO Date
     statut: StatusFacture;
     datePaiement?: string; // Add missing field
+    isLocked?: boolean;
 
     // Config snapshot
     config?: {
@@ -200,6 +202,7 @@ export interface Facture {
     // Soft delete
     isDeleted?: boolean;
     deletedAt?: string;
+    archivedAt?: string;
 
     createdAt?: string;
     updatedAt?: string;

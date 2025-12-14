@@ -4,6 +4,27 @@ import { revalidatePath } from "next/cache";
 import { prisma } from '@/lib/prisma';
 import { Client, Facture, Devis, Produit, User } from '@/types';
 
+// --- Guards ---
+
+async function checkInvoiceMutability(id: string) {
+    const invoice = await prisma.facture.findUnique({
+        where: { id },
+        select: { statut: true, archivedAt: true }
+    });
+
+    if (!invoice) return { success: false, error: "Facture introuvable" };
+
+    if (invoice.archivedAt) {
+        return { success: false, error: "Facture archivée : modification interdite" };
+    }
+
+    if (invoice.statut === "Archivée") {
+        return { success: false, error: "Facture archivée : modification impossible" };
+    }
+
+    return { success: true };
+}
+
 // --- Authentication & User Management ---
 
 export async function registerUser(data: any) {
@@ -17,6 +38,7 @@ export async function registerUser(data: any) {
                 fullName: data.fullName,
                 password: data.password, // In PROD: Hash this!
                 role: data.role || "user",
+                avatarUrl: data.avatarUrl,
                 societes: {
                     connect: data.societes?.map((id: string) => ({ id })) || []
                 }
@@ -47,6 +69,31 @@ export async function loginUser(email: string, password: string) {
     }
 }
 
+export async function getDefaultUser() {
+    try {
+        // Try to get usr_1 first (standard default)
+        let user = await prisma.user.findUnique({
+            where: { id: 'usr_1' },
+            include: { societes: true }
+        });
+
+        // If not found, get first user in DB (dev fallback)
+        if (!user) {
+            user = await prisma.user.findFirst({
+                include: { societes: true }
+            });
+        }
+
+        if (!user) {
+            return { success: false, error: "No users found in database" };
+        }
+
+        return { success: true, user: mapUser(user) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
 export async function updateUser(userData: any) {
     try {
         const user = await prisma.user.update({
@@ -55,7 +102,8 @@ export async function updateUser(userData: any) {
                 email: userData.email,
                 fullName: userData.fullName,
                 password: userData.password,
-                role: userData.role
+                role: userData.role,
+                avatarUrl: userData.avatarUrl
                 // Societes update logic requires disconnect/connect, skipping for simple update
             },
             include: { societes: true }
@@ -78,7 +126,8 @@ export async function upsertUser(userData: any) {
                 email: userData.email,
                 fullName: userData.fullName,
                 password: userData.password,
-                role: userData.role
+                role: userData.role,
+                avatarUrl: userData.avatarUrl
             },
             create: {
                 id: userData.id, // Explicit ID allowed (e.g. usr_1)
@@ -86,6 +135,7 @@ export async function upsertUser(userData: any) {
                 fullName: userData.fullName,
                 password: userData.password,
                 role: userData.role || "user",
+                avatarUrl: userData.avatarUrl,
                 societes: {
                     connect: userData.societes?.map((id: string) => ({ id })) || []
                 }
@@ -133,7 +183,8 @@ function mapUser(prismaUser: any): User {
         societes: prismaUser.societes.map((s: any) => s.id),
         currentSocieteId: prismaUser.currentSocieteId || prismaUser.societes[0]?.id,
         lastReadHistory: prismaUser.lastReadHistory ? prismaUser.lastReadHistory.toISOString() : undefined,
-        password: prismaUser.password // Returning password to client is BAD practice in real app, but needed for current Local Logic to pre-fill
+        password: prismaUser.password, // Returning password to client is BAD practice in real app, but needed for current Local Logic to pre-fill
+        avatarUrl: prismaUser.avatarUrl
     };
 }
 
@@ -347,7 +398,7 @@ export async function fetchInvoices(societeId: string): Promise<{ success: boole
     try {
         const invoices = await prisma.facture.findMany({
             // @ts-ignore - deletedAt exists in schema
-            where: { societeId, deletedAt: null },
+            where: { societeId, deletedAt: null, statut: { not: 'Archivée' } },
             include: { client: true }, // Fetch client to ensure we have link info if needed
             orderBy: [
                 { dateEmission: 'desc' },
@@ -382,7 +433,9 @@ export async function fetchInvoices(societeId: string): Promise<{ success: boole
                 emails: emails,
                 type: "Facture",
                 createdAt: inv.createdAt ? inv.createdAt.toISOString() : undefined,
-                updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined
+                updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined,
+                isLocked: inv.isLocked,
+                archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined
             };
         });
         return { success: true, data: mapped };
@@ -395,7 +448,7 @@ export async function fetchQuotes(societeId: string): Promise<{ success: boolean
     try {
         const quotes = await prisma.devis.findMany({
             // @ts-ignore - deletedAt exists in schema
-            where: { societeId, deletedAt: null }
+            where: { societeId, deletedAt: null, statut: { not: 'Archivé' } }
         });
 
         const mapped: Devis[] = quotes.map((q: any) => {
@@ -738,6 +791,10 @@ export async function createInvoice(invoice: Facture) {
 export async function updateInvoice(invoice: Facture) {
     if (!invoice.id) return { success: false, error: "ID manquant" };
     try {
+        // Guard: Check Mutability
+        const mutabilityCheck = await checkInvoiceMutability(invoice.id);
+        if (!mutabilityCheck.success) return mutabilityCheck;
+
         // Need to fetch current invoice or rely on passed societeId?
         // Passed invoice *should* have societeId. If not, we might fallback or query.
         // Let's safe query if missing.
@@ -841,6 +898,63 @@ export async function updateQuote(quote: Devis) {
 // --- Import Helpers (Calls Prisma create) ---
 export { createClient as importClient };
 
+export async function toggleQuoteLock(quoteId: string, isLocked: boolean) {
+    if (!quoteId) return { success: false, error: "ID manquant" };
+    try {
+        await prisma.devis.update({
+            where: { id: quoteId },
+            data: { isLocked }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+export async function toggleInvoiceLock(invoiceId: string, isLocked: boolean) {
+    console.log("[INV_LOCK_API] called", { invoiceId, isLocked });
+    if (!invoiceId) return { success: false, error: "ID manquant" };
+    try {
+        // A) Read BEFORE Update (Strict Verification)
+        const invoice = await prisma.facture.findUnique({
+            where: { id: invoiceId },
+            // @ts-ignore
+            select: { id: true, statut: true, isLocked: true, deletedAt: true, archivedAt: true }
+        });
+        console.log("[INV_LOCK_API] db_before", invoice);
+
+        // B) Strict Conditions
+        if (!invoice) return { success: false, error: "Facture introuvable" };
+
+        // ULTRA-SAFE GUARD: If archivedAt is set, NO MODIFICATION ALLOWED.
+        if (invoice.archivedAt) {
+            console.log("[INV_LOCK_API] BLOCKED", { reason: "ARCHIVED_AT_SET", invoice });
+            return { success: false, error: "Facture archivée : modification interdite" };
+        }
+
+        if (invoice.statut === "Archivée") {
+            console.log("[INV_LOCK_API] BLOCKED", { reason: "ARCHIVED_STATUS", invoice });
+            return { success: false, error: "Facture archivée : modification impossible" };
+        }
+
+        if (invoice.statut === "Envoyée" || invoice.statut === "Envoyé") {
+            return { success: false, error: "Facture envoyée : verrouillage définitif" };
+        }
+
+        // Si isLocked === false (unlock attempt) -> Authorized ONLY if status is NOT Archivée/Envoyée (already checked above)
+
+        await prisma.facture.update({
+            where: { id: invoiceId },
+            data: { isLocked }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
 export async function importInvoice(invoice: Facture, clientName: string) {
     // Note: Import usually implies we might lack ID. 
     // If clientName is provided but not clientId, we might fail or need lookup.
@@ -921,6 +1035,124 @@ export async function fetchDeletedQuotes(societeId: string) {
     }
 }
 
+export async function fetchArchivedInvoices(societeId: string) {
+    try {
+        const invoices = await prisma.facture.findMany({
+            // @ts-ignore
+            where: { societeId, statut: 'Archivée', deletedAt: null },
+            orderBy: { dateEmission: 'desc' },
+            include: { client: true }
+        });
+        const mapped = invoices.map((inv: any) => ({
+            id: inv.id,
+            numero: inv.numero,
+            clientId: inv.clientId,
+            client: inv.client,
+            societeId: inv.societeId,
+            dateEmission: inv.dateEmission.toISOString(),
+            echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+            statut: inv.statut as any,
+            totalHT: inv.totalHT,
+            totalTTC: inv.totalTTC,
+            items: inv.itemsJSON ? JSON.parse(inv.itemsJSON) : [],
+            type: "Facture",
+            createdAt: inv.createdAt.toISOString(),
+            updatedAt: inv.updatedAt.toISOString(),
+            createdAt: inv.createdAt.toISOString(),
+            updatedAt: inv.updatedAt.toISOString(),
+            deletedAt: null, // Explicitly null
+            archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined
+        }));
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchArchivedQuotes(societeId: string) {
+    try {
+        const quotes = await prisma.devis.findMany({
+            // @ts-ignore
+            where: { societeId, statut: 'Archivé', deletedAt: null },
+            orderBy: { dateEmission: 'desc' },
+            include: { client: true }
+        });
+        const mapped = quotes.map((q: any) => ({
+            id: q.id,
+            numero: q.numero,
+            clientId: q.clientId,
+            client: q.client,
+            societeId: q.societeId,
+            dateEmission: q.dateEmission.toISOString(),
+            dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
+            statut: q.statut as any,
+            totalHT: q.totalHT,
+            totalTTC: q.totalTTC,
+            items: q.itemsJSON ? JSON.parse(q.itemsJSON) : [],
+            type: "Devis",
+            createdAt: q.createdAt.toISOString(),
+            updatedAt: q.updatedAt.toISOString(),
+            deletedAt: null
+        }));
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function unarchiveRecord(tableName: 'Factures' | 'Devis', id: string) {
+    try {
+        if (tableName === 'Factures') {
+            await prisma.facture.update({
+                where: { id },
+                // @ts-ignore
+                data: { statut: 'Brouillon', deletedAt: new Date() } // Move to Trash
+            });
+        } else if (tableName === 'Devis') {
+            await prisma.devis.update({
+                where: { id },
+                // @ts-ignore
+                data: { statut: 'Brouillon', deletedAt: new Date() } // Move to Trash
+            });
+        }
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function archiveRecord(tableName: 'Factures' | 'Devis', id: string) {
+    try {
+        if (tableName === 'Factures') {
+            await prisma.facture.update({
+                where: { id },
+                // @ts-ignore
+                data: { statut: 'Archivée', deletedAt: null, isLocked: true, archivedAt: new Date() } // Move to Archive with Immutable Flag
+            });
+
+            // 1) Preuve obligatoire : vérifier le statut réel après restauration (archivage)
+            const check = await prisma.facture.findUnique({
+                where: { id },
+                // @ts-ignore
+                select: { id: true, statut: true, isLocked: true, deletedAt: true, archivedAt: true }
+            });
+            console.log("[RESTORE_CHECK] ArchiveRecord:", check);
+
+        } else if (tableName === 'Devis') {
+            await prisma.devis.update({
+                where: { id },
+                // @ts-ignore
+                data: { statut: 'Archivé', deletedAt: null } // Move to Archive
+            });
+        }
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
 export async function restoreRecord(tableName: 'Factures' | 'Devis', id: string) {
     try {
         if (tableName === 'Factures') {
@@ -943,10 +1175,33 @@ export async function restoreRecord(tableName: 'Factures' | 'Devis', id: string)
     }
 }
 
+export async function emptyTrash(societeId: string) {
+    try {
+        // Archive Invoices
+        await prisma.facture.updateMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: { not: null } },
+            // @ts-ignore
+            data: { deletedAt: null, statut: 'Archivée', isLocked: true, archivedAt: new Date() } // Immutable
+        });
+        // Archive Quotes
+        await prisma.devis.updateMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: { not: null } },
+            // @ts-ignore
+            data: { deletedAt: null, statut: 'Archivé' }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
 export async function permanentlyDeleteRecord(tableName: 'Factures' | 'Devis', id: string) {
     try {
         if (tableName === 'Factures') {
-            await prisma.facture.delete({ where: { id } });
+            throw new Error("Les factures ne peuvent pas être supprimées définitivement.");
         } else if (tableName === 'Devis') {
             await prisma.devis.delete({ where: { id } });
         }
@@ -1022,6 +1277,10 @@ export async function convertQuoteToInvoice(quoteId: string) {
 
 export async function markInvoiceAsSent(id: string) {
     try {
+        // Guard
+        const mutabilityCheck = await checkInvoiceMutability(id);
+        if (!mutabilityCheck.success) return mutabilityCheck;
+
         const invoice = await prisma.facture.findUnique({ where: { id } });
         // Only update if currently Draft, to avoid protecting manually set statuses if needed?
         // User said "passe la en envoyé", simple instruction. 
@@ -1077,19 +1336,7 @@ export async function updateQuoteStatus(id: string, statut: string) {
 }
 
 
-export async function toggleQuoteLock(id: string, isLocked: boolean) {
-    try {
-        await prisma.devis.update({
-            where: { id },
-            data: { isLocked }
-        });
-        revalidatePath("/", "layout");
-        return { success: true };
-    } catch (error: any) {
-        console.error("[toggleQuoteLock] FULL ERROR:", error);
-        return { success: false, error: error.message || 'Erreur technique lors du verrouillage' };
-    }
-}
+
 
 export async function getDocumentEmailHistory(type: 'facture' | 'devis', id: string) {
     try {

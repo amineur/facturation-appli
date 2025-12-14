@@ -34,8 +34,12 @@ export function Header() {
                         onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                         className="flex items-center gap-3 rounded-full py-1 pl-1 pr-3 hover:bg-white/5 transition-colors cursor-pointer"
                     >
-                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-500/20">
-                            {user?.fullName?.charAt(0) || "U"}
+                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-500/20 overflow-hidden border border-white/10">
+                            {(user as any)?.hasAvatar ? (
+                                <img src={`/api/users/avatar/${user.id}?t=${Date.now()}`} alt="User" className="h-full w-full object-cover" />
+                            ) : (
+                                user?.fullName?.charAt(0) || "U"
+                            )}
                         </div>
                         <div className="hidden text-left md:block">
                             <p className="text-sm font-medium text-foreground">{user?.fullName || "Utilisateur"}</p>

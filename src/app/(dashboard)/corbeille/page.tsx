@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Trash2, RotateCcw, X, FileText, Receipt, Filter, Search } from "lucide-react";
+import { Trash2, RotateCcw, X, FileText, Receipt, Filter, Search, Archive } from "lucide-react";
 import { useData } from "@/components/data-provider";
 import { toast } from "sonner";
 import { dataService } from "@/lib/data-service";
@@ -9,12 +9,14 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Facture, Devis } from "@/types";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 type DeletedItem = (Facture & { itemType: "Facture" }) | (Devis & { itemType: "Devis" });
 
-import { fetchDeletedInvoices, fetchDeletedQuotes, restoreRecord, permanentlyDeleteRecord } from "@/app/actions";
+import { fetchDeletedInvoices, fetchDeletedQuotes, restoreRecord, permanentlyDeleteRecord, emptyTrash, archiveRecord } from "@/app/actions";
 
 export default function TrashPage() {
+    const router = useRouter();
     const { refreshData, clients, societe, isLoading: isDataLoading, logAction, confirm } = useData();
     const [deletedItems, setDeletedItems] = useState<DeletedItem[]>([]);
     const [filter, setFilter] = useState<"ALL" | "FACTURE" | "DEVIS">("ALL");
@@ -82,6 +84,20 @@ export default function TrashPage() {
     };
 
     const handlePermanentDelete = (item: DeletedItem) => {
+        if (item.itemType === "Facture") {
+            confirm({
+                title: "Archiver la facture",
+                message: "Cette facture sera déplacée vers les archives.",
+                onConfirm: async () => {
+                    await archiveRecord('Factures', item.id);
+                    loadDeletedItems();
+                    refreshData();
+                    toast.success("Facture archivée avec succès");
+                }
+            });
+            return;
+        }
+
         confirm({
             title: "Suppression définitive",
             message: "Cette action est irréversible. Continuer ?",
@@ -98,17 +114,14 @@ export default function TrashPage() {
     const handleEmptyTrash = () => {
         confirm({
             title: "Vider la corbeille",
-            message: "Voulez-vous vider la corbeille ? Tous les éléments seront supprimés définitivement.",
+            message: "Voulez-vous vider la corbeille ? Les éléments seront archivés.",
             onConfirm: async () => {
                 setIsLoading(true);
-                for (const item of deletedItems) {
-                    const table = item.itemType === "Facture" ? 'Factures' : 'Devis';
-                    await permanentlyDeleteRecord(table, item.id);
-                }
+                await emptyTrash(societe!.id);
                 loadDeletedItems();
                 refreshData();
                 setIsLoading(false);
-                toast.success("Corbeille vidée");
+                toast.success("Corbeille vidée (éléments archivés)");
             }
         });
     };
@@ -138,15 +151,24 @@ export default function TrashPage() {
                         </p>
                     </div>
                 </div>
-                {deletedItems.length > 0 && (
+                <div className="flex items-center gap-2">
                     <button
-                        onClick={handleEmptyTrash}
-                        className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors shadow-lg shadow-red-500/20"
+                        onClick={() => router.push("/archives")}
+                        className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
                     >
-                        <Trash2 className="h-4 w-4" />
-                        Vider la corbeille
+                        <Archive className="h-4 w-4" />
+                        Voir les archives
                     </button>
-                )}
+                    {deletedItems.length > 0 && (
+                        <button
+                            onClick={handleEmptyTrash}
+                            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors shadow-lg shadow-red-500/20"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                            Vider la corbeille
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="glass-card rounded-xl p-4">

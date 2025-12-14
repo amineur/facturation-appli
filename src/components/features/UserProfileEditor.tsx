@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
-import { User, Shield, Mail, Key, Save, User as UserIcon } from "lucide-react";
+import { User, Shield, Mail, Key, Save, User as UserIcon, Camera, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -15,6 +15,13 @@ interface ProfileFormData {
 export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
     const { user, refreshData } = useData();
     const [isSaving, setIsSaving] = useState(false);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (user?.avatarUrl) {
+            setAvatarPreview(user.avatarUrl);
+        }
+    }, [user]);
 
     const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormData>({
         defaultValues: {
@@ -45,6 +52,10 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                 updatedUser.password = data.newPassword;
             }
 
+            if (avatarPreview && avatarPreview !== user.avatarUrl) {
+                updatedUser.avatarUrl = avatarPreview;
+            }
+
             dataService.saveUser(updatedUser);
             refreshData(); // Updates the global user context
             toast.success("Profil mis à jour avec succès");
@@ -67,8 +78,74 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
 
             <div className="glass-card p-6 rounded-xl border border-white/5 space-y-6">
                 <div className="flex items-center gap-4 pb-6 border-b border-white/5">
-                    <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                        {user.fullName.charAt(0)}
+                    <div className="relative group">
+                        <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg overflow-hidden border-2 border-white/10">
+                            {(user as any)?.hasAvatar || avatarPreview ? (
+                                <img src={avatarPreview || `/api/users/avatar/${user.id}?t=${Date.now()}`} alt="Avatar" className="h-full w-full object-cover" />
+                            ) : (
+                                user.fullName.charAt(0)
+                            )}
+                        </div>
+                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-full cursor-pointer">
+                            <Camera className="h-6 w-6 text-white" />
+                            <input
+                                type="file"
+                                className="hidden"
+                                accept="image/*"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+
+                                    if (file.size > 2 * 1024 * 1024) { // 2MB Limit
+                                        toast.error("L'image est trop volumineuse (max 2MB)");
+                                        return;
+                                    }
+
+                                    const formData = new FormData();
+                                    formData.append('file', file);
+                                    formData.append('userId', user.id); // Pass User ID
+
+                                    const loadingToast = toast.loading("Upload en cours...");
+
+                                    try {
+                                        const res = await fetch('/api/users/avatar', {
+                                            method: 'POST',
+                                            body: formData,
+                                        });
+
+                                        if (!res.ok) {
+                                            const errData = await res.json();
+                                            throw new Error(errData.error || 'Upload failed');
+                                        }
+
+                                        await refreshData(); // Force refresh to update user state (hasAvatar)
+
+                                        // Optimistic preview update?
+                                        // The backend cleared avatarUrl, but set hasAvatar=true.
+                                        // We should now rely on the GET endpoint.
+                                        // Let's reload the user to be sure or just set a temp preview.
+                                        // Since we refreshed data, the user object should update.
+                                        // But for immediate feedback, let's look at the result.
+                                        setAvatarPreview(URL.createObjectURL(file));
+
+                                        toast.dismiss(loadingToast);
+                                        toast.success("Avatar sauvegardé !");
+                                    } catch (err: any) {
+                                        console.error(err);
+                                        toast.dismiss(loadingToast);
+                                        toast.error(err.message || "Erreur lors de l'upload");
+                                    }
+                                }}
+                            />
+                        </label>
+                        {avatarPreview && (
+                            <button
+                                onClick={() => setAvatarPreview(null)}
+                                className="absolute -top-1 -right-1 bg-red-500 rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors"
+                            >
+                                <X className="h-3 w-3 text-white" />
+                            </button>
+                        )}
                     </div>
                     <div>
                         <h3 className="text-lg font-medium text-foreground">{user.fullName}</h3>

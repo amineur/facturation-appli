@@ -134,7 +134,12 @@ export const InvoiceLineItem = ({
                                     setOpen(true);
                                     handleDescriptionChange(index, e.target.value);
                                 }}
-                                onFocus={() => !isReadOnly && setOpen(true)}
+                                onClick={() => !isReadOnly && setOpen(true)}
+                                onKeyDown={(e) => {
+                                    if (!isReadOnly && (e.key === "ArrowDown" || e.key === "Enter")) {
+                                        setOpen(true);
+                                    }
+                                }}
                                 onBlur={() => setTimeout(() => setOpen(false), 200)}
                                 placeholder="Description"
                                 className={cn(

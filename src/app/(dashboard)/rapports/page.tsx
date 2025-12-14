@@ -16,57 +16,39 @@ import {
     AreaChart,
     Area
 } from "recharts";
-import { format, subMonths, startOfYear, isWithinInterval, parseISO, endOfDay, startOfDay } from "date-fns";
+import { format, subMonths, startOfYear, isWithinInterval, parseISO, endOfDay, startOfDay, startOfMonth, endOfMonth } from "date-fns";
 import { fr } from "date-fns/locale";
 
-type DateRange = "month" | "3months" | "custom" | "year";
+type DateRange = "month" | "3months" | "custom" | "year" | "total";
 type TabType = "clients" | "produits" | "mois";
 
 export default function RapportsPage() {
     const { invoices, quotes, clients } = useData();
 
     // -- State --
-    const [dateRange, setDateRange] = useState<DateRange>("year");
+    const [dateRange, setDateRange] = useState<DateRange>("month");
     // Initialize custom dates with today's range or empty
-    const [customStart, setCustomStart] = useState<string>(format(startOfYear(new Date()), "yyyy-MM-dd"));
-    const [customEnd, setCustomEnd] = useState<string>(format(endOfDay(new Date()), "yyyy-MM-dd"));
+    const [customStart, setCustomStart] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+    const [customEnd, setCustomEnd] = useState<string>(format(endOfMonth(new Date()), "yyyy-MM-dd"));
     const [activeTab, setActiveTab] = useState<TabType>("clients");
 
     // -- Filtering Logic --
     const filteredData = useMemo(() => {
         const now = new Date();
-        let start = startOfYear(now);
+        let start = startOfMonth(now);
         let end = endOfDay(now);
 
-        if (dateRange === "3months") { // User asked to replace with "Mois en cours" logic but kept "3 derniers mois" button text potentially? 
-            // Wait, request said: "Du 1 janvier 2025 au 7 décembre 2025 a coté de 3 dernier mois, remplace cette année par ce mois"
-            // "Replace 'Cette Année' by 'Ce Mois'" AND "Next to '3 Last Months'"...
-            // Let's interpret: Buttons: [Ce Mois] [3 Derniers Mois] [Du ... Au ...]
-
-            // Correction based on prompt: "remplace cette année par ce mois" -> 'year' becomes 'month' logic?
-            // "a coté de 3 dernier mois" -> Keep '3months'.
-            // "met Période : Du ... au ... a coté de 3 dernier mois" -> visual placement.
-
-            // Let's implement:
-            // Mode 'month': Start of current month to Now.
-            // Mode '3months': 3 months ago to Now.
-            // Mode 'custom': Uses inputs.
-
-            // Default is "Ce Mois" as per implied request? No, prompt says "Par défaut affiche l'année en cours" in prev prompt, but now "remplace cette année par ce mois". 
-            // I will set default to 'year' (jan 1 to now) as requested in part 1 of prompt "Du 1 janvier 2025 au 7 décembre 2025", which effectively IS strict 'year' logic if today is Dec 7.
-            // User confusingly asked "replace This Year by This Month".
-            // I will provide: [Ce Mois] [3 Derniers Mois] [  Date Inputs  ]
-        }
-
-        // Let's stick to the code changes:
-
-        if (dateRange === "month") {
-            start = new Date(now.getFullYear(), now.getMonth(), 1);
+        if (dateRange === "total") {
+            start = parseISO("2000-01-01");
             end = endOfDay(now);
         } else if (dateRange === "3months") {
             start = subMonths(now, 3);
-        } else if (dateRange === "custom" || dateRange === "year") {
-            // 'year' logic is actually what the user sees in the inputs "Du 1 Jan au 7 Dec"
+            end = endOfDay(now);
+        } else if (dateRange === "month") {
+            start = startOfMonth(now);
+            end = endOfMonth(now);
+        } else {
+            // custom or fallback
             if (customStart && customEnd) {
                 start = startOfDay(parseISO(customStart));
                 end = endOfDay(parseISO(customEnd));
@@ -233,22 +215,22 @@ export default function RapportsPage() {
                     <p className="text-muted-foreground mt-1">Analyse détaillée de votre activité</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 bg-black/5 dark:bg-white/5 p-1.5 rounded-xl border border-border">
+                <div className="flex flex-col sm:flex-row items-center gap-3 glass-card p-1.5 rounded-xl">
                     <div className="flex bg-muted/50 rounded-lg p-1">
                         <button
                             onClick={() => {
-                                setDateRange("month");
-                                setCustomStart(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd"));
+                                setDateRange("total");
+                                setCustomStart("2000-01-01"); // Start from beginning
                                 setCustomEnd(format(new Date(), "yyyy-MM-dd"));
                             }}
                             className={cn(
-                                "px-3 py-1 text-xs font-medium rounded-md transition-all",
-                                dateRange === "month"
+                                "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                                dateRange === "total"
                                     ? "bg-primary/10 text-primary shadow-sm"
                                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                             )}
                         >
-                            Ce Mois
+                            Total
                         </button>
                         <button
                             onClick={() => {
@@ -257,13 +239,28 @@ export default function RapportsPage() {
                                 setCustomEnd(format(new Date(), "yyyy-MM-dd"));
                             }}
                             className={cn(
-                                "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 dateRange === "3months"
                                     ? "bg-primary/10 text-primary shadow-sm"
                                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                             )}
                         >
                             3 Derniers Mois
+                        </button>
+                        <button
+                            onClick={() => {
+                                setDateRange("month");
+                                setCustomStart(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+                                setCustomEnd(format(endOfMonth(new Date()), "yyyy-MM-dd"));
+                            }}
+                            className={cn(
+                                "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                                dateRange === "month"
+                                    ? "bg-primary/10 text-primary shadow-sm"
+                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            )}
+                        >
+                            Ce Mois
                         </button>
                     </div>
 

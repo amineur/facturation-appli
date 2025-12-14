@@ -14,7 +14,7 @@ import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoic
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { InvoiceLineItem } from "./InvoiceLineItem";
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { createInvoice, updateInvoice, createQuote, updateQuote, toggleQuoteLock } from "@/app/actions";
+import { createInvoice, updateInvoice, createQuote, updateQuote, toggleQuoteLock, toggleInvoiceLock } from "@/app/actions";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
 import { SidePanel } from "@/components/ui/SidePanel";
@@ -103,8 +103,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
 
         // Calculate conditions conditionsPaiement if missing
-        let conditions = data.conditionsPaiement || "30 jours";
-        if (!data.conditionsPaiement && emissionDate && echeanceDate) {
+        let conditions = (data as any).conditionsPaiement || "30 jours";
+        if (!(data as any).conditionsPaiement && emissionDate && echeanceDate) {
             // Logic repeated from before
             const start = new Date(emissionDate);
             const end = new Date(echeanceDate);
@@ -125,8 +125,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             dateEmission: emissionDate,
             echeance: echeanceDate,
             conditionsPaiement: conditions,
-            numeroEnregistrement: data.numeroEnregistrement,
-            codeService: data.codeService,
+            numeroEnregistrement: (data as any).numeroEnregistrement,
+            codeService: (data as any).codeService,
             remiseGlobale: data.remiseGlobale,
             remiseGlobaleType: data.remiseGlobaleType,
             items: (data.items || []).map(item => ({
@@ -177,162 +177,217 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     // Only locked if explicitly isLocked=true OR (Facturé AND not explicitly unlocked yet)
     // But since we want to allow unlocking Facturé, we rely on isLocked state basically.
     // Initial state:
-    const [isLocked, setIsLocked] = useState<boolean>(() => {
-        if (type !== "Devis") return false;
-        const quote = initialData as Devis;
-        // Default to locked if isLocked is true OR status is Facturé 
-        // (Assuming if it's Facturé it SHOULD start locked unless we have local state saying otherwise, 
-        // but here it's fresh init).
-        return !!quote?.isLocked || quote?.statut === "Facturé";
+    // Initial state setup
+    // We use a state that we sync with initialData ONLY when ID changes.
+    const [isLocked, setIsLocked] = useState<boolean>(false);
+
+    // Sync isLocked with initialData when the document ID changes (navigation)
+    useEffect(() => {
+        if (!initialData?.id) return;
+
+        let locked = false;
+        if (type === "Devis") {
+            const quote = initialData as Devis;
+            locked = !!quote?.isLocked || quote?.statut === "Facturé";
+        } else if (type === "Facture") {
+            const invoice = initialData as Facture;
+            // Strict: Envoyée = Locked (Read Only)
+            locked = !!invoice?.isLocked || invoice?.statut === "Envoyée";
+        }
+
+        console.log("[LOCK_EFFECT] fired", { depId: initialData?.id, initialLocked: initialData?.isLocked, computedLocked: locked });
+        setIsLocked(locked);
+    }, [initialData?.id, type]);
+
+    // Derived state for ReadOnly
+    const isSent = type === "Facture" && (initialData as Facture)?.statut === "Envoyée";
+    const isArchived = (initialData as any)?.statut === "Archivée" || (initialData as any)?.statut === "Archivé";
+    const isReadOnly = isLocked || isSent || isArchived;
+
+    // --- DEBUG LOGS (Temporary) ---
+    console.log("[LOCK_RENDER]", {
+        type,
+        id: initialData?.id,
+        initialLocked: initialData?.isLocked,
+        localLocked: isLocked,
+        isReadOnly,
+        statut: (initialData as any)?.statut,
     });
+
 
     const handleToggleLock = async (e?: React.MouseEvent) => {
         if (e) e.preventDefault();
-
-        if (isTogglingLock) return; // Prevent double clicks
-
-        setIsTogglingLock(true);
-        const nextLocked = !isLocked;
-
-        console.log("[LOCK_TOGGLE] START", {
-            before: isLocked,
-            after: nextLocked,
-            docId: initialData?.id
+        console.log("[LOCK_CLICK] start", { localLocked: isLocked, isTogglingLock });
+        // CHECK 1: Verify Context
+        console.log("[LOCK_DEBUG] Action Start:", {
+            type,
+            id: initialData?.id,
+            activeSocieteId: societe?.id
         });
 
-        if (type !== "Devis" || !initialData?.id) {
-            setIsTogglingLock(false);
+        if (isTogglingLock) return; // Anti-double click
+
+        // 1. Strict Check: Sent Invoice cannot be toggled/unlocked
+        if (isSent) {
+            toast.error("Facture envoyée : modification impossible");
             return;
         }
 
-        // Optimistic UI Update: Set state BEFORE async call
-        setIsLocked(nextLocked);
-        console.log("[LOCK_TOGGLE] setIsLocked", { nextLocked });
-
+        // --- UNLOCK FLOW (Simple Toggle) ---
+        // NO VALIDATION, NO SAVE. Just Unlock.
         if (isLocked) {
-            // --- UNLOCK FLOW ---
+            setIsTogglingLock(true);
             try {
-                const res = await toggleQuoteLock(initialData.id, false);
-                console.log("[LOCK_TOGGLE] api unlock result :", res);
+                const nextLocked = false; // We are unlocking
+                console.log("[UI_LOCK_CLICK]", { type, id: initialData?.id, nextLocked, statut: (initialData as any)?.statut });
+                let res;
+                if (type === "Facture") {
+                    console.log("[LOCK_DEBUG] Calling toggleInvoiceLock...");
+                    res = await toggleInvoiceLock(initialData!.id, nextLocked);
+                    console.log("[LOCK_DEBUG] Server Response (Facture):", res);
+                } else {
+                    console.log("[LOCK_DEBUG] Calling toggleQuoteLock...");
+                    res = await toggleQuoteLock(initialData!.id, nextLocked);
+                    console.log("[LOCK_DEBUG] Server Response (Devis):", res);
+                }
 
                 if (res.success) {
-                    // Success: State already correct, just notify
-                    toast.success("Devis déverrouillé");
-                    // refreshData() skipped to avoid overriding local optimistic state?
-                    // Safe to call refresh if we trust server returns updated data matching local state.
+                    setIsLocked(false);
+                    console.log("[LOCK_UI] setIsLocked(false) (Unlock Success)");
+                    toast.success(`${type} déverrouillé`);
+                    router.refresh(); // Refresh to reflect server state
+
+                    console.log("[LOCK_DEBUG] Refreshing local data...");
                     refreshData();
+
+                    console.log("[LOCK_DONE] success ->", { nextLocked: false, localLockedAfter: false });
                 } else {
-                    console.error("[LOCK_TOGGLE] Unlock failed:", res.error);
                     toast.error(res.error || "Erreur lors du déverrouillage");
-                    // Revert state on error
-                    setIsLocked(isLocked); // Revert to previous (true)
-                    console.log("[LOCK_TOGGLE] REVERTING state to", { isLocked });
                 }
             } catch (error: any) {
-                console.error("[LOCK_TOGGLE] Unlock Exception:", error);
-                toast.error("Erreur technique: " + error.message);
-                // Revert state on error
-                setIsLocked(isLocked);
-                console.log("[LOCK_TOGGLE] REVERTING state to", { isLocked });
+                console.error("[LOCK_TOGGLE] Unlock Error:", error);
+                toast.error("Erreur technique lors du déverrouillage");
             } finally {
                 setIsTogglingLock(false);
             }
-        } else {
-            // --- LOCK FLOW ---
-            const saveAndLock = handleSubmit(async (data) => {
-                // For LOCK, we already optimistically set to TRUE above (nextLocked).
-                // But validation happens here. If validation fails, we must REVERT.
-
-                try {
-                    // 1. Custom Validation 
-                    let hasInvalidItems = false;
-                    data.items.forEach((item) => {
-                        const q = typeof item.quantite === 'string' ? parseFloat(item.quantite) : item.quantite;
-                        const p = typeof item.prixUnitaire === 'string' ? parseFloat(item.prixUnitaire) : item.prixUnitaire;
-                        if (isNaN(q) || q <= 0) hasInvalidItems = true;
-                        if (isNaN(p) || p < 0) hasInvalidItems = true;
-                    });
-
-                    if (hasInvalidItems) {
-                        toast.error("Veuillez corriger les lignes (quantité/prix) avant de verrouiller.");
-                        setIsLocked(false); // Revert
-                        console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Validation)");
-                        setIsTogglingLock(false);
-                        return;
-                    }
-
-                    // ... (keep date validation) ...
-                    const emissionDate = new Date(data.dateEmission);
-                    if (isNaN(emissionDate.getTime())) {
-                        toast.error("Date d'émission invalide.");
-                        setIsLocked(false); // Revert
-                        console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Date)");
-                        setIsTogglingLock(false);
-                        return;
-                    }
-
-                    // 2. Data Persistence
-                    const documentData = {
-                        id: initialData.id,
-                        ...data,
-                        totalHT: totals.ht,
-                        totalTVA: totals.tva,
-                        totalTTC: totals.ttc,
-                        config: {
-                            showDateColumn,
-                            showTTCColumn,
-                            discountEnabled,
-                            discountType,
-                            defaultTva,
-                            showOptionalFields
-                        },
-                        remiseGlobale: data.remiseGlobale || 0,
-                        remiseGlobaleMontant: totals.remiseGlobale,
-                        clientId: data.clientId,
-                        societeId: societe?.id || "",
-                        items: data.items.map(item => ({
-                            ...item,
-                            id: item.id || uuidv4(),
-                        })),
-                        statut: initialData.statut || "Brouillon",
-                        dateValidite: (data as any).dateValidite || "",
-                        isLocked: true
-                    } as unknown as Devis;
-
-                    const res = await updateQuote(documentData);
-                    console.log("[LOCK_TOGGLE] api lock result :", res);
-
-                    if (res.success) {
-                        // Success: State already correct (true)
-                        toast.success("Devis enregistré et verrouillé");
-                        // Update form state to clean
-                        const currentValues = getValues();
-                        reset(currentValues, { keepDirty: false, keepTouched: false });
-                        refreshData();
-                    } else {
-                        console.error("[LOCK_TOGGLE] Lock Persistence Failed:", res.error);
-                        toast.error("Erreur lors de l'enregistrement: " + res.error);
-                        setIsLocked(false); // Revert
-                        console.log("[LOCK_TOGGLE] REVERTING state to FALSE (API Error)");
-                    }
-                } catch (e: any) {
-                    console.error("[LOCK_TOGGLE] Lock Exception:", e);
-                    toast.error("Erreur technique: " + e.message);
-                    setIsLocked(false); // Revert
-                    console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Exception)");
-                } finally {
-                    setIsTogglingLock(false);
-                }
-            }, (errors) => {
-                console.error("[LOCK_TOGGLE] Validation Failed:", errors);
-                toast.error("Veuillez remplir les champs obligatoires avant de verrouiller.");
-                setIsLocked(false); // Revert
-                console.log("[LOCK_TOGGLE] REVERTING state to FALSE (Form Errors)");
-                setIsTogglingLock(false);
-            });
-
-            await saveAndLock();
+            return;
         }
+
+        // --- LOCK FLOW (Save + Lock) ---
+        // MUST VALIDATE FIRST. NO Optimistic Update.
+        // If validation fails -> Stay Unlocked.
+        // Save -> Lock -> Set Locked.
+
+        // Trigger React Hook Form Submit to ensure schema validation
+        await handleSubmit(async (data) => {
+            setIsTogglingLock(true);
+            try {
+                // 1. Custom Strict Validation (As requested by User)
+                let hasInvalidItems = false;
+                data.items.forEach((item) => {
+                    const q = Number(item.quantite);
+                    const p = Number(item.prixUnitaire);
+                    if (isNaN(q) || q <= 0) hasInvalidItems = true;
+                    if (isNaN(p) || p < 0) hasInvalidItems = true;
+                });
+
+                if (hasInvalidItems) {
+                    throw new Error("Veuillez corriger les lignes (quantité/prix) avant de verrouiller.");
+                }
+
+                if (isNaN(new Date(data.dateEmission).getTime())) {
+                    throw new Error("Date d'émission invalide.");
+                }
+
+                // 2. Prepare Data
+                const documentData = {
+                    id: initialData!.id,
+                    ...data,
+                    totalHT: totals.ht,
+                    totalTVA: totals.tva,
+                    totalTTC: totals.ttc,
+                    config: {
+                        showDateColumn,
+                        showTTCColumn,
+                        discountEnabled,
+                        discountType,
+                        defaultTva,
+                        showOptionalFields
+                    },
+                    remiseGlobale: data.remiseGlobale || 0,
+                    remiseGlobaleMontant: totals.remiseGlobale,
+                    clientId: data.clientId,
+                    societeId: societe?.id || "",
+                    items: data.items.map(item => ({
+                        ...item,
+                        id: item.id || uuidv4(),
+                    })),
+                    // Helpers
+                    ...(type === "Facture" ? {
+                        statut: initialData?.statut || "Brouillon",
+                        echeance: data.echeance
+                    } : {
+                        statut: initialData?.statut || "Brouillon",
+                        dateValidite: (data as any).dateValidite || ""
+                    }),
+                };
+
+                // 3. Save
+                let saveRes;
+                if (type === "Facture") {
+                    // @ts-ignore
+                    saveRes = await updateInvoice(documentData);
+                } else {
+                    // @ts-ignore
+                    saveRes = await updateQuote(documentData);
+                }
+
+                if (!saveRes.success) {
+                    throw new Error(saveRes.error || "Erreur lors de l'enregistrement");
+                }
+
+                // 4. Lock (Server)
+                let lockRes;
+                if (type === "Facture") {
+                    console.log("[LOCK_DEBUG] Calling toggleInvoiceLock (SAVE+LOCK)...");
+                    lockRes = await toggleInvoiceLock(initialData!.id, true);
+                    console.log("[LOCK_DEBUG] Server Response (Facture):", lockRes);
+                } else {
+                    console.log("[LOCK_DEBUG] Calling toggleQuoteLock (SAVE+LOCK)...");
+                    lockRes = await toggleQuoteLock(initialData!.id, true);
+                    console.log("[LOCK_DEBUG] Server Response (Devis):", lockRes);
+                }
+
+                if (lockRes.success) {
+                    setIsLocked(true); // Only lock UI if Server Lock succeeded
+                    console.log("[LOCK_UI] setIsLocked(true) (Lock Success)");
+                    toast.success(`${type} enregistré et verrouillé`);
+
+                    // Reset dirty state AND keep new values
+                    const currentValues = getValues();
+                    console.log("[LOCK_RESET] calling reset");
+                    reset(currentValues, { keepValues: true, keepDirty: false });
+
+                    console.log("[LOCK_DEBUG] Refreshing local data...");
+                    refreshData();
+
+                    console.log("[LOCK_DONE] success ->", { nextLocked: true, localLockedAfter: true });
+                } else {
+                    throw new Error(lockRes.error || "Erreur lors du verrouillage");
+                }
+
+            } catch (err: any) {
+                console.error("[LOCK_TOGGLE] Lock Sequence Error:", err);
+                toast.error(err.message || "Erreur technique");
+                // DO NOT REVERT isLocked (it was never set to true)
+            } finally {
+                setIsTogglingLock(false);
+            }
+        }, (errors) => {
+            console.error("[LOCK_TOGGLE] Validation Failed:", errors);
+            toast.error("Veuillez remplir les champs obligatoires avant de verrouiller.");
+            // STAY UNLOCKED.
+        })();
     };
 
 
@@ -787,7 +842,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         ? (isEditMode ? "Modifier la Facture" : "Nouvelle Facture")
         : (isEditMode ? "Modifier le Devis" : "Nouveau Devis");
 
-    const isReadOnly = type === "Devis" && isLocked;
+
 
     // Unsaved Changes Modal State
     const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
@@ -891,10 +946,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
                                             <div className="flex items-center justify-between">
                                                 <span className="text-sm text-foreground">Date de la prestation</span>
-                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                <label className={cn("relative inline-flex items-center cursor-pointer", isReadOnly && "cursor-not-allowed opacity-50")}>
                                                     <input
                                                         type="checkbox"
                                                         checked={showDateColumn}
+                                                        disabled={isReadOnly}
                                                         onChange={(e) => setShowDateColumn(e.target.checked)}
                                                         className="sr-only peer"
                                                     />
@@ -904,10 +960,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
                                             <div className="flex items-center justify-between">
                                                 <span className="text-sm text-foreground">Prix TTC</span>
-                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                <label className={cn("relative inline-flex items-center cursor-pointer", isReadOnly && "cursor-not-allowed opacity-50")}>
                                                     <input
                                                         type="checkbox"
                                                         checked={showTTCColumn}
+                                                        disabled={isReadOnly}
                                                         onChange={(e) => setShowTTCColumn(e.target.checked)}
                                                         className="sr-only peer"
                                                     />
@@ -917,10 +974,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
                                             <div className="flex items-center justify-between">
                                                 <span className="text-sm text-foreground">Remises</span>
-                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                <label className={cn("relative inline-flex items-center cursor-pointer", isReadOnly && "cursor-not-allowed opacity-50")}>
                                                     <input
                                                         type="checkbox"
                                                         checked={discountEnabled}
+                                                        disabled={isReadOnly}
                                                         onChange={(e) => setDiscountEnabled(e.target.checked)}
                                                         className="sr-only peer"
                                                     />
@@ -939,6 +997,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <button
                                                             type="button"
+                                                            disabled={isReadOnly}
                                                             onClick={() => {
                                                                 if (discountType !== 'pourcentage') {
                                                                     setDiscountType('pourcentage');
@@ -954,13 +1013,15 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                                                                 discountType === 'pourcentage'
                                                                     ? "bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-500/30"
-                                                                    : "text-muted-foreground border-white/10 hover:bg-white/5"
+                                                                    : "text-muted-foreground border-white/10 hover:bg-white/5",
+                                                                isReadOnly && "opacity-50 cursor-not-allowed"
                                                             )}
                                                         >
                                                             Pourcentage (%)
                                                         </button>
                                                         <button
                                                             type="button"
+                                                            disabled={isReadOnly}
                                                             onClick={() => {
                                                                 if (discountType !== 'montant') {
                                                                     setDiscountType('montant');
@@ -976,7 +1037,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                                                                 discountType === 'montant'
                                                                     ? "bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-500/30"
-                                                                    : "text-muted-foreground border-border dark:border-white/10 hover:bg-muted/50 dark:hover:bg-white/5"
+                                                                    : "text-muted-foreground border-border dark:border-white/10 hover:bg-muted/50 dark:hover:bg-white/5",
+                                                                isReadOnly && "opacity-50 cursor-not-allowed"
                                                             )}
                                                         >
                                                             Montant (€)
@@ -1016,29 +1078,31 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             )}
                         </div>
 
-                        {/* LOCK TOGGLE (Devis Only) */}
-                        {type === "Devis" && initialData?.id && (
-                            <button
-                                type="button"
-                                onClick={handleToggleLock}
-                                disabled={isTogglingLock}
-                                className={cn(
-                                    "p-2 rounded-lg transition-colors cursor-pointer",
-                                    isLocked
-                                        ? "text-red-500 bg-red-500/10 hover:bg-red-500/20"
-                                        : "text-muted-foreground hover:text-foreground glass",
-                                    isTogglingLock && "opacity-50 cursor-not-allowed"
-                                )}
-                                title={isLocked ? "Déverrouiller le devis" : "Verrouiller le devis"}
-                            >
-                                {isTogglingLock ? (
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                ) : isLocked ? (
-                                    <Lock className="h-5 w-5" />
-                                ) : (
-                                    <Unlock className="h-5 w-5" />
-                                )}
-                            </button>
+                        {(type === "Facture" || type === "Devis") && initialData?.id && (
+                            <div title={
+                                isArchived ? `${type} archivée : modification impossible` :
+                                    isSent ? `${type} envoyée : modification impossible` :
+                                        isLocked ? `Déverrouiller ${type === 'Facture' ? 'la facture' : 'le devis'}` : `Verrouiller ${type === 'Facture' ? 'la facture' : 'le devis'}`
+                            }>
+                                <button
+                                    type="button"
+                                    onClick={(isSent || isArchived) ? undefined : handleToggleLock}
+                                    disabled={isSent || isArchived}
+                                    className={cn(
+                                        "p-2 rounded-lg transition-all duration-200 border",
+                                        isLocked || isSent || isArchived
+                                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                            : "bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10 hover:text-foreground",
+                                        (isSent || isArchived) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isLocked || isSent || isArchived ? (
+                                        <Lock className="h-4 w-4" />
+                                    ) : (
+                                        <Unlock className="h-4 w-4" />
+                                    )}
+                                </button>
+                            </div>
                         )}
                         <button
                             type="button"
@@ -1243,7 +1307,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             {showOptionalFields ? "Masquer" : "Afficher"} les informations complémentaires
                         </button>
 
+                        {/* ... existing optional fields div ... */}
                         <div className={cn("space-y-4 animate-in fade-in slide-in-from-top-2 duration-200", !showOptionalFields && "hidden")}>
+                            {/* ... content ... */}
+
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-muted-foreground">
@@ -1552,48 +1620,26 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         </div>
 
                         {!isReadOnly && (
-                            <div className="flex gap-4 mt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        clearErrors("items");
-                                        append({
-                                            id: uuidv4(),
-                                            description: "",
-                                            quantite: 1,
-                                            prixUnitaire: 0,
-                                            tva: defaultTva,
-                                            totalLigne: 0,
-                                            produitId: "",
-                                            type: 'produit',
-                                            remise: 0,
-                                            remiseType: 'pourcentage'
-                                        })
-                                    }}
-                                    className="flex items-center gap-2 text-sm text-blue-500 hover:text-blue-600 transition-colors"
-                                >
-                                    <Plus className="h-4 w-4" /> Ajouter un produit
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        clearErrors("items");
-                                        append({
-                                            id: uuidv4(),
-                                            description: "",
-                                            quantite: 0,
-                                            prixUnitaire: 0,
-                                            tva: 0,
-                                            totalLigne: 0,
-                                            produitId: "",
-                                            type: 'texte'
-                                        })
-                                    }}
-                                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    <Type className="h-4 w-4" /> Ajouter du texte
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => append({
+                                    id: uuidv4(),
+                                    description: "",
+                                    quantite: 1,
+                                    prixUnitaire: 0,
+                                    tva: defaultTva,
+                                    totalLigne: 0,
+                                    // @ts-ignore
+                                    type: 'produit',
+                                    remise: 0,
+                                    // @ts-ignore
+                                    remiseType: discountType
+                                })}
+                                className="mt-4 flex items-center justify-center w-full py-3 border-2 border-dashed border-white/10 rounded-xl text-muted-foreground hover:text-blue-500 hover:border-blue-500/30 hover:bg-blue-500/5 transition-all group"
+                            >
+                                <Plus className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
+                                Ajouter une ligne
+                            </button>
                         )}
                     </div>
 
@@ -1747,7 +1793,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     pdfUrl={previewUrl}
                     invoiceNumber={watch("numero")}
                 />
-            </form>
+            </form >
 
             {/* Gmail-style Compose Window */}
             {
@@ -1835,9 +1881,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 onClose={() => setIsUnsavedModalOpen(false)}
                 onConfirm={() => router.back()}
                 title="Modifications non enregistrées"
-                description="Des modifications ont été apportées. Êtes-vous sûr de vouloir quitter sans enregistrer ?"
-                confirmText="Quitter sans enregistrer"
-                cancelText="Rester"
+                message="Des modifications ont été apportées. Êtes-vous sûr de vouloir quitter sans enregistrer ?"
+
             />
         </FormProvider >
     );

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { dataService } from "@/lib/data-service";
-import { fetchClients, fetchProducts, fetchInvoices, fetchQuotes, fetchSocietes, createSociete as createSocieteAction, updateSociete as updateSocieteAction, getSociete, updateOverdueInvoices, fetchUserById, markHistoryAsRead } from "@/app/actions";
+import { fetchClients, fetchProducts, fetchInvoices, fetchQuotes, fetchSocietes, createSociete as createSocieteAction, updateSociete as updateSocieteAction, getSociete, updateOverdueInvoices, fetchUserById, markHistoryAsRead, fetchAllUsers } from "@/app/actions";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { Societe, Facture, Client, Produit, Devis, User } from "@/types";
 import { usePathname, useRouter } from "next/navigation";
@@ -48,6 +48,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<any>(null);
     const [history, setHistory] = useState<any[]>([]);
 
+    const [authChecked, setAuthChecked] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     const fetchData = async (silent: boolean = false) => {
@@ -55,60 +56,104 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!silent) setIsLoading(true);
 
         const userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
+        const TARGET_EMAIL = "amine@euromedmultimedia.com";
+
+        if (process.env.NODE_ENV === 'development') {
+            console.log('[DATA_SCOPE] Starting data fetch, userId from localStorage:', userId);
+        }
 
         // 1. Parallelize Initial Independent Fetches
-        // We catch errors individually to avoid one failure blocking the whole app
-        const [overdueRes, userResResult, societesRes] = await Promise.all([
-            updateOverdueInvoices().catch(e => { console.error("Overdue error", e); return null; }),
-            userId ? fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; }) : Promise.resolve(null),
-            fetchSocietes().catch(e => { console.error("Societes fetch error", e); return { success: false, data: [] }; })
-        ]);
+        // Force simple fetch first to avoid race conditions in logs
+        const overdueRes = await updateOverdueInvoices().catch(e => { console.error("Overdue error", e); return null; });
+        const societesRes = await fetchSocietes().catch(e => { console.error("Societes fetch error", e); return { success: false, data: [] }; });
 
-        // 2. Process User
-        let finalUser = null;
+        // Explicitly handle user fetch with logs
+        let userResResult = null;
         if (userId) {
-            let processedUserRes = userResResult;
+            if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🔍 Resolving user with id=${userId} (method: fetchUserById)`);
+            userResResult = await fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; });
+            if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] fetchUserById result:`, userResResult);
+        } else {
+            if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] No userId in localStorage, skipping fetchUserById`);
+        }
 
-            // Auto-create/restore strategy if not found
-            if (!processedUserRes || !processedUserRes.success || !processedUserRes.data) {
-                console.log("User not found in DB, attempting auto-creation/restoration...");
-                const defaultUser = {
-                    id: userId,
-                    email: "amine@urbanhit.fr",
-                    fullName: "Amine Ben Abla",
-                    role: "admin",
-                    societes: []
-                };
-                const createRes = await import("@/app/actions").then(m => m.upsertUser(defaultUser));
-                if (createRes.success && createRes.user) {
-                    processedUserRes = { success: true, data: createRes.user };
+        // 2. Process User - AUTO-REPAIR: Fix localStorage if needed
+        let finalUser = null;
+
+        if (process.env.NODE_ENV === 'development') console.log('[AUTH] Starting user resolution, storageUserId:', userId);
+
+        // Try to load user from DB
+        let userResFromStorage = userId ? userResResult : null;
+
+        // If no userId in storage OR user not found in DB → AUTO-REPAIR
+        if (!userId || !userResFromStorage || !userResFromStorage.success || !userResFromStorage.data) {
+            if (process.env.NODE_ENV === 'development') console.log('[AUTH] User not found or missing, attempting auto-repair...');
+
+            // FALLBACK 1: By Email (Primary recovery)
+            if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🚨 Fallback: attempting to resolve user with email=${TARGET_EMAIL} (method: fetchAllUsers + find)`);
+            const allUsersRes = await fetchAllUsers();
+            const foundByEmail = allUsersRes.success && allUsersRes.data
+                ? allUsersRes.data.find((u: any) => u.email === TARGET_EMAIL)
+                : null;
+
+            if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] Fallback by email result:`, foundByEmail ? `Found ID: ${foundByEmail.id}` : 'Not Found');
+
+            if (foundByEmail) {
+                finalUser = foundByEmail;
+                if (process.env.NODE_ENV === 'development') console.log('[AUTH] ✅ User resolved by EMAIL fallback.');
+            } else {
+                // FALLBACK 2: Default/First User (Last resort)
+                if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🚨 Fallback 2: fetchDefaultUser (last resort)`);
+                const defaultUserRes = await import('@/app/actions').then(m => m.getDefaultUser());
+
+                if (defaultUserRes.success && defaultUserRes.user) {
+                    finalUser = defaultUserRes.user;
+                    if (process.env.NODE_ENV === 'development') console.log('[AUTH] ✅ User resolved by DEFAULT fallback.');
                 }
             }
 
-            if (processedUserRes && processedUserRes.success && processedUserRes.data) {
-                finalUser = processedUserRes.data;
-                setUser(finalUser);
+            if (!finalUser) {
+                console.error('[AUTH] ❌ No users found in DB (ID, Email, or Default). AuthChecked set to TRUE, redirection will happen if needed.');
+                // Do NOT redirect here immediately, let the flow finish or redirect after state update
+                if (pathname !== '/login') {
+                    // router.push('/login'); // DELAY THIS
+                }
+                if (!silent) setIsLoading(false);
+                return; // Early return is fine IF we handle redirect elsewhere or trigger it via effect
+            }
 
-                // Update LocalStorage cache
-                const users = dataService.getUsers();
-                const index = users.findIndex(u => u.id === userId);
-                if (index >= 0) {
-                    users[index] = finalUser;
-                } else {
-                    users.push(finalUser);
-                }
-                if (typeof window !== 'undefined') {
-                    localStorage.setItem("glassy_users", JSON.stringify(users));
-                }
-            } else {
-                // Fallback
-                finalUser = dataService.getCurrentUser();
-                setUser(finalUser);
+            // AUTO-REPAIR: Update localStorage with found user
+            if (process.env.NODE_ENV === 'development') console.log('[AUTH] Auto-repair: setting userId to', finalUser.id);
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('glassy_current_user_id', finalUser.id);
             }
         } else {
-            finalUser = dataService.getCurrentUser();
-            setUser(finalUser);
+            // User loaded successfully from storage
+            finalUser = userResFromStorage.data;
         }
+
+        if (process.env.NODE_ENV === 'development') {
+            console.log('[AUTH_DEBUG] User resolved:', {
+                id: finalUser.id,
+                email: finalUser.email,
+            });
+        }
+
+        setUser(finalUser);
+        setAuthChecked(true); // MARK AUTH AS CHECKED
+
+        // Update LocalStorage cache
+        const users = dataService.getUsers();
+        const index = users.findIndex(u => u.id === userId);
+        if (index >= 0) {
+            users[index] = finalUser;
+        } else {
+            users.push(finalUser);
+        }
+        if (typeof window !== 'undefined') {
+            localStorage.setItem("glassy_users", JSON.stringify(users));
+        }
+
 
         // 3. Process Societes & Entity Data
         let validSocietes: Societe[] = [];
@@ -126,14 +171,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 dataService.switchSociete(activeSociete.id);
             }
         } else {
-            console.warn("No societies found in Database.");
+            if (process.env.NODE_ENV === 'development') console.warn("No societies found in Database.");
             setSocietes([]);
             setSociete(null);
+        }
+
+        // DIAGNOSTIC: Log complete scoping BEFORE fetching
+        if (process.env.NODE_ENV === 'development') {
+            console.log('[DATA_SCOPE] 🔍 SCOPING CHECK:', {
+                storageUserId: typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null,
+                resolvedUserId: finalUser?.id,
+                resolvedUserEmail: finalUser?.email,
+                userCurrentSocieteId: finalUser?.currentSocieteId,
+                activeSocieteId: activeSociete?.id,
+                activeSocieteName: activeSociete?.nom,
+                validSocietesCount: validSocietes.length
+            });
         }
 
         if (activeSociete) {
             setSociete(activeSociete);
             const currentSocieteId = activeSociete.id;
+
+            // DIAGNOSTIC: Log query params
+            if (process.env.NODE_ENV === 'development') console.log(`[DATA_SCOPE] 🚀 FETCHING DATA for Societe: [${currentSocieteId}] "${activeSociete.nom}"`);
 
             // Parallelize Entity Fetches (already done, but keeping structure)
             const [clientsRes, productsRes, invoicesRes, quotesRes] = await Promise.all([
@@ -142,6 +203,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 fetchInvoices(currentSocieteId),
                 fetchQuotes(currentSocieteId)
             ]);
+
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[DATA_SCOPE] ✅ QUERY RESULTS:', {
+                    invoices: invoicesRes.success ? invoicesRes.data?.length : 'ERROR',
+                    quotes: quotesRes.success ? quotesRes.data?.length : 'ERROR',
+                    clients: clientsRes.success ? clientsRes.data?.length : 'ERROR',
+                    products: productsRes.success ? productsRes.data?.length : 'ERROR'
+                });
+            }
+
+            // Log details if empty
+            if (invoicesRes.data?.length === 0) {
+                if (process.env.NODE_ENV === 'development') console.warn('[DATA_SCOPE] ⚠️ Zero invoices returned. Checking DB directly via fetchInvoices("Euromedmultimedia")...');
+            }
+
+            // DIAGNOSTIC: Log final results
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[RESULTS]', {
+                    invoices: invoicesRes.data?.length || 0,
+                    quotes: quotesRes.data?.length || 0,
+                    clients: clientsRes.data?.length || 0,
+                    products: productsRes.data?.length || 0
+                });
+            }
+
+            if (quotesRes.success && quotesRes.data && quotesRes.data.length > 0) {
+                const sample = quotesRes.data[0];
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('[QUOTE_DEBUG] Sample Quote:', {
+                        id: sample.id,
+                        numero: sample.numero,
+                        isLocked: (sample as any).isLocked,
+                        keys: Object.keys(sample)
+                    });
+                }
+            }
 
             if (clientsRes.success && clientsRes.data) setClients(clientsRes.data);
             if (productsRes.success && productsRes.data) setProducts(productsRes.data);
@@ -161,18 +258,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         dataService.initialize();
 
-        const currentUser = dataService.getCurrentUser();
-        if (!currentUser && pathname !== "/login") {
-            const userId = localStorage.getItem("glassy_current_user_id");
-            if (!userId) {
-                router.push("/login");
-                setIsLoading(false);
-                return;
-            }
+        // ONLY REDIRECT IF AUTH HAS BEEN CHECKED AND NO USER
+        if (authChecked && !user && pathname !== "/login") {
+            if (process.env.NODE_ENV === 'development') console.log("[AUTH_FLOW] Auth checked, no user found, Redirecting to /login");
+            // Double check local storage one last time? No, rely on state.
+            router.push("/login");
+            setIsLoading(false);
+            return;
         }
 
-        fetchData();
-    }, [pathname]);
+        // Initial fetch triggers
+        if (!authChecked) { // Only fetch if we haven't resolved auth yet (or refreshing)
+            fetchData();
+        }
+    }, [pathname, authChecked, user]);
 
     const [isDirty, setIsDirty] = useState(false);
 

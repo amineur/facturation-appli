@@ -11,11 +11,13 @@ import {
     BarChart3,
     Settings,
     LogOut,
-    Trash2
+    Trash2,
+    Archive,
+    ChevronDown,
+    Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useData } from "@/components/data-provider";
-import { ChevronDown, Building2 } from "lucide-react"; // Removed UserCircle, unused
 import { useState, useRef, useEffect } from "react";
 
 const navigation = [

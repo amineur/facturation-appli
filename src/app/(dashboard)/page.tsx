@@ -18,9 +18,9 @@ import {
 import { cn } from "@/lib/utils";
 import { InvoiceStatusChart } from "@/components/features/InvoiceStatusChart";
 import { QuoteStatusChart } from "@/components/features/QuoteStatusChart";
-import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfDay, endOfDay, isBefore } from "date-fns";
+import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfDay, endOfDay, isBefore, subMonths } from "date-fns";
 
-type DateRangeType = "month" | "custom";
+type DateRangeType = "month" | "custom" | "3months" | "total";
 
 export default function DashboardPage() {
     const { invoices: globalInvoices, quotes, clients } = useData();
@@ -39,7 +39,13 @@ export default function DashboardPage() {
         let start = startOfMonth(now);
         let end = endOfDay(now);
 
-        if (dateRange === "custom") {
+        if (dateRange === "total") {
+            start = parseISO("2000-01-01");
+            end = endOfDay(now);
+        } else if (dateRange === "3months") {
+            start = subMonths(now, 3);
+            end = endOfDay(now);
+        } else if (dateRange === "custom") {
             if (customStart && customEnd) {
                 start = startOfDay(parseISO(customStart));
                 end = endOfDay(parseISO(customEnd));
@@ -58,10 +64,6 @@ export default function DashboardPage() {
             end
         };
     }, [globalInvoices, quotes, dateRange, customStart, customEnd]); // Depend on globalInvoices
-
-    // -- Derived Metrics (from filtered data) --
-
-
 
     const stats = useMemo(() => {
         const paidInvoices = filteredData.invoices.filter(inv => inv.statut === "Payée");
@@ -157,12 +159,46 @@ export default function DashboardPage() {
                 <div className="flex flex-col sm:flex-row items-center gap-3 glass-card p-1.5 rounded-xl">
                     <button
                         onClick={() => {
+                            setDateRange("total");
+                            setCustomStart("2000-01-01"); // Start from beginning
+                            setCustomEnd(format(new Date(), "yyyy-MM-dd"));
+                        }}
+                        className={cn(
+                            "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            dateRange === "total"
+                                ? "bg-primary/10 text-primary shadow-sm"
+                                : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                        )}
+                    >
+                        Total
+                    </button>
+                    <button
+                        onClick={() => {
+                            setDateRange("3months");
+                            setCustomStart(format(subMonths(new Date(), 3), "yyyy-MM-dd"));
+                            setCustomEnd(format(new Date(), "yyyy-MM-dd"));
+                        }}
+                        className={cn(
+                            "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            dateRange === "3months"
+                                ? "bg-primary/10 text-primary shadow-sm"
+                                : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                        )}
+                    >
+                        3 Derniers Mois
+                    </button>
+                    <button
+                        onClick={() => {
                             setDateRange("month");
                             setCustomStart(format(startOfMonth(new Date()), "yyyy-MM-dd"));
                             setCustomEnd(format(endOfDay(new Date()), "yyyy-MM-dd"));
                         }}
-                        className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors border",
-                            dateRange === "month" ? "bg-primary/10 text-primary border-primary/20" : "border-transparent hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground")}
+                        className={cn(
+                            "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            dateRange === "month"
+                                ? "bg-primary/10 text-primary shadow-sm"
+                                : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                        )}
                     >
                         Ce Mois
                     </button>
@@ -201,7 +237,7 @@ export default function DashboardPage() {
                                 <button
                                     onClick={() => setChartMode("factures")}
                                     className={cn(
-                                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                        "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                         chartMode === "factures"
                                             ? "bg-primary/10 text-primary shadow-sm"
                                             : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -212,7 +248,7 @@ export default function DashboardPage() {
                                 <button
                                     onClick={() => setChartMode("devis")}
                                     className={cn(
-                                        "px-3 py-1 text-xs font-medium rounded-md transition-all",
+                                        "h-8 px-3 text-sm font-medium rounded-md transition-all leading-none flex items-center justify-center whitespace-nowrap ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                         chartMode === "devis"
                                             ? "bg-primary/10 text-primary shadow-sm"
                                             : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
