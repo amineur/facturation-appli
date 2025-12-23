@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useData } from "@/components/data-provider";
 
 export function FaviconUpdater() {
     const { societe } = useData();
 
+    const createdLinksRef = useRef<HTMLLinkElement[]>([]);
+
     useEffect(() => {
         if (!societe?.logoUrl) return;
 
         let currentObjectUrl: string | null = null;
+        const currentLinks: HTMLLinkElement[] = [];
 
         const dataURItoBlob = (dataURI: string) => {
             try {
@@ -27,14 +30,11 @@ export function FaviconUpdater() {
             }
         };
 
-        const replaceLink = (rel: string, finalUrl: string, mimeType?: string) => {
-            // Find ALL existing links that match this rel
-            const existingLinks = document.querySelectorAll(`link[rel='${rel}']`);
-            existingLinks.forEach(link => link.remove());
-
+        const addLink = (rel: string, finalUrl: string, mimeType?: string) => {
             const link = document.createElement('link');
             link.rel = rel;
             link.href = finalUrl;
+            link.dataset.managedBy = "glass-favicon-updater";
 
             // Apply specific type logic
             if (mimeType) {
@@ -48,6 +48,17 @@ export function FaviconUpdater() {
             }
 
             document.head.appendChild(link);
+            currentLinks.push(link);
+        };
+
+        // Cleanup PREVIOUS links from THIS component instance only
+        const cleanupLinks = () => {
+            createdLinksRef.current.forEach((link: HTMLLinkElement) => {
+                if (link.parentNode) {
+                    link.parentNode.removeChild(link);
+                }
+            });
+            createdLinksRef.current = [];
         };
 
         // Determine the URL to use
@@ -63,28 +74,32 @@ export function FaviconUpdater() {
                 mimeType = blob.type;
             }
         } else {
-            // Cache bust for remote URLs to force refresh
             finalUrl = `${societe.logoUrl}?t=${new Date().getTime()}`;
         }
 
-        // Hard Swap: Remove old tags and add new ones.
-        // This forces Safari to re-evaluate the icon.
-        replaceLink('icon', finalUrl, mimeType);
-        replaceLink('shortcut icon', finalUrl, mimeType);
-        replaceLink('apple-touch-icon', finalUrl, mimeType);
+        // 1. Clean up old links before adding new ones
+        cleanupLinks();
+
+        // 2. Add new links
+        addLink('icon', finalUrl, mimeType);
+        addLink('shortcut icon', finalUrl, mimeType);
+        addLink('apple-touch-icon', finalUrl, mimeType);
 
         if (mimeType === 'image/svg+xml' || (!isDataUri && societe.logoUrl.toLowerCase().endsWith('.svg'))) {
-            replaceLink('mask-icon', finalUrl, mimeType);
+            addLink('mask-icon', finalUrl, mimeType);
         }
 
-        // Cleanup function
+        // 3. Store new links in ref for next cycle or unmount
+        createdLinksRef.current = currentLinks;
+
         return () => {
+            cleanupLinks();
             if (currentObjectUrl) {
                 URL.revokeObjectURL(currentObjectUrl);
             }
         };
 
-    }, [societe?.logoUrl]); // Re-run whenever logoUrl changes
+    }, [societe?.logoUrl, societe?.primaryColor]); // Re-run whenever logoUrl changes
 
     return null;
 }

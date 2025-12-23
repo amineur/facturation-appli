@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  productionBrowserSourceMaps: true, // Enable for deep debugging
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',
@@ -11,9 +12,5 @@ const nextConfig: NextConfig = {
   },
   output: "standalone",
 };
-
-export const dynamic = 'force-dynamic';
-export const dynamicParams = true;
-export const revalidate = 0;
 
 export default nextConfig;
