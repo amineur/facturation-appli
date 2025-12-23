@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DataProvider } from "@/components/data-provider";
 import { Toaster } from "sonner";
-import { FaviconUpdater } from "@/components/features/FaviconUpdater";
+// import { FaviconUpdater } from "@/components/features/FaviconUpdater";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -77,7 +77,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <DataProvider>
-            <FaviconUpdater />
+            {/* <FaviconUpdater /> */}
             {children}
             <Toaster position="top-right" richColors theme="system" />
           </DataProvider>
