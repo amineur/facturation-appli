@@ -12,6 +12,8 @@ import { fetchArchivedInvoices, fetchArchivedQuotes, unarchiveRecord } from "@/a
 
 type ArchivedItem = (Facture & { itemType: "Facture" }) | (Devis & { itemType: "Devis" });
 
+export const dynamic = 'force-dynamic';
+
 export default function ArchivesPage() {
     const { refreshData, clients, societe, isLoading: isDataLoading, logAction, confirm } = useData();
     const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([]);
