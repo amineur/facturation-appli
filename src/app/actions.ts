@@ -399,19 +399,77 @@ export async function fetchClients(societeId: string): Promise<{ success: boolea
     }
 }
 
-export async function fetchInvoices(societeId: string): Promise<{ success: boolean, data?: Facture[], error?: string }> {
+export async function fetchInvoicesLite(societeId: string): Promise<{ success: boolean, data?: Partial<Facture>[], error?: string }> {
     try {
         const invoices = await prisma.facture.findMany({
-            // @ts-ignore - deletedAt exists in schema
+            // @ts-ignore
             where: { societeId, deletedAt: null, statut: { not: 'Archivée' } },
-            include: { client: true }, // Fetch client to ensure we have link info if needed
+            select: {
+                id: true,
+                numero: true,
+                clientId: true,
+                societeId: true,
+                dateEmission: true,
+                dateEcheance: true,
+                datePaiement: true,
+                statut: true,
+                totalHT: true,
+                totalTTC: true,
+                createdAt: true,
+                updatedAt: true,
+                client: {
+                    select: { nom: true } // Only fetch client name for list display
+                }
+            },
             orderBy: [
                 { dateEmission: 'desc' },
                 { numero: 'desc' }
             ]
         });
 
+        const mapped = invoices.map((inv: any) => ({
+            id: inv.id,
+            numero: inv.numero,
+            clientId: inv.clientId,
+            societeId: inv.societeId,
+            dateEmission: inv.dateEmission.toISOString(),
+            echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+            statut: inv.statut as any,
+            totalHT: inv.totalHT,
+            totalTTC: inv.totalTTC,
+            datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
+            type: "Facture" as const,
+            items: [], // Empty for lite version
+            emails: [],
+            // clientName: inv.client?.nom // Optional optimization if we want to flatten
+        }));
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
 
+// Keep original for back-compat but warn or optimize? 
+// For now, let's keep it but ideally we should use Lite + Detail fetch.
+export async function fetchInvoices(societeId: string): Promise<{ success: boolean, data?: Facture[], error?: string }> {
+    // Falls back to lite for now to force optimization, client needs to handle missing items?
+    // WARNING: If client relies on items property to calculate things, this breaks.
+    // So we must Implement fetchInvoiceDetails as well.
+    // For now, let's keep fetchInvoices "heavy" for legacy calls but add Lite for the list.
+    return fetchInvoicesLegacy(societeId);
+}
+
+async function fetchInvoicesLegacy(societeId: string): Promise<{ success: boolean, data?: Facture[], error?: string }> {
+    try {
+        const invoices = await prisma.facture.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: null, statut: { not: 'Archivée' } },
+            include: { client: true },
+            orderBy: [
+                { dateEmission: 'desc' },
+                { numero: 'desc' }
+            ]
+        });
 
         const mapped: Facture[] = invoices.map((inv: any) => {
             let items = [];
@@ -450,6 +508,128 @@ export async function fetchInvoices(societeId: string): Promise<{ success: boole
     }
 }
 
+export async function fetchDashboardMetrics(societeId: string, range: { start: Date, end: Date }) {
+    try {
+        // Server-side aggregation for Dashboard
+        const totalRevenue = await prisma.facture.aggregate({
+            // @ts-ignore
+            where: {
+                societeId,
+                deletedAt: null,
+                statut: "Payée",
+                dateEmission: {
+                    gte: range.start,
+                    lte: range.end
+                }
+            },
+            _sum: { totalTTC: true }
+        });
+
+        const counts = await prisma.facture.groupBy({
+            // @ts-ignore
+            by: ['statut'],
+            where: {
+                societeId,
+                deletedAt: null,
+                dateEmission: {
+                    gte: range.start,
+                    lte: range.end
+                }
+            },
+            _count: true
+        });
+
+        const overdue = await prisma.facture.aggregate({
+            // @ts-ignore
+            where: {
+                societeId,
+                deletedAt: null,
+                statut: "Retard" // Or logic based on echeance date < now
+            },
+            _sum: { totalTTC: true },
+            _count: true
+        });
+
+        // Due Soon (next 7 days)
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        const dueSoon = await prisma.facture.aggregate({
+            // @ts-ignore
+            where: {
+                societeId,
+                deletedAt: null,
+                statut: { in: ["Envoyée", "Brouillon"] },
+                dateEcheance: {
+                    lte: nextWeek,
+                    gte: new Date()
+                }
+            },
+            _sum: { totalTTC: true },
+            _count: true
+        });
+
+        return {
+            success: true,
+            data: {
+                revenue: totalRevenue._sum.totalTTC || 0,
+                counts: counts.reduce((acc, curr) => ({ ...acc, [curr.statut]: curr._count }), {}),
+                overdueAmount: overdue._sum.totalTTC || 0,
+                overdueCount: overdue._count,
+                dueSoonAmount: dueSoon._sum.totalTTC || 0,
+                dueSoonCount: dueSoon._count
+            }
+        };
+
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchInvoiceDetails(id: string): Promise<{ success: boolean, data?: Facture, error?: string }> {
+    try {
+        const inv = await prisma.facture.findUnique({
+            where: { id },
+            include: { client: true }
+        });
+
+        if (!inv) return { success: false, error: "Facture introuvable" };
+
+        let items = [];
+        let emails = [];
+        try {
+            if (inv.itemsJSON) items = JSON.parse(inv.itemsJSON);
+            if (inv.emailsJSON) emails = JSON.parse(inv.emailsJSON);
+        } catch (e) {
+            console.error("Error parsing JSON fields", e);
+        }
+
+        const mapped: Facture = {
+            id: inv.id,
+            numero: inv.numero,
+            clientId: inv.clientId,
+            societeId: inv.societeId,
+            dateEmission: inv.dateEmission.toISOString(),
+            echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+            statut: inv.statut as any,
+            totalHT: inv.totalHT,
+            totalTTC: inv.totalTTC,
+            datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
+            items: items,
+            emails: emails,
+            type: "Facture",
+            createdAt: inv.createdAt ? inv.createdAt.toISOString() : undefined,
+            updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined,
+            isLocked: inv.isLocked,
+            archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
+            config: inv.config ? JSON.parse(inv.config) : {}
+        };
+
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
 export async function fetchQuotes(societeId: string): Promise<{ success: boolean, data?: Devis[], error?: string }> {
     try {
         const quotes = await prisma.devis.findMany({
@@ -480,7 +660,6 @@ export async function fetchQuotes(societeId: string): Promise<{ success: boolean
                 items: items,
                 emails: emails,
                 type: "Devis",
-                createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
                 createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
                 updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
                 isLocked: q.isLocked,

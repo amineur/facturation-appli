@@ -7,8 +7,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("POSTGRES_PRISMA_URL") // uses connection pooling
-  directUrl = env("POSTGRES_URL_NON_POOLING") // uses a direct connection
+  url      = env("DATABASE_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
 model Societe {
@@ -63,6 +63,8 @@ model Societe {
   devis    Devis[]
   members  User[]         @relation("SocieteMembers")
   history  HistoryEntry[]
+
+  @@index([email])
 }
 
 model User {
@@ -116,6 +118,9 @@ model Client {
 
   factures Facture[]
   devis    Devis[]
+
+  @@index([societeId])
+  @@index([email])
 }
 
 model Produit {
@@ -131,6 +136,8 @@ model Produit {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([societeId])
 }
 
 model Facture {
@@ -165,6 +172,11 @@ model Facture {
   isLocked   Boolean   @default(false)
   archivedAt DateTime?
   config     String    @default("{}") // JSON content for UI settings (date col, discounts...)
+
+  @@index([societeId])
+  @@index([clientId])
+  @@index([dateEmission])
+  @@index([statut])
 }
 
 model Devis {
@@ -194,6 +206,11 @@ model Devis {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   config    String    @default("{}")
+
+  @@index([societeId])
+  @@index([clientId])
+  @@index([dateEmission])
+  @@index([statut])
 }
 
 model Paiement {
@@ -207,6 +224,8 @@ model Paiement {
   reference     String? // Transaction ID
 
   createdAt DateTime @default(now())
+
+  @@index([factureId])
 }
 
 model HistoryEntry {
@@ -223,4 +242,8 @@ model HistoryEntry {
   societe   Societe? @relation(fields: [societeId], references: [id])
 
   timestamp DateTime @default(now())
+
+  @@index([userId])
+  @@index([societeId])
+  @@index([entityId])
 }

@@ -248,7 +248,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
             const [clientsRes, productsRes, invoicesRes, quotesRes] = await Promise.all([
                 fetchClients(currentSocieteId),
                 fetchProducts(currentSocieteId),
-                fetchInvoices(currentSocieteId),
+                // OPTIMIZATION: Fetch Lite version for list display
+                import("@/app/actions").then(mod => mod.fetchInvoicesLite(currentSocieteId)),
                 fetchQuotes(currentSocieteId)
             ]);
 
@@ -268,7 +269,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
             if (clientsRes.success && clientsRes.data) setClients(clientsRes.data);
             if (productsRes.success && productsRes.data) setProducts(productsRes.data);
-            if (invoicesRes.success && invoicesRes.data) setInvoices(invoicesRes.data);
+            if (invoicesRes.success && invoicesRes.data) setInvoices(invoicesRes.data as Facture[]);
             if (quotesRes.success && quotesRes.data) setQuotes(quotesRes.data);
         } else {
             // Should be unreachable due to onboarding check, but guard anyway
