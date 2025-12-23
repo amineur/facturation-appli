@@ -1,5 +1,10 @@
 import { InvoiceEditor } from "@/components/features/InvoiceEditor";
+import { Suspense } from "react";
 
 export default function NewFacturePage() {
-    return <InvoiceEditor type="Facture" />;
+    return (
+        <Suspense fallback={<div>Chargement...</div>}>
+            <InvoiceEditor type="Facture" />
+        </Suspense>
+    );
 }

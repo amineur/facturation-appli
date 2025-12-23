@@ -1,5 +1,10 @@
 import { InvoiceEditor } from "@/components/features/InvoiceEditor";
+import { Suspense } from "react";
 
 export default function NewDevisPage() {
-    return <InvoiceEditor type="Devis" />;
+    return (
+        <Suspense fallback={<div>Chargement...</div>}>
+            <InvoiceEditor type="Devis" />
+        </Suspense>
+    );
 }
