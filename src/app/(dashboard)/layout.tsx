@@ -7,6 +7,10 @@ import { Metadata } from "next";
 import { getCurrentUser } from "@/app/actions";
 import { redirect } from "next/navigation";
 
+// Force dynamic rendering for all dashboard pages
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata: Metadata = {
     title: "Tableau de bord",
 };
