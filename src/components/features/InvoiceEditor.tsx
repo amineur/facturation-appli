@@ -747,6 +747,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             toast.success(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès!`);
 
 
+
             if (nextActionRef.current === 'send') {
                 if (initialData?.id === savedId) {
                     setIsComposerOpen(true);
@@ -755,7 +756,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     router.replace(type === "Facture" ? `/factures/${savedId}?action=send` : `/devis/${savedId}?action=send`);
                 }
             } else {
-                router.push(type === "Facture" ? "/factures" : "/devis");
+                // Only redirect to list if creating new document from scratch
+                // If editing existing document (has initialData.id), stay on same page
+                if (!initialData?.id) {
+                    router.push(type === "Facture" ? "/factures" : "/devis");
+                }
+                // If initialData.id exists, we're editing - don't redirect, just refresh
+                // The form will show updated data via refreshData() call above
             }
         } catch (error: any) {
             console.error("Critical Error saving:", error);

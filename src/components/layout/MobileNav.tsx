@@ -63,7 +63,7 @@ export function MobileNav() {
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4 px-1">
-                            <span className="text-sm font-semibold text-white/90">Menu</span>
+                            <span className="text-sm font-semibold text-foreground">Menu</span>
                             <div className="text-[10px] font-medium text-white/40 px-2 py-1 rounded-full bg-white/5 border border-white/5">
                                 v1.7
                             </div>
@@ -74,28 +74,28 @@ export function MobileNav() {
                                 <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400">
                                     <Users className="h-5 w-5" />
                                 </div>
-                                <span className="font-medium text-sm text-white/90">Clients</span>
+                                <span className="font-medium text-sm text-foreground">Clients</span>
                             </button>
 
                             <button onClick={() => handleNavigation("/produits")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
                                     <Package className="h-5 w-5" />
                                 </div>
-                                <span className="font-medium text-sm text-white/90">Produits & Services</span>
+                                <span className="font-medium text-sm text-foreground">Produits & Services</span>
                             </button>
 
                             <button onClick={() => handleNavigation("/rapports")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
                                     <BarChart3 className="h-5 w-5" />
                                 </div>
-                                <span className="font-medium text-sm text-white/90">Rapports & Statistiques</span>
+                                <span className="font-medium text-sm text-foreground">Rapports & Statistiques</span>
                             </button>
 
                             <button onClick={() => handleNavigation("/corbeille")} className="w-full flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all text-left">
                                 <div className="p-2 rounded-xl bg-red-500/10 text-red-400">
                                     <Trash2 className="h-5 w-5" />
                                 </div>
-                                <span className="font-medium text-sm text-white/90">Corbeille</span>
+                                <span className="font-medium text-sm text-foreground">Corbeille</span>
                             </button>
 
                             <button
@@ -105,7 +105,7 @@ export function MobileNav() {
                                 <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 group-hover:bg-orange-500/20 transition-colors">
                                     <Languages className="h-5 w-5" />
                                 </div>
-                                <span className="font-medium text-white/90">Langue</span>
+                                <span className="font-medium text-foreground">Langue</span>
                             </button>
 
                             <div className="h-px bg-white/10 my-2" />
@@ -133,7 +133,7 @@ export function MobileNav() {
                                 <div className="p-2 rounded-xl bg-gray-500/10 text-gray-400">
                                     <Settings className="h-5 w-5" />
                                 </div>
-                                <span className="font-medium text-sm text-white/90">Paramètres</span>
+                                <span className="font-medium text-sm text-foreground">Paramètres</span>
                             </button>
                         </div>
                     </div>
@@ -152,7 +152,7 @@ export function MobileNav() {
                                 onClick={() => handleNavigation(item.href)}
                                 className={cn(
                                     "flex flex-col items-center justify-center gap-1 w-16 h-full transition-all duration-200 active:scale-90",
-                                    isActive ? "text-white" : "text-white/40 hover:text-white/70"
+                                    isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                                 )}
                             >
                                 <div className={cn("p-1.5 rounded-xl transition-all duration-300", isActive && "bg-white/10 shadow-[0_0_15px_rgba(255,255,255,0.1)]")}>
@@ -169,7 +169,7 @@ export function MobileNav() {
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
                         className={cn(
                             "flex flex-col items-center justify-center gap-1 w-16 h-full transition-all duration-200 active:scale-90",
-                            isMenuOpen ? "text-white" : "text-white/40 hover:text-white/70"
+                            isMenuOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                         )}
                     >
                         <div className={cn("p-1.5 rounded-xl transition-all duration-300", isMenuOpen && "bg-white/10 shadow-[0_0_15px_rgba(255,255,255,0.1)]")}>

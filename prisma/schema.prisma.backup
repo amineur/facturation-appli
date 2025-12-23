@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_PRISMA_URL") // uses connection pooling
+  directUrl = env("POSTGRES_URL_NON_POOLING") // uses a direct connection
+}
+
+model Societe {
+  id              String  @id @default(cuid()) // "Euromedmultimedia", "soc_2", etc.
+  nom             String
+  email           String?
+  telephone       String?
+  adresse         String?
+  codePostal      String?
+  ville           String?
+  pays            String? @default("France")
+  siret           String?
+  tvaIntra        String?
+  logoUrl         String?
+  iban            String?
+  bic             String?
+  titulaireCompte String?
+  mentionsLegales String?
+  cgv             String? // Markdown content
+  // -- Branding --
+  primaryColor    String? @default("#000000")
+  secondaryColor  String?
+
+  // -- Settings / Defaults --
+  defaultTva        Float   @default(20)
+  defaultConditions String?
+  currency          String  @default("EUR")
+  invoicePrefix     String? @default("FACT-")
+  quotePrefix       String? @default("DEV-")
+
+  // -- Legal --
+  capitalSocial  String?
+  formeJuridique String? // SAS, SARL, etc.
+  rcs            String?
+  siteWeb        String?
+  banque         String?
+
+  // -- SMTP --
+  smtpHost   String?
+  smtpPort   Int?
+  smtpUser   String?
+  smtpPass   String?
+  smtpSecure Boolean @default(true)
+  smtpFrom   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients  Client[]
+  produits Produit[]
+  factures Facture[]
+  devis    Devis[]
+  members  User[]         @relation("SocieteMembers")
+  history  HistoryEntry[]
+}
+
+model User {
+  id          String  @id @default(cuid())
+  email       String  @unique
+  password    String // Hashed password
+  fullName    String?
+  role        String  @default("user") // "admin", "user", "viewer"
+  avatarUrl   String?
+  avatarBytes Bytes?
+  avatarMime  String?
+  hasAvatar   Boolean @default(false)
+
+  // Relations
+  societes         Societe[] @relation("SocieteMembers")
+  currentSocieteId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lastReadHistory DateTime @default(now())
+
+  history HistoryEntry[]
+}
+
+model Client {
+  id        String  @id @default(cuid()) // "rec..." or UUID
+  societeId String
+  societe   Societe @relation(fields: [societeId], references: [id])
+
+  nom        String
+  email      String?
+  telephone  String?
+  mobile     String?
+  adresse    String?
+  adresse2   String?
+  codePostal String?
+  ville      String?
+  pays       String? @default("France")
+  siret      String?
+  tvaIntra   String?
+  notes      String?
+
+  // Contact details
+  nomContact    String?
+  prenomContact String?
+  titreContact  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  factures Facture[]
+  devis    Devis[]
+}
+
+model Produit {
+  id        String  @id @default(cuid())
+  societeId String
+  societe   Societe @relation(fields: [societeId], references: [id])
+
+  nom          String
+  description  String?
+  prixUnitaire Float   @default(0)
+  tva          Float   @default(20)
+  unite        String? // "Heure", "Jour", "Forfait"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Facture {
+  id        String  @id @default(cuid())
+  societeId String
+  societe   Societe @relation(fields: [societeId], references: [id])
+  clientId  String
+  client    Client  @relation(fields: [clientId], references: [id])
+
+  numero       String // "FAC-2023-001"
+  dateEmission DateTime
+  dateEcheance DateTime?
+  datePaiement DateTime?
+  statut       String    @default("Brouillon") // "Brouillon", "Envoyée", "Payée", "Retard", "Annulée"
+
+  totalHT  Float @default(0)
+  totalTTC Float @default(0)
+
+  // Storing items as JSON string for now to match Airtable logic exactly
+  itemsJSON  String @default("[]")
+  emailsJSON String @default("[]")
+
+  conditions String? // Payment terms
+  notes      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  paiements Paiement[]
+
+  isLocked   Boolean   @default(false)
+  archivedAt DateTime?
+  config     String    @default("{}") // JSON content for UI settings (date col, discounts...)
+}
+
+model Devis {
+  id        String  @id @default(cuid())
+  societeId String
+  societe   Societe @relation(fields: [societeId], references: [id])
+  clientId  String
+  client    Client  @relation(fields: [clientId], references: [id])
+
+  numero       String // "DEV-2023-001"
+  dateEmission DateTime
+  dateValidite DateTime?
+  statut       String    @default("Brouillon") // "Brouillon", "Envoyé", "Accepté", "Refusé", "Facturé"
+
+  totalHT  Float @default(0)
+  totalTTC Float @default(0)
+
+  itemsJSON  String @default("[]")
+  emailsJSON String @default("[]")
+
+  conditions String?
+  notes      String?
+
+  isLocked Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  config    String    @default("{}")
+}
+
+model Paiement {
+  id        String  @id @default(cuid())
+  factureId String
+  facture   Facture @relation(fields: [factureId], references: [id])
+
+  montant       Float
+  datePaiement  DateTime @default(now())
+  moyenPaiement String? // "Virement", "CB", "Espèces", "Stripe"
+  reference     String? // Transaction ID
+
+  createdAt DateTime @default(now())
+}
+
+model HistoryEntry {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  action      String // "create", "update", "delete", "read", "other"
+  entityType  String // "facture", "devis", "client", "produit", "societe", "settings"
+  entityId    String?
+  description String
+
+  societeId String?
+  societe   Societe? @relation(fields: [societeId], references: [id])
+
+  timestamp DateTime @default(now())
+}
