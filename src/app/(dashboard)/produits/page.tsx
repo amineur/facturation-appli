@@ -32,7 +32,7 @@ export default function ProductsPage() {
         const sales = new Map<string, number>();
         invoices.forEach(invoice => {
             try {
-                const items = invoice.items || [];
+                const items = Array.isArray(invoice.items) ? invoice.items : [];
                 items.forEach((item: any) => {
                     // Try to match by ID first (if we have it in items), otherwise by name
                     // Assuming items have productId or we match by name for legacy/simplicity

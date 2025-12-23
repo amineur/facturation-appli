@@ -15,28 +15,71 @@ export default function LoginPage() {
     const { register, handleSubmit, formState: { errors } } = useForm({
         defaultValues: {
             email: "",
-            password: ""
+            password: "",
+            fullName: ""
         }
     });
+
+    const [isSignup, setIsSignup] = useState(false);
 
     const onSubmit = async (data: any) => {
         setIsLoading(true);
         try {
-            // Simulate network delay for realism
-            await new Promise(resolve => setTimeout(resolve, 800));
+            if (isSignup) {
+                // SIGNUP LOGIC
+                const res = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: data.email,
+                        password: data.password,
+                        fullName: data.fullName
+                    })
+                });
+                const result = await res.json();
 
-            const user = await dataService.login(data.email, data.password);
+                if (!res.ok) throw new Error(result.error || "Erreur inscription");
 
-            if (user) {
-                toast.success(`Bon retour, ${user.fullName}`);
-                refreshData(); // Refresh context with new user
-                router.push("/"); // Redirect to dashboard
+                toast.success("Compte créé avec succès !");
+
+                // CLEAR SCOPE
+                localStorage.removeItem('glassy_active_societe');
+                localStorage.removeItem('active_societe_id');
+                localStorage.setItem("glassy_current_user_id", result.userId);
+
+                refreshData();
+                router.push("/");
+
             } else {
-                toast.error("Email ou mot de passe incorrect");
+                // LOGIN LOGIC (via API for Cookie)
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: data.email,
+                        password: data.password
+                    })
+                });
+                const result = await res.json();
+
+                if (!res.ok) throw new Error(result.error || "Erreur connexion");
+
+                const user = result.user;
+                if (user) {
+                    toast.success(`Bon retour, ${user.fullName}`);
+
+                    // CLEAR SCOPE
+                    localStorage.removeItem('glassy_active_societe');
+                    localStorage.removeItem('active_societe_id');
+                    localStorage.setItem("glassy_current_user_id", user.id);
+
+                    refreshData();
+                    router.push("/");
+                }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            toast.error("Une erreur est survenue");
+            toast.error(error.message || "Une erreur est survenue");
         } finally {
             setIsLoading(false);
         }
@@ -48,11 +91,29 @@ export default function LoginPage() {
                 <div className="h-12 w-12 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-white/10">
                     <Lock className="h-6 w-6 text-white" />
                 </div>
-                <h1 className="text-2xl font-bold text-white mb-2">Connexion</h1>
-                <p className="text-sm text-muted-foreground">Accédez à votre espace de gestion</p>
+                <h1 className="text-2xl font-bold text-white mb-2">
+                    {isSignup ? "Créer un compte" : "Connexion"}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                    {isSignup ? "Rejoignez-nous en quelques secondes" : "Accédez à votre espace de gestion"}
+                </p>
             </div>
 
+
+
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                {/* Full Name Field (Signup Only) */}
+                {isSignup && (
+                    <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider ml-1">Nom complet</label>
+                        <input
+                            {...register("fullName", { required: isSignup })}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                            placeholder="Jean Dupont"
+                        />
+                    </div>
+                )}
+
                 <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider ml-1">Email</label>
                     <div className="relative group">
@@ -60,7 +121,7 @@ export default function LoginPage() {
                         <input
                             {...register("email", { required: true })}
                             type="email"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                             placeholder="exemple@email.com"
                         />
                     </div>
@@ -69,15 +130,15 @@ export default function LoginPage() {
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider ml-1">Mot de passe</label>
-                        <a href="#" className="text-xs text-blue-400 hover:text-blue-300">Oublié ?</a>
+                        {!isSignup && <a href="#" className="text-xs text-blue-400 hover:text-blue-300">Oublié ?</a>}
                     </div>
                     <div className="relative group">
                         <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-white transition-colors" />
                         <input
-                            {...register("password", { required: true })}
+                            {...register("password", { required: true, minLength: 6 })}
                             type="password"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                            placeholder="••••••••"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                            placeholder={isSignup ? "Minimum 6 caractères" : "••••••••"}
                         />
                     </div>
                 </div>
@@ -91,7 +152,7 @@ export default function LoginPage() {
                         <Loader2 className="h-5 w-5 animate-spin" />
                     ) : (
                         <>
-                            Se connecter
+                            {isSignup ? "Créer mon compte" : "Se connecter"}
                             <ArrowRight className="h-4 w-4" />
                         </>
                     )}
@@ -100,21 +161,19 @@ export default function LoginPage() {
 
             <div className="mt-8 pt-6 border-t border-white/10 text-center">
                 <p className="text-sm text-muted-foreground">
-                    Pas encore de compte ?{" "}
-                    <button onClick={() => toast.info("Fonctionnalité d'inscription à venir")} className="text-white hover:underline font-medium">
-                        Créer un compte
+                    {isSignup ? "Déjà un compte ?" : "Pas encore de compte ?"} {" "}
+                    <button
+                        type="button"
+                        onClick={() => setIsSignup(!isSignup)}
+                        className="text-white hover:underline font-medium"
+                    >
+                        {isSignup ? "Se connecter" : "Créer un compte"}
                     </button>
                 </p>
             </div>
 
-            {/* Dev Helper - TO BE REMOVED */}
-            <div className="mt-4 p-3 bg-white/5 rounded-lg border border-white/5 text-xs text-muted-foreground text-center">
-                <p>Comptes de test :</p>
-                <div className="flex justify-center gap-2 mt-1 font-mono text-white/70">
-                    <span className="bg-black/20 px-1 rounded">admin@glassy.com</span>
-                    <span className="bg-black/20 px-1 rounded">user@glassy.com</span>
-                </div>
-            </div>
+
+
         </div>
     );
 }

@@ -273,7 +273,7 @@ export function EmailComposer({
 
                         {/* Dropdown Menu */}
                         {showScheduleMenu && (
-                            <div className="absolute left-0 bottom-full mb-2 w-56 bg-white dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-lg shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-200">
+                            <div className="absolute left-0 bottom-full mb-2 w-56 bg-background/95 backdrop-blur-xl border border-border dark:border-white/10 rounded-lg shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-200">
                                 <button
                                     type="button"
                                     onClick={() => { setShowScheduleMenu(false); setShowScheduleModal(true); setCustomDateMode(false); }}
@@ -308,7 +308,7 @@ export function EmailComposer({
             {/* Scheduling Modal - Portal */}
             {showScheduleModal && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div ref={modalRef} className="w-full max-w-sm bg-background dark:bg-[#1e1e1e] border border-border dark:border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div ref={modalRef} className="w-full max-w-sm bg-background/95 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         {/* Same Modal Content as before */}
                         <div className="p-4 border-b border-border dark:border-white/10 flex justify-between items-center">
                             <h3 className="text-lg font-semibold">Programmer l'envoi</h3>

@@ -1,0 +1,32 @@
+#!/usr/bin/expect
+
+set timeout 300
+set host "ssh.cluster128.hosting.ovh.net"
+set user "studihp-applications"
+set password "11FRjvlk25"
+
+spawn ssh -o StrictHostKeyChecking=no $user@$host "
+    echo '---CLEANUP---' &&
+    rm -rf nodejs node-v* &&
+    echo '---DOWNLOAD_V18---' &&
+    curl -o node18.tar.xz https://nodejs.org/dist/v18.19.0/node-v18.19.0-linux-x64.tar.xz &&
+    echo '---EXTRACT---' &&
+    tar -xf node18.tar.xz --no-same-owner --touch &&
+    mv node-v18.19.0-linux-x64 nodejs &&
+    mkdir -p ~/bin &&
+    ln -sf ~/nodejs/bin/node ~/bin/node &&
+    ln -sf ~/nodejs/bin/npm ~/bin/npm &&
+    ln -sf ~/nodejs/bin/npx ~/bin/npx &&
+    export PATH=\$HOME/bin:\$PATH &&
+    echo '---VERIFY---' &&
+    node -v &&
+    echo '---SUCCESS---'
+"
+
+expect "password:"
+send "$password\r"
+
+expect {
+    "---SUCCESS---" { exit 0 }
+    timeout { exit 1 }
+}

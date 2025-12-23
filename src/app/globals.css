@@ -49,6 +49,10 @@
   }
 }
 
+html {
+  overflow-y: scroll;
+}
+
 body {
   background: var(--bg-gradient);
   background-color: var(--background);

@@ -3,18 +3,25 @@ import { Header } from "@/components/layout/Header";
 import { FaviconUpdater } from "@/components/features/FaviconUpdater";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { MobileHeader } from "@/components/layout/MobileHeader";
-
 import { Metadata } from "next";
+import { getCurrentUser } from "@/app/actions";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
     title: "Tableau de bord",
 };
 
-export default function DashboardLayout({
+import { DashboardStateProvider } from "@/components/providers/dashboard-state-provider";
+
+// ... existing imports
+
+export default async function DashboardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
+    // ... existing auth checks
+
     return (
         <div className="flex h-screen w-full overflow-hidden bg-transparent">
             <FaviconUpdater />
@@ -24,7 +31,7 @@ export default function DashboardLayout({
             </div>
 
             <div className="flex flex-1 flex-col overflow-hidden">
-                {/* Header - Hidden on mobile or simplified? Keeping for now but maybe need adjustment */}
+                {/* Header */}
                 <div className="hidden md:block">
                     <Header />
                 </div>
@@ -34,7 +41,9 @@ export default function DashboardLayout({
 
                 <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-[100px] md:pb-6 scrollbar-hide">
                     <div className="mx-auto max-w-7xl animate-in fade-in zoom-in duration-500">
-                        {children}
+                        <DashboardStateProvider>
+                            {children}
+                        </DashboardStateProvider>
                     </div>
                 </main>
             </div>

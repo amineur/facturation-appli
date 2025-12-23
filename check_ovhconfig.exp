@@ -1,0 +1,13 @@
+#!/usr/bin/expect
+
+set timeout 20
+set host "ssh.cluster128.hosting.ovh.net"
+set user "studihp-applications"
+set password "11FRjvlk25"
+
+spawn ssh -o StrictHostKeyChecking=no $user@$host "cat ~/.ovhconfig || echo 'NO_CONFIG_FOUND'"
+
+expect "password:"
+send "$password\r"
+
+expect eof

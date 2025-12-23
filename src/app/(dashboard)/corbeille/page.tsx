@@ -33,8 +33,8 @@ export default function TrashPage() {
                 fetchDeletedQuotes(societe.id)
             ]);
 
-            const invoices = (invoicesRes.data || []).map(i => ({ ...i, itemType: "Facture" as const })) as (Facture & { itemType: "Facture" })[];
-            const quotes = (quotesRes.data || []).map(q => ({ ...q, itemType: "Devis" as const })) as (Devis & { itemType: "Devis" })[];
+            const invoices = (invoicesRes.data || []).map(i => ({ ...i, itemType: "Facture" as const })) as unknown as (Facture & { itemType: "Facture" })[];
+            const quotes = (quotesRes.data || []).map(q => ({ ...q, itemType: "Devis" as const })) as unknown as (Devis & { itemType: "Devis" })[];
 
             const combined = [...invoices, ...quotes].sort((a, b) => {
                 const dateA = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
@@ -102,7 +102,7 @@ export default function TrashPage() {
             title: "Suppression définitive",
             message: "Cette action est irréversible. Continuer ?",
             onConfirm: async () => {
-                const table = item.itemType === "Facture" ? 'Factures' : 'Devis';
+                const table = 'Devis'; // item.itemType is guaranteed to be "Devis" here
                 await permanentlyDeleteRecord(table, item.id);
                 loadDeletedItems();
                 refreshData();

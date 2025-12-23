@@ -141,9 +141,9 @@ class DataService {
         // We defer to the server action to handle "create if new, update if exists"
         const result = await upsertUser(user);
 
-        if (result.success && result.user) {
+        if (result.success && result.data) {
             // DB Write Success -> Update Local State to match DB
-            const savedUser = result.user;
+            const savedUser = result.data;
 
             const users = this.getUsers();
             const index = users.findIndex(u => u.id === savedUser.id);
@@ -168,31 +168,41 @@ class DataService {
 
         const result = await loginUser(email, password);
 
-        if (result.success && result.user) {
+        if (result.success && result.data) {
             if (typeof window !== 'undefined') {
-                localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, result.user.id);
-                if (result.user.currentSocieteId) {
-                    localStorage.setItem(STORAGE_KEYS.ACTIVE_SOCIETE_ID, result.user.currentSocieteId);
+                localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, result.data.id);
+                if (result.data.currentSocieteId) {
+                    localStorage.setItem(STORAGE_KEYS.ACTIVE_SOCIETE_ID, result.data.currentSocieteId);
                 }
 
                 // Update local cache
                 const users = this.getUsers();
-                const index = users.findIndex(u => u.id === result.user.id);
+                const index = users.findIndex(u => u.id === result.data.id);
                 if (index >= 0) {
-                    users[index] = result.user;
+                    users[index] = result.data;
                 } else {
-                    users.push(result.user);
+                    users.push(result.data);
                 }
                 this.setItem(STORAGE_KEYS.USERS, users);
             }
-            return result.user;
+            return result.data;
         }
         return null;
     }
 
-    logout() {
+    async logout() {
+        // Call API to remove cookie
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+        } catch (e) {
+            console.error("Logout API failed", e);
+        }
+
         if (typeof window === 'undefined') return;
         localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_SOCIETE_ID);
+        localStorage.removeItem("glassy_active_societe");
+
         window.location.href = "/login";
     }
 

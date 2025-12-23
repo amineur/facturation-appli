@@ -1,5 +1,5 @@
-export type StatusFacture = 'Brouillon' | 'Envoyée' | 'Payée' | 'Retard' | 'Annulée' | 'Archivée';
-export type StatusDevis = 'Brouillon' | 'Envoyé' | 'Accepté' | 'Refusé' | 'Facturé' | 'Converti' | 'Archivé';
+export type StatusFacture = 'Brouillon' | 'Envoyée' | 'Téléchargée' | 'Payée' | 'Retard' | 'Annulée' | 'Archivée';
+export type StatusDevis = 'Brouillon' | 'Envoyé' | 'Téléchargé' | 'Accepté' | 'Refusé' | 'Facturé' | 'Converti' | 'Archivé';
 export type InvoiceStatus = StatusFacture; // Backward compatibility alias if needed
 export type InvoiceType = 'Facture' | 'Devis';
 
@@ -13,6 +13,7 @@ export interface LigneItem {
     remiseType?: 'pourcentage' | 'montant'; // Add missing field
     produitId?: string; // Add missing field
     type?: string; // Add missing field
+    date?: string; // Add missing field for showDateColumn support
     totalLigne: number; // Calculé
 }
 
@@ -111,6 +112,8 @@ export interface User {
     currentSocieteId?: string; // Last active society
     lastReadHistory?: string; // ISO Date of last check
     avatarUrl?: string | null;
+    hasAvatar?: boolean;
+    updatedAt?: string;
 }
 
 export interface HistoryEntry {

@@ -1,0 +1,20 @@
+#!/usr/bin/expect
+
+set timeout 20
+set host "ssh.cluster128.hosting.ovh.net"
+set user "studihp-applications"
+set password "11FRjvlk25"
+
+spawn ssh -o StrictHostKeyChecking=no $user@$host "
+    echo '---PWD---' && pwd &&
+    echo '---HOME---' && echo \$HOME &&
+    echo '---BIN_LS---' && ls -la ~/bin &&
+    echo '---NODE_LS---' && ls -la ~/nodejs/bin &&
+    echo '---TEST_EXEC---' && ~/nodejs/bin/node -v &&
+    echo '---END---'
+"
+
+expect "password:"
+send "$password\r"
+
+expect -ex "---END---"

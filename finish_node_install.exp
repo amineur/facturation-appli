@@ -1,0 +1,48 @@
+#!/usr/bin/expect
+
+set timeout 40
+set host "ssh.cluster128.hosting.ovh.net"
+set user "studihp-applications"
+set password "11FRjvlk25"
+
+spawn ssh -o StrictHostKeyChecking=no $user@$host "
+    echo '---START_SCAN---'
+    # Find node bin specifically
+    NODE_PATH=\$(find ~ -maxdepth 3 -type f -name node -executable 2>/dev/null | grep '/bin/node' | head -n 1)
+    
+    if [ -z \"\$NODE_PATH\" ]; then
+        echo 'FATAL: Node binary not found.'
+        exit 1
+    fi
+
+    echo \"FOUND: \$NODE_PATH\"
+    
+    # Setup bin dir
+    mkdir -p ~/bin
+    
+    # Link binaries using identified path
+    ln -sf \"\$NODE_PATH\" ~/bin/node
+    ln -sf \"\$(dirname \$NODE_PATH)/npm\" ~/bin/npm
+    ln -sf \"\$(dirname \$NODE_PATH)/npx\" ~/bin/npx
+    
+    # Ensure perms
+    chmod +x \"\$NODE_PATH\"
+    
+    # Add to PATH if missing
+    grep -q 'export PATH=\$HOME/bin:\$PATH' ~/.bashrc || echo 'export PATH=\$HOME/bin:\$PATH' >> ~/.bashrc
+    
+    # Verify immediately
+    export PATH=\$HOME/bin:\$PATH
+    echo '---VERIFY---'
+    node -v
+    echo '---SUCCESS---'
+"
+
+expect "password:"
+send "$password\r"
+
+expect {
+    "FATAL" { exit 1 }
+    "---SUCCESS---" { exit 0 }
+    timeout { exit 1 }
+}

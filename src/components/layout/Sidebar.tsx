@@ -38,7 +38,30 @@ export function Sidebar() {
     const [isSocieteMenuOpen, setIsSocieteMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
-    // ... (useEffect remains the same)
+    // Close on click outside and Esc
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setIsSocieteMenuOpen(false);
+            }
+        };
+
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setIsSocieteMenuOpen(false);
+            }
+        };
+
+        if (isSocieteMenuOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+            document.addEventListener("keydown", handleEscape);
+        }
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("keydown", handleEscape);
+        };
+    }, [isSocieteMenuOpen]);
 
     const handleNavigation = (href: string) => {
         // Allow navigation if we have search params (sub-views) to reset to main view

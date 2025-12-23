@@ -1,56 +1,65 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef, cloneElement, isValidElement } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Facture } from "@/types";
 
+// Robust Guard to prevent Recharts from rendering with invalid dimensions
+// Injects exact dimensions to bypass Recharts auto-measurement which fails in some contexts
+const ChartGuard = ({ children, height = 350 }: { children: React.ReactNode, height?: number | string }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    setDimensions({ width, height });
+                } else {
+                    setDimensions(null);
+                }
+            }
+        });
+
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    return (
+        <div ref={containerRef} style={{ width: '100%', height: height, minWidth: 0 }} className="w-full min-w-0">
+            {dimensions && isValidElement(children) ?
+                cloneElement(children as React.ReactElement<any>, { width: dimensions.width, height: dimensions.height })
+                : <div style={{ height: '100%', width: '100%' }} />
+            }
+        </div>
+    );
+};
+
+// ... imports ...
+
 interface InvoiceStatusChartProps {
-    invoices: Facture[]; // Filtered invoices for the period (Paid, Draft, etc.)
-    globalInvoices?: Facture[]; // All invoices for calculating total Overdue
+    invoices?: Facture[]; // kept for compatibility if needed
+    globalInvoices?: Facture[];
+    chartData?: { name: string; value: number; color: string }[];
+    totalOverdue?: number;
 }
 
-export function InvoiceStatusChart({ invoices, globalInvoices }: InvoiceStatusChartProps) {
-    // Fallback if not provided, though we should provide it
-    const allRefInvoices = globalInvoices || invoices;
+export function InvoiceStatusChart({ invoices, globalInvoices, chartData, totalOverdue }: InvoiceStatusChartProps) {
 
+    // Use passed data provided by computeDashboardMetrics
     const data = useMemo(() => {
-        const statusCounts = {
-            payee: 0,
-            retard: 0,
-            brouillon: 0,
-        };
+        if (chartData) return chartData;
+        // Legacy fallback (should not be reached if parent is updated)
+        return [];
+    }, [chartData]);
 
-        // 1. Calculate Period Revenue (Paid, Draft, etc.) from FILTERED 'invoices'
-        invoices.forEach((inv) => {
-            if (inv.statut === "Payée") {
-                statusCounts.payee += inv.totalTTC;
-            } else if (inv.statut === "Brouillon" || inv.statut === "Envoyée") {
-                statusCounts.brouillon += inv.totalTTC;
-            }
-        });
+    const displayOverdue = totalOverdue !== undefined ? totalOverdue : 0;
 
-        // 2. Calculate GLOBAL Overdue from 'globalInvoices'
-        allRefInvoices.forEach((inv) => {
-            if (inv.statut === "Retard") {
-                statusCounts.retard += inv.totalTTC;
-            }
-            // Logic for auto-detecting overdue based on date could be added here if needed,
-            // but relying on status 'Retard' is safer/cleaner if logic elsewhere sets it.
-            // Assuming 'Retard' status is source of truth.
-        });
-
-        return [
-            { name: "Payé (Période)", value: statusCounts.payee, color: "#10B981" }, // Emerald-500
-            { name: "Global Retard", value: statusCounts.retard, color: "#EF4444" }, // Red-500
-            { name: "Brouillon (Période)", value: statusCounts.brouillon, color: "#94A3B8" }, // Slate-400
-        ].filter(item => item.value > 0);
-    }, [invoices, allRefInvoices]);
-
-    const totalOverdue = useMemo(() => {
-        return allRefInvoices
-            .filter(i => i.statut === "Retard")
-            .reduce((acc, curr) => acc + curr.totalTTC, 0);
-    }, [allRefInvoices]);
+    // Legacy logic removed to enforce centralization.
+    // If data is empty, logic below handles it.
 
     if (data.length === 0) {
         return <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">Aucune donnée</div>;
@@ -59,33 +68,35 @@ export function InvoiceStatusChart({ invoices, globalInvoices }: InvoiceStatusCh
     return (
         <div className="flex flex-col md:flex-row items-center justify-around gap-8 w-full px-4 md:px-12">
             <div className="h-[260px] w-[260px] relative shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                            data={data}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={85}
-                            outerRadius={110}
-                            paddingAngle={data.length === 1 ? 0 : 5}
-                            dataKey="value"
-                            stroke="none"
-                        >
-                            {data.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                        </Pie>
-                        <Tooltip
-                            formatter={(value: number) => value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
-                            contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
-                        />
-                    </PieChart>
-                </ResponsiveContainer>
+                <ChartGuard height="100%">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={data}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={85}
+                                outerRadius={110}
+                                paddingAngle={data.length === 1 ? 0 : 5}
+                                dataKey="value"
+                                stroke="none"
+                            >
+                                {data.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                            </Pie>
+                            <Tooltip
+                                formatter={(value: number) => value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                                contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                            />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </ChartGuard>
                 {/* Center Text displaying Overdue Amount */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-sm text-muted-foreground font-medium uppercase tracking-wider mb-1">Retard</span>
                     <span className="text-3xl font-bold text-red-500">
-                        {totalOverdue.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
+                        {displayOverdue.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
                     </span>
                 </div>
             </div>

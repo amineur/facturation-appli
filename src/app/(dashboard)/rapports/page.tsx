@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef, cloneElement, isValidElement } from "react";
 import { useData } from "@/components/data-provider";
+import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 import { TrendingUp, FileText, Users, DollarSign, BarChart3, Calendar, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -19,17 +20,62 @@ import {
 import { format, subMonths, startOfYear, isWithinInterval, parseISO, endOfDay, startOfDay, startOfMonth, endOfMonth } from "date-fns";
 import { fr } from "date-fns/locale";
 
-type DateRange = "month" | "3months" | "custom" | "year" | "total";
+type DateRange = "month" | "3months" | "custom" | "total";
 type TabType = "clients" | "produits" | "mois";
+
+// Robust Guard to prevent Recharts from rendering with invalid dimensions
+// Injects exact dimensions to bypass Recharts auto-measurement which fails in some contexts
+const ChartGuard = ({ children, height = 350 }: { children: React.ReactNode, height?: number | string }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    setDimensions({ width, height });
+                } else {
+                    setDimensions(null);
+                }
+            }
+        });
+
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    return (
+        <div ref={containerRef} style={{ width: '100%', height: height, minWidth: 0 }} className="w-full min-w-0">
+            {dimensions && isValidElement(children) ?
+                cloneElement(children as React.ReactElement<any>, { width: dimensions.width, height: dimensions.height })
+                : <div style={{ height: '100%', width: '100%' }} />
+            }
+        </div>
+    );
+};
 
 export default function RapportsPage() {
     const { invoices, quotes, clients } = useData();
 
     // -- State --
-    const [dateRange, setDateRange] = useState<DateRange>("month");
-    // Initialize custom dates with today's range or empty
-    const [customStart, setCustomStart] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
-    const [customEnd, setCustomEnd] = useState<string>(format(endOfMonth(new Date()), "yyyy-MM-dd"));
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    const {
+        reportsDateRange: dateRange,
+        setReportsDateRange: setDateRange,
+        reportsCustomStart: customStart,
+        setReportsCustomStart: setCustomStart,
+        reportsCustomEnd: customEnd,
+        setReportsCustomEnd: setCustomEnd
+    } = useDashboardState();
+
+    // Local state for Tabs only
     const [activeTab, setActiveTab] = useState<TabType>("clients");
 
     // -- Filtering Logic --
@@ -360,82 +406,84 @@ export default function RapportsPage() {
                     <BarChart3 className="h-5 w-5 text-primary" />
                     Evolution des Ventes
                 </h3>
-                <div className="h-[350px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorFactures" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.8} />
-                                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.3} />
-                                </linearGradient>
-                                <linearGradient id="colorDevis" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.8} />
-                                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                            <XAxis
-                                dataKey="name"
-                                stroke="#888888"
-                                fontSize={12}
-                                tickLine={false}
-                                axisLine={false}
-                                dy={10}
-                            />
-                            <YAxis
-                                stroke="#888888"
-                                fontSize={12}
-                                tickLine={false}
-                                axisLine={false}
-                                tickFormatter={(value) => `${value}`}
-                                dx={-10}
-                            />
-                            <Tooltip
-                                content={({ active, payload, label }) => {
-                                    if (active && payload && payload.length) {
-                                        return (
-                                            <div className="glass-card p-4 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl bg-slate-950/80">
-                                                <p className="text-sm font-semibold mb-3 text-foreground">{label}</p>
-                                                <div className="space-y-2">
-                                                    {payload.map((entry: any, index: number) => (
-                                                        <div key={index} className="flex items-center justify-between gap-8 text-xs">
-                                                            <div className="flex items-center gap-2">
-                                                                <div
-                                                                    className="w-2 h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)]"
-                                                                    style={{ backgroundColor: entry.color === 'url(#colorFactures)' ? '#10b981' : '#8b5cf6' }}
-                                                                />
-                                                                <span className="text-muted-foreground">{entry.name}</span>
+                <div className="h-[350px] w-full min-w-0">
+                    <ChartGuard height={350}>
+                        <ResponsiveContainer width="100%" height="100%" minHeight={350}>
+                            <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorFactures" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.8} />
+                                        <stop offset="100%" stopColor="#10b981" stopOpacity={0.3} />
+                                    </linearGradient>
+                                    <linearGradient id="colorDevis" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.8} />
+                                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                <XAxis
+                                    dataKey="name"
+                                    stroke="#888888"
+                                    fontSize={12}
+                                    tickLine={false}
+                                    axisLine={false}
+                                    dy={10}
+                                />
+                                <YAxis
+                                    stroke="#888888"
+                                    fontSize={12}
+                                    tickLine={false}
+                                    axisLine={false}
+                                    tickFormatter={(value) => `${value}`}
+                                    dx={-10}
+                                />
+                                <Tooltip
+                                    content={({ active, payload, label }) => {
+                                        if (active && payload && payload.length) {
+                                            return (
+                                                <div className="glass-card p-4 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl bg-slate-950/80">
+                                                    <p className="text-sm font-semibold mb-3 text-foreground">{label}</p>
+                                                    <div className="space-y-2">
+                                                        {payload.map((entry: any, index: number) => (
+                                                            <div key={index} className="flex items-center justify-between gap-8 text-xs">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div
+                                                                        className="w-2 h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)]"
+                                                                        style={{ backgroundColor: entry.color === 'url(#colorFactures)' ? '#10b981' : '#8b5cf6' }}
+                                                                    />
+                                                                    <span className="text-muted-foreground">{entry.name}</span>
+                                                                </div>
+                                                                <span className="font-bold text-foreground font-mono">
+                                                                    {entry.value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                                                                </span>
                                                             </div>
-                                                            <span className="font-bold text-foreground font-mono">
-                                                                {entry.value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
-                                                            </span>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    }
-                                    return null;
-                                }}
-                                cursor={{ fill: 'rgba(255,255,255,0.02)' }}
-                            />
-                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                            <Bar
-                                dataKey="factures"
-                                name="Factures Payées"
-                                fill="url(#colorFactures)"
-                                radius={[4, 4, 0, 0]}
-                                maxBarSize={50}
-                            />
-                            <Bar
-                                dataKey="devis"
-                                name="Devis Émis"
-                                fill="url(#colorDevis)"
-                                radius={[4, 4, 0, 0]}
-                                maxBarSize={50}
-                            />
-                        </BarChart>
-                    </ResponsiveContainer>
+                                            );
+                                        }
+                                        return null;
+                                    }}
+                                    cursor={{ fill: 'rgba(255,255,255,0.02)' }}
+                                />
+                                <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                <Bar
+                                    dataKey="factures"
+                                    name="Factures Payées"
+                                    fill="url(#colorFactures)"
+                                    radius={[4, 4, 0, 0]}
+                                    maxBarSize={50}
+                                />
+                                <Bar
+                                    dataKey="devis"
+                                    name="Devis Émis"
+                                    fill="url(#colorDevis)"
+                                    radius={[4, 4, 0, 0]}
+                                    maxBarSize={50}
+                                />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </ChartGuard>
                 </div>
             </div>
 

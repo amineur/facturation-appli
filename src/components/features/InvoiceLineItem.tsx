@@ -41,8 +41,9 @@ const PriceInput = ({ value, onChange, onBlur, inputRef, className, disabled }: 
                     e.currentTarget.blur();
                 }
             }}
-            className={className}
-            disabled={disabled}
+            className={cn(className, disabled && "pointer-events-none opacity-80")}
+            readOnly={disabled} // Use readOnly instead of disabled to preserve styles
+            disabled={false} // Disable native disabled styles
         />
     );
 };
@@ -72,7 +73,7 @@ export const InvoiceLineItem = ({
         >
             <div className={cn(
                 "group grid gap-4 items-start p-2 rounded-lg hover:bg-white/5 transition-colors pl-8",
-                isReadOnly && "hover:bg-transparent pl-2" // Adjust padding if no drag handle
+                isReadOnly && "hover:bg-transparent" // Adjust padding if no drag handle
             )}
                 style={{
                     gridTemplateColumns: [
@@ -84,19 +85,20 @@ export const InvoiceLineItem = ({
                         "0.8fr", // TVA
                         showTTCColumn ? "1.2fr" : null, // Total TTC
                         discountEnabled ? "1.1fr" : null, // Remise
-                        !isReadOnly ? "0.4fr" : null
+                        "0.4fr"
                     ].filter(Boolean).join(" ")
                 }}>
 
                 {/* Drag Handle */}
-                {!isReadOnly && (
-                    <div
-                        className="absolute left-2 top-3 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity touch-none"
-                        onPointerDown={(e) => dragControls.start(e)}
-                    >
-                        <GripVertical className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                )}
+                <div
+                    className={cn(
+                        "absolute left-2 top-3 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity touch-none",
+                        isReadOnly && "invisible pointer-events-none"
+                    )}
+                    onPointerDown={(e) => !isReadOnly && dragControls.start(e)}
+                >
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </div>
 
                 {field.type === 'texte' ? (
                     /* Text Line Rendering */
@@ -104,21 +106,27 @@ export const InvoiceLineItem = ({
                         <div className="space-y-2">
                             <input
                                 {...register(`items.${index}.description`)}
-                                disabled={isReadOnly}
                                 placeholder="Description libre..."
                                 className={cn(
                                     "w-full h-9 rounded bg-white/5 border border-white/10 px-3 text-foreground text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 italic",
-                                    isReadOnly && "opacity-80 bg-transparent border-transparent"
+                                    isReadOnly && "opacity-80 pointer-events-none" // Removed border-transparent
                                 )}
+                                readOnly={isReadOnly}
+                                disabled={false}
                             />
                         </div>
-                        {!isReadOnly && (
-                            <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button type="button" onClick={() => remove(index)} className="text-red-500 hover:text-red-400">
-                                    <Trash2 className="h-4 w-4" />
-                                </button>
-                            </div>
-                        )}
+                        <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                                type="button"
+                                onClick={() => !isReadOnly && remove(index)}
+                                className={cn(
+                                    "text-red-500 hover:text-red-400",
+                                    isReadOnly && "invisible pointer-events-none"
+                                )}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     /* Product Line Rendering */
@@ -144,9 +152,15 @@ export const InvoiceLineItem = ({
                                 placeholder="Description"
                                 className={cn(
                                     "w-full h-9 rounded glass-input px-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 peer",
-                                    isReadOnly && "disabled:opacity-100 disabled:bg-transparent disabled:border-transparent cursor-default"
+                                    (errors?.items as any)?.[index]?.description && "border-red-500 focus:border-red-500 focus:ring-red-500",
+                                    isReadOnly && "opacity-80 pointer-events-none cursor-default"
                                 )}
                             />
+                            {(errors?.items as any)?.[index]?.description && (
+                                <p className="text-xs text-red-500 mt-1 ml-1 font-medium">
+                                    {((errors?.items as any)?.[index]?.description as any)?.message || "Produit manquant"}
+                                </p>
+                            )}
                             {/* Custom Dropdown for Products */}
                             {open && !isReadOnly && (
                                 <div className="absolute top-full left-0 w-full z-50 mt-1 max-h-60 overflow-y-auto rounded-md glass-dropdown animate-in fade-in zoom-in-95 duration-100">
@@ -185,13 +199,23 @@ export const InvoiceLineItem = ({
                         </div>
 
                         {showDateColumn && (
-                            <div className="overflow-hidden">
+                            <div className="overflow-visible">
                                 <input
                                     type="date"
                                     {...register(`items.${index}.date`)}
-                                    disabled={isReadOnly}
-                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 text-sm p-1 disabled:border-transparent disabled:opacity-80"
+                                    readOnly={isReadOnly}
+                                    disabled={false}
+                                    className={cn(
+                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 text-sm p-1",
+                                        (errors?.items as any)?.[index]?.date && "border-red-500 focus:border-red-500",
+                                        isReadOnly && "opacity-80 pointer-events-none"
+                                    )}
                                 />
+                                {(errors?.items as any)?.[index]?.date && (
+                                    <p className="text-xs text-red-500 mt-1 text-center font-medium">
+                                        {((errors?.items as any)?.[index]?.date as any)?.message || "Date requise"}
+                                    </p>
+                                )}
                             </div>
                         )}
 
@@ -201,8 +225,12 @@ export const InvoiceLineItem = ({
                                 lang="fr-FR"
                                 step="any"
                                 {...register(`items.${index}.quantite`, { valueAsNumber: true })}
-                                disabled={isReadOnly}
-                                className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:border-transparent disabled:opacity-80"
+                                readOnly={isReadOnly}
+                                disabled={false}
+                                className={cn(
+                                    "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                    isReadOnly && "opacity-80 pointer-events-none"
+                                )}
                             />
                         </div>
 
@@ -219,7 +247,7 @@ export const InvoiceLineItem = ({
                                         disabled={isReadOnly}
                                         className={cn(
                                             "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-5",
-                                            isReadOnly && "disabled:border-transparent disabled:opacity-80 pointer-events-none"
+                                            isReadOnly && "opacity-80 pointer-events-none"
                                         )}
                                     />
                                 )}
@@ -250,8 +278,12 @@ export const InvoiceLineItem = ({
                                     type="number"
                                     step="0.1"
                                     {...register(`items.${index}.tva`, { valueAsNumber: true })}
-                                    disabled={isReadOnly}
-                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pr-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:border-transparent disabled:opacity-80"
+                                    readOnly={isReadOnly}
+                                    disabled={false}
+                                    className={cn(
+                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pr-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                        isReadOnly && "opacity-80 pointer-events-none"
+                                    )}
                                 />
                                 <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
                             </div>
@@ -288,25 +320,34 @@ export const InvoiceLineItem = ({
                                     max={discountType === 'pourcentage' ? "100" : undefined}
                                     placeholder="0"
                                     {...register(`items.${index}.remise`, { valueAsNumber: true })}
-                                    disabled={isReadOnly}
+                                    readOnly={isReadOnly}
+                                    disabled={false}
                                     onChange={(e) => {
                                         setValue(`items.${index}.remise`, parseFloat(e.target.value) || 0);
                                         setValue(`items.${index}.remiseType`, discountType);
                                     }}
-                                    className="w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:border-transparent disabled:opacity-80"
+                                    className={cn(
+                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                        isReadOnly && "opacity-80 pointer-events-none"
+                                    )}
                                 />
                                 <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none">
                                     {discountType === 'pourcentage' ? '%' : '€'}
                                 </span>
                             </div>
                         )}
-                        {!isReadOnly && (
-                            <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button type="button" onClick={() => remove(index)} className="text-red-500 hover:text-red-400">
-                                    <Trash2 className="h-4 w-4" />
-                                </button>
-                            </div>
-                        )}
+                        <div className="text-right pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                                type="button"
+                                onClick={() => !isReadOnly && remove(index)}
+                                className={cn(
+                                    "text-red-500 hover:text-red-400",
+                                    isReadOnly && "invisible pointer-events-none"
+                                )}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </button>
+                        </div>
                     </>
                 )
                 }

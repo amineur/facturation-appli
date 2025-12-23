@@ -22,6 +22,10 @@ async function checkInvoiceMutability(id: string) {
         return { success: false, error: "Facture archivée : modification impossible" };
     }
 
+    if (invoice.statut === "Annulée") {
+        return { success: false, error: "Facture annulée : modification impossible" };
+    }
+
     return { success: true };
 }
 
@@ -46,7 +50,7 @@ export async function registerUser(data: any) {
             include: { societes: true }
         });
 
-        return { success: true, user: mapUser(user) };
+        return { success: true, data: mapUser(user) };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
@@ -63,7 +67,7 @@ export async function loginUser(email: string, password: string) {
             return { success: false, error: "Email ou mot de passe incorrect" };
         }
 
-        return { success: true, user: mapUser(user) };
+        return { success: true, data: mapUser(user) };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
@@ -88,7 +92,7 @@ export async function getDefaultUser() {
             return { success: false, error: "No users found in database" };
         }
 
-        return { success: true, user: mapUser(user) };
+        return { success: true, data: mapUser(user) };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
@@ -108,7 +112,7 @@ export async function updateUser(userData: any) {
             },
             include: { societes: true }
         });
-        return { success: true, user: mapUser(user) };
+        return { success: true, data: mapUser(user) };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
@@ -144,7 +148,7 @@ export async function upsertUser(userData: any) {
         });
 
         // Ensure we always return the fresh DB state
-        return { success: true, user: mapUser(user) };
+        return { success: true, data: mapUser(user) };
     } catch (error: any) {
         console.error("Upsert User Failed:", error);
         return { success: false, error: error.message };
@@ -184,7 +188,8 @@ function mapUser(prismaUser: any): User {
         currentSocieteId: prismaUser.currentSocieteId || prismaUser.societes[0]?.id,
         lastReadHistory: prismaUser.lastReadHistory ? prismaUser.lastReadHistory.toISOString() : undefined,
         password: prismaUser.password, // Returning password to client is BAD practice in real app, but needed for current Local Logic to pre-fill
-        avatarUrl: prismaUser.avatarUrl
+        avatarUrl: prismaUser.avatarUrl,
+        hasAvatar: prismaUser.hasAvatar
     };
 }
 
@@ -312,10 +317,10 @@ function handleActionError(error: any): ActionState {
         };
     }
 
-    // Generic fallback
+    // Generic fallback - DEBUG MODE: Return actual error
     return {
         success: false,
-        error: "Une erreur technique est survenue. Veuillez réessayer."
+        error: `Erreur: ${error.message || String(error)}`
     };
 }
 
@@ -435,7 +440,8 @@ export async function fetchInvoices(societeId: string): Promise<{ success: boole
                 createdAt: inv.createdAt ? inv.createdAt.toISOString() : undefined,
                 updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined,
                 isLocked: inv.isLocked,
-                archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined
+                archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
+                config: inv.config ? JSON.parse(inv.config) : {}
             };
         });
         return { success: true, data: mapped };
@@ -475,8 +481,10 @@ export async function fetchQuotes(societeId: string): Promise<{ success: boolean
                 emails: emails,
                 type: "Devis",
                 createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
+                createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
                 updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
-                isLocked: q.isLocked
+                isLocked: q.isLocked,
+                config: q.config ? JSON.parse(q.config) : {}
             };
         });
         return { success: true, data: mapped };
@@ -760,6 +768,7 @@ export async function updateProduct(product: Produit) {
 
 export async function createInvoice(invoice: Facture) {
     try {
+        console.log("[DEBUG_SERVER] createInvoice called", { invoiceId: invoice.id, config: invoice.config });
         const societeId = invoice.societeId || "Euromedmultimedia";
         const processedItems = await ensureProductsExist(invoice.items || [], societeId);
         const itemsJson = JSON.stringify(processedItems);
@@ -778,7 +787,8 @@ export async function createInvoice(invoice: Facture) {
                 itemsJSON: itemsJson,
                 emailsJSON: JSON.stringify(invoice.emails || []),
                 societeId: societeId,
-                clientId: invoice.clientId
+                clientId: invoice.clientId,
+                config: JSON.stringify(invoice.config || {})
             }
         });
         revalidatePath("/", "layout");
@@ -791,38 +801,93 @@ export async function createInvoice(invoice: Facture) {
 export async function updateInvoice(invoice: Facture) {
     if (!invoice.id) return { success: false, error: "ID manquant" };
     try {
-        // Guard: Check Mutability
+        console.log("[DEBUG_SERVER] updateInvoice called", { invoiceId: invoice.id, config: invoice.config });
+        // Guard: Check Mutability & Strict Rules
         const mutabilityCheck = await checkInvoiceMutability(invoice.id);
         if (!mutabilityCheck.success) return mutabilityCheck;
 
-        // Need to fetch current invoice or rely on passed societeId?
-        // Passed invoice *should* have societeId. If not, we might fallback or query.
-        // Let's safe query if missing.
-        let societeId = invoice.societeId;
-        if (!societeId) {
-            const existing = await prisma.facture.findUnique({ where: { id: invoice.id }, select: { societeId: true } });
-            societeId = existing?.societeId || "Euromedmultimedia";
+        // Fetch current status to enforce rules
+        const currentInvoice = await prisma.facture.findUnique({
+            where: { id: invoice.id },
+            select: { statut: true, archivedAt: true, societeId: true }
+        });
+
+        if (!currentInvoice) return { success: false, error: "Facture introuvable" };
+
+        // Guard: Cancelled is Terminal (Redundant with checkInvoiceMutability but safe)
+        if (currentInvoice.statut === "Annulée") {
+            return { success: false, error: "Facture annulée : aucune modification n'est autorisée." };
         }
 
+        // Guard: Cannot revert to Brouillon
+        if (currentInvoice.statut !== "Brouillon" && invoice.statut === "Brouillon") {
+            return { success: false, error: "Impossible de repasser en Brouillon une fois la facture validée." };
+        }
+
+        // Guard: Cannot manually set to Envoyée
+        if (invoice.statut === "Envoyée" && currentInvoice.statut !== "Envoyée") {
+            return { success: false, error: "Le statut 'Envoyée' est réservé au système (téléchargement/envoi)." };
+        }
+
+        // Guard: Cannot manually set to Téléchargée
+        if (invoice.statut === "Téléchargée" && currentInvoice.statut !== "Téléchargée") {
+            return { success: false, error: "Le statut 'Téléchargée' est réservé au système (téléchargement)." };
+        }
+
+        // Prepare Data
+        let societeId = invoice.societeId || currentInvoice.societeId || "Euromedmultimedia";
         const processedItems = await ensureProductsExist(invoice.items || [], societeId);
         const itemsJson = JSON.stringify(processedItems);
-        const emailsJson = JSON.stringify(invoice.emails || []);
+        // emailsJSON: preserved (not from form data)
+
+        let updateData: any = {
+            clientId: invoice.clientId,
+            numero: invoice.numero,
+            dateEmission: new Date(invoice.dateEmission),
+            statut: invoice.statut,
+            totalHT: invoice.totalHT,
+            totalTTC: invoice.totalTTC,
+            dateEcheance: invoice.echeance ? new Date(invoice.echeance) : null,
+            datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : null,
+            itemsJSON: itemsJson,
+            config: JSON.stringify(invoice.config || {})
+        };
+
+        // STRICT RULE: If current is "Envoyée" or "Payée", CONTENT IS IMMUTABLE.
+        // We only allow specific Status Transitions.
+        if (currentInvoice.statut === "Envoyée" || currentInvoice.statut === "Envoyé" || currentInvoice.statut === "Payée") {
+
+            // If status is NOT changing, this is a content edit attempt -> BLOCK.
+            if (currentInvoice.statut === invoice.statut) {
+                return { success: false, error: `Facture ${currentInvoice.statut} : modification du contenu interdite sur le serveur.` };
+            }
+
+            // Status IS changing. Validate Transition.
+            if (currentInvoice.statut === "Envoyée" || currentInvoice.statut === "Envoyé") {
+                const allowed = ["Payée", "Annulée", "Retard"];
+                if (!allowed.includes(invoice.statut)) {
+                    // Allow transition TO Annulée
+                    return { success: false, error: `Transition de statut invalide : Envoyée -> ${invoice.statut}` };
+                }
+            }
+
+            // If valid transition, FORCE update data to ONLY be status and related fields.
+            // Discard all other changes (items, totals, dates, etc.)
+            updateData = {
+                statut: invoice.statut,
+                // Only allow datePaiement update if switching to Payée
+                datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : undefined,
+            };
+
+            // If switching AWAY from Payée, clear datePaiement
+            if (currentInvoice.statut === "Payée" && invoice.statut !== "Payée") {
+                updateData.datePaiement = null;
+            }
+        }
 
         await prisma.facture.update({
             where: { id: invoice.id },
-            data: {
-                numero: invoice.numero,
-                dateEmission: new Date(invoice.dateEmission),
-                statut: invoice.statut,
-                totalHT: invoice.totalHT,
-                totalTTC: invoice.totalTTC,
-                dateEcheance: invoice.echeance ? new Date(invoice.echeance) : null,
-                // Enforce: If status is not Payée, remove payment date
-                datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : null,
-                itemsJSON: itemsJson,
-                emailsJSON: emailsJson,
-                clientId: invoice.clientId
-            }
+            data: updateData
         });
         revalidatePath("/", "layout");
         return { success: true };
@@ -850,7 +915,8 @@ export async function createQuote(quote: Devis) {
                 emailsJSON: JSON.stringify(quote.emails || []),
                 societeId: societeId,
                 clientId: quote.clientId,
-                isLocked: quote.isLocked || false
+                isLocked: quote.isLocked || false,
+                config: JSON.stringify(quote.config || {})
             }
         });
         revalidatePath("/", "layout");
@@ -883,9 +949,10 @@ export async function updateQuote(quote: Devis) {
                 dateValidite: quote.dateValidite ? new Date(quote.dateValidite) : null,
 
                 itemsJSON: itemsJson,
-                emailsJSON: JSON.stringify(quote.emails || []),
+                // emailsJSON: preserved (not from form data)
                 clientId: quote.clientId,
-                isLocked: quote.isLocked
+                isLocked: quote.isLocked,
+                config: JSON.stringify(quote.config || {})
             }
         });
         revalidatePath("/", "layout");
@@ -1056,8 +1123,6 @@ export async function fetchArchivedInvoices(societeId: string) {
             totalTTC: inv.totalTTC,
             items: inv.itemsJSON ? JSON.parse(inv.itemsJSON) : [],
             type: "Facture",
-            createdAt: inv.createdAt.toISOString(),
-            updatedAt: inv.updatedAt.toISOString(),
             createdAt: inv.createdAt.toISOString(),
             updatedAt: inv.updatedAt.toISOString(),
             deletedAt: null, // Explicitly null
@@ -1361,3 +1426,63 @@ export async function getDocumentEmailHistory(type: 'facture' | 'devis', id: str
         return { success: false, error: error.message };
     }
 }
+
+// --- Missing Helpers Restored ---
+
+export async function markInvoiceAsDownloaded(id: string) {
+    try {
+        await prisma.facture.update({
+            where: { id },
+            data: { statut: "Téléchargée" }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function registerDocumentEmailSent(type: 'facture' | 'devis', id: string, emails: any[]) {
+    try {
+        const json = JSON.stringify(emails);
+        if (type === 'facture') {
+            const invoice = await prisma.facture.findUnique({ where: { id }, select: { statut: true } });
+
+            // Auto-transition to "Envoyée" if currently "Brouillon" or "Téléchargée"
+            // This meets the requirement: "Quand une facture a le statut téléchargé et qu'après la facture est envoyé le statut doit passer en envoyé"
+            let newStatus = undefined;
+            if (invoice && (invoice.statut === "Brouillon" || invoice.statut === "Téléchargée")) {
+                newStatus = "Envoyée";
+            }
+
+            await prisma.facture.update({
+                where: { id },
+                data: {
+                    emailsJSON: json,
+                    ...(newStatus ? { statut: newStatus } : {})
+                }
+            });
+        } else {
+            // For Quotes, same logic: Auto-transition to "Envoyé" if currently "Brouillon"
+            const quote = await prisma.devis.findUnique({ where: { id }, select: { statut: true } });
+            let newStatus = undefined;
+            if (quote && (quote.statut === "Brouillon" || quote.statut === "Téléchargé")) {
+                newStatus = "Envoyé";
+            }
+
+            await prisma.devis.update({
+                where: { id },
+                data: {
+                    emailsJSON: json,
+                    ...(newStatus ? { statut: newStatus } : {})
+                }
+            });
+        }
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export { getDefaultUser as getCurrentUser };

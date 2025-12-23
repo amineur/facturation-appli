@@ -4,17 +4,17 @@ import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray, Control, useWatch, FormProvider } from "react-hook-form";
 import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical, Lock, Unlock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Facture, Devis, Client, LigneItem, Produit, Societe, StatusFacture } from "@/types";
+import { Facture, Devis, Client, LigneItem, Produit, Societe, StatusFacture, StatusDevis } from "@/types";
 import { Reorder } from "framer-motion";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoice-utils";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { InvoiceLineItem } from "./InvoiceLineItem";
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { createInvoice, updateInvoice, createQuote, updateQuote, toggleQuoteLock, toggleInvoiceLock } from "@/app/actions";
+import { createInvoice, updateInvoice, createQuote, updateQuote, toggleQuoteLock, toggleInvoiceLock, markInvoiceAsDownloaded } from "@/app/actions";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
 import { SidePanel } from "@/components/ui/SidePanel";
@@ -23,6 +23,8 @@ import { EmailComposer } from "@/components/features/EmailComposer";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, Clock } from "lucide-react";
 import Link from "next/link";
+
+
 
 interface InvoiceFormValues {
     numero: string;
@@ -40,6 +42,8 @@ interface InvoiceFormValues {
 export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
     const { clients, products, refreshData, societe, invoices, quotes, logAction } = useData();
     const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
 
     // Generate next invoice/quote number
     const getNextNumber = () => {
@@ -129,7 +133,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             codeService: (data as any).codeService,
             remiseGlobale: data.remiseGlobale,
             remiseGlobaleType: data.remiseGlobaleType,
-            items: (data.items || []).map(item => ({
+            items: (Array.isArray(data.items) ? data.items : []).map(item => ({
                 ...item,
                 id: item.id || uuidv4(), // Ensure IDs exist
                 // Ensure strict number types to match form expectations and avoid string/number mismatch dirty states
@@ -148,7 +152,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
     const { register, control, handleSubmit, setValue, watch, getValues, setError, clearErrors, reset, formState: { errors, isDirty, dirtyFields } } = methods;
 
-
+    const nextActionRef = useRef<'redirect' | 'send' | null>('redirect');
 
     // Reset form when initialData loads or ID changes (Robust Reset)
     useEffect(() => {
@@ -171,135 +175,117 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const [isClientOpen, setIsClientOpen] = useState(false);
     const [clientSearch, setClientSearch] = useState("");
     const [isSaving, setIsSaving] = useState(false);
-    const [isTogglingLock, setIsTogglingLock] = useState(false);
 
-    // Robust Initialization:
-    // Only locked if explicitly isLocked=true OR (Facturé AND not explicitly unlocked yet)
-    // But since we want to allow unlocking Facturé, we rely on isLocked state basically.
-    // Initial state:
-    // Initial state setup
-    // We use a state that we sync with initialData ONLY when ID changes.
-    const [isLocked, setIsLocked] = useState<boolean>(false);
+    // --- LOCK LOGIC: CLEAN REIMPLEMENTATION ---
 
-    // Sync isLocked with initialData when the document ID changes (navigation)
+    // 1. Hard Lock (Business Rules - Irreversible via UI)
+    const isHardLocked = type === "Facture"
+        ? ["Envoyée", "Payée", "Annulée", "Archivée"].includes((initialData as Facture)?.statut)
+        : ["Facturé", "Archivé"].includes((initialData as Devis)?.statut);
+
+    // 2. Local State (SSOT for Soft Lock)
+    // Initialized ONCE from server data    const [isLocking, setIsLocking] = useState(false);
+
+    // DEBUG: Monitor incoming data
     useEffect(() => {
-        if (!initialData?.id) return;
+        console.log(`[EDITOR_DEBUG] InitialData Updated for ${initialData?.id || 'new'}:`, {
+            statut: initialData?.statut,
+            hasEmails: !!initialData?.emails,
+            emailsCount: initialData?.emails?.length,
+            emails: initialData?.emails
+        });
+    }, [initialData]);
 
-        let locked = false;
-        if (type === "Devis") {
-            const quote = initialData as Devis;
-            locked = !!quote?.isLocked || quote?.statut === "Facturé";
-        } else if (type === "Facture") {
-            const invoice = initialData as Facture;
-            // Strict: Envoyée = Locked (Read Only)
-            locked = !!invoice?.isLocked || invoice?.statut === "Envoyée";
-        }
-
-        console.log("[LOCK_EFFECT] fired", { depId: initialData?.id, initialLocked: initialData?.isLocked, computedLocked: locked });
-        setIsLocked(locked);
-    }, [initialData?.id, type]);
-
-    // Derived state for ReadOnly
-    const isSent = type === "Facture" && (initialData as Facture)?.statut === "Envoyée";
-    const isArchived = (initialData as any)?.statut === "Archivée" || (initialData as any)?.statut === "Archivé";
-    const isReadOnly = isLocked || isSent || isArchived;
-
-    // --- DEBUG LOGS (Temporary) ---
-    console.log("[LOCK_RENDER]", {
-        type,
-        id: initialData?.id,
-        initialLocked: initialData?.isLocked,
-        localLocked: isLocked,
-        isReadOnly,
-        statut: (initialData as any)?.statut,
+    const [isLocked, setIsLocked] = useState<boolean>(() => {
+        if (isHardLocked) return true;
+        if (!initialData) return false;
+        // Soft lock check
+        return !!initialData.isLocked;
     });
+
+    const [isLocking, setIsLocking] = useState(false);
+
+    // 3. Effective ReadOnly State (What drives the UI inputs)
+    const isReadOnly = isHardLocked || isLocked;
+
+    // Remove old debug states/effects if any remained (cleaned)
+
+
+
 
 
     const handleToggleLock = async (e?: React.MouseEvent) => {
-        if (e) e.preventDefault();
-        console.log("[LOCK_CLICK] start", { localLocked: isLocked, isTogglingLock });
-        // CHECK 1: Verify Context
-        console.log("[LOCK_DEBUG] Action Start:", {
-            type,
-            id: initialData?.id,
-            activeSocieteId: societe?.id
-        });
-
-        if (isTogglingLock) return; // Anti-double click
-
-        // 1. Strict Check: Sent Invoice cannot be toggled/unlocked
-        if (isSent) {
-            toast.error("Facture envoyée : modification impossible");
-            return;
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation(); // Prevent bubbling issues
         }
 
-        // --- UNLOCK FLOW (Simple Toggle) ---
-        // NO VALIDATION, NO SAVE. Just Unlock.
-        if (isLocked) {
-            setIsTogglingLock(true);
+        if (isHardLocked) return;
+        if (isLocking) return;
+
+        // Calculate Next State
+        const nextLocked = !isLocked;
+
+        // --- UNLOCK FLOW (Optimistic) ---
+        if (!nextLocked) {
+            setIsLocked(false);
+            setIsLocking(true);
+
             try {
-                const nextLocked = false; // We are unlocking
-                console.log("[UI_LOCK_CLICK]", { type, id: initialData?.id, nextLocked, statut: (initialData as any)?.statut });
-                let res;
-                if (type === "Facture") {
-                    console.log("[LOCK_DEBUG] Calling toggleInvoiceLock...");
-                    res = await toggleInvoiceLock(initialData!.id, nextLocked);
-                    console.log("[LOCK_DEBUG] Server Response (Facture):", res);
-                } else {
-                    console.log("[LOCK_DEBUG] Calling toggleQuoteLock...");
-                    res = await toggleQuoteLock(initialData!.id, nextLocked);
-                    console.log("[LOCK_DEBUG] Server Response (Devis):", res);
-                }
+                // Server Call
+                const res = type === "Facture"
+                    ? await toggleInvoiceLock(initialData!.id, false)
+                    : await toggleQuoteLock(initialData!.id, false);
 
-                if (res.success) {
-                    setIsLocked(false);
-                    console.log("[LOCK_UI] setIsLocked(false) (Unlock Success)");
-                    toast.success(`${type} déverrouillé`);
-                    router.refresh(); // Refresh to reflect server state
+                if (!res.success) throw new Error(res.error || "Erreur serveur");
 
-                    console.log("[LOCK_DEBUG] Refreshing local data...");
-                    refreshData();
+                toast.success(`${type} déverrouillé`);
 
-                    console.log("[LOCK_DONE] success ->", { nextLocked: false, localLockedAfter: false });
-                } else {
-                    toast.error(res.error || "Erreur lors du déverrouillage");
-                }
-            } catch (error: any) {
-                console.error("[LOCK_TOGGLE] Unlock Error:", error);
-                toast.error("Erreur technique lors du déverrouillage");
+                // Update local data wrapper to ensure dashboard is in sync
+                refreshData();
+            } catch (err: any) {
+                // Rollback
+                setIsLocked(true);
+                toast.error("Erreur lors du déverrouillage");
+                console.error(err);
             } finally {
-                setIsTogglingLock(false);
+                setIsLocking(false);
             }
             return;
         }
 
         // --- LOCK FLOW (Save + Lock) ---
-        // MUST VALIDATE FIRST. NO Optimistic Update.
-        // If validation fails -> Stay Unlocked.
-        // Save -> Lock -> Set Locked.
-
-        // Trigger React Hook Form Submit to ensure schema validation
+        // 1. Validate Form First
         await handleSubmit(async (data) => {
-            setIsTogglingLock(true);
+
+            // Custom validations (keep existing logic)
+            let hasInvalidItems = false;
+            data.items.forEach((item) => {
+                const q = Number(item.quantite);
+                const p = Number(item.prixUnitaire);
+                if (isNaN(q) || q <= 0) hasInvalidItems = true;
+                if (isNaN(p) || p < 0) hasInvalidItems = true;
+            });
+
+            if (hasInvalidItems) {
+                toast.error("Veuillez corriger les lignes (quantité/prix) avant de verrouiller.");
+                return; // Stop here, no optimistic update
+            }
+
+            if (isNaN(new Date(data.dateEmission).getTime())) {
+                toast.error("Date d'émission invalide.");
+                return;
+            }
+
+            // 2. Optimistic Update
+            setIsLocked(true);
+            setIsLocking(true);
+
             try {
-                // 1. Custom Strict Validation (As requested by User)
-                let hasInvalidItems = false;
-                data.items.forEach((item) => {
-                    const q = Number(item.quantite);
-                    const p = Number(item.prixUnitaire);
-                    if (isNaN(q) || q <= 0) hasInvalidItems = true;
-                    if (isNaN(p) || p < 0) hasInvalidItems = true;
-                });
 
-                if (hasInvalidItems) {
-                    throw new Error("Veuillez corriger les lignes (quantité/prix) avant de verrouiller.");
-                }
 
-                if (isNaN(new Date(data.dateEmission).getTime())) {
-                    throw new Error("Date d'émission invalide.");
-                }
-
-                // 2. Prepare Data
+                // --- 3. Save Document ---
+                let result;
                 const documentData = {
                     id: initialData!.id,
                     ...data,
@@ -322,7 +308,6 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         ...item,
                         id: item.id || uuidv4(),
                     })),
-                    // Helpers
                     ...(type === "Facture" ? {
                         statut: initialData?.statut || "Brouillon",
                         echeance: data.echeance
@@ -333,60 +318,40 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 };
 
                 // 3. Save
-                let saveRes;
-                if (type === "Facture") {
+                console.log("[DEBUG] Calling Server Action...", { type, id: documentData.id });
+                const saveRes = type === "Facture"
                     // @ts-ignore
-                    saveRes = await updateInvoice(documentData);
-                } else {
+                    ? await updateInvoice(documentData)
                     // @ts-ignore
-                    saveRes = await updateQuote(documentData);
-                }
+                    : await updateQuote(documentData);
 
-                if (!saveRes.success) {
-                    throw new Error(saveRes.error || "Erreur lors de l'enregistrement");
-                }
+                if (!saveRes.success) throw new Error(saveRes.error || "Erreur sauvegarde");
 
-                // 4. Lock (Server)
-                let lockRes;
-                if (type === "Facture") {
-                    console.log("[LOCK_DEBUG] Calling toggleInvoiceLock (SAVE+LOCK)...");
-                    lockRes = await toggleInvoiceLock(initialData!.id, true);
-                    console.log("[LOCK_DEBUG] Server Response (Facture):", lockRes);
-                } else {
-                    console.log("[LOCK_DEBUG] Calling toggleQuoteLock (SAVE+LOCK)...");
-                    lockRes = await toggleQuoteLock(initialData!.id, true);
-                    console.log("[LOCK_DEBUG] Server Response (Devis):", lockRes);
-                }
+                // 4. Lock Server
+                const lockRes = type === "Facture"
+                    ? await toggleInvoiceLock(initialData!.id, true)
+                    : await toggleQuoteLock(initialData!.id, true);
 
-                if (lockRes.success) {
-                    setIsLocked(true); // Only lock UI if Server Lock succeeded
-                    console.log("[LOCK_UI] setIsLocked(true) (Lock Success)");
-                    toast.success(`${type} enregistré et verrouillé`);
+                if (!lockRes.success) throw new Error(lockRes.error || "Erreur verrouillage");
 
-                    // Reset dirty state AND keep new values
-                    const currentValues = getValues();
-                    console.log("[LOCK_RESET] calling reset");
-                    reset(currentValues, { keepValues: true, keepDirty: false });
+                toast.success(`${type} enregistré et verrouillé`);
 
-                    console.log("[LOCK_DEBUG] Refreshing local data...");
-                    refreshData();
+                // Update form "pristine" state but keep values
+                reset(getValues(), { keepValues: true, keepDirty: false });
 
-                    console.log("[LOCK_DONE] success ->", { nextLocked: true, localLockedAfter: true });
-                } else {
-                    throw new Error(lockRes.error || "Erreur lors du verrouillage");
-                }
+                refreshData();
 
             } catch (err: any) {
-                console.error("[LOCK_TOGGLE] Lock Sequence Error:", err);
+                // Rollback
+                setIsLocked(false);
                 toast.error(err.message || "Erreur technique");
-                // DO NOT REVERT isLocked (it was never set to true)
             } finally {
-                setIsTogglingLock(false);
+                setIsLocking(false);
             }
+
         }, (errors) => {
-            console.error("[LOCK_TOGGLE] Validation Failed:", errors);
-            toast.error("Veuillez remplir les champs obligatoires avant de verrouiller.");
-            // STAY UNLOCKED.
+            console.error("[DEBUG] Validation Errors:", errors);
+            toast.error("Formulaire invalide (champs manquants)");
         })();
     };
 
@@ -632,6 +597,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             // Detailed Item Validation
             let hasInvalidItems = false;
+
+            console.log("[DEBUG] onSubmit Payload:", JSON.stringify(data, null, 2));
+
             data.items.forEach((item, index) => {
                 // Ensure numbers
                 const q = Number(item.quantite);
@@ -641,8 +609,28 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     toast.error(`Ligne ${index + 1}: Quantité invalide.`);
                     hasInvalidItems = true;
                 }
+                if (showDateColumn && !item.date) {
+                    // Optimized: Use setError instead of toast
+                    setError(`items.${index}.date`, {
+                        type: "manual",
+                        message: "Date requise"
+                    });
+                    hasInvalidItems = true;
+                }
+
                 if (isNaN(p) || p < 0) {
                     toast.error(`Ligne ${index + 1}: Prix invalide.`);
+                    hasInvalidItems = true;
+                }
+
+                // Check for empty description
+                // Check for empty description
+                if (!item.description || item.description.trim() === "") {
+                    // Removed generic toast to use targeted field error
+                    setError(`items.${index}.description`, {
+                        type: "manual",
+                        message: "Produit manquant"
+                    });
                     hasInvalidItems = true;
                 }
             });
@@ -650,6 +638,16 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             if (hasInvalidItems) {
                 setIsSaving(false);
                 return;
+            }
+
+            // Date Column Validation
+            if (showDateColumn) {
+                const missingDate = data.items.some(item => !item.date);
+                if (missingDate) {
+                    toast.error("La colonne Date est activée mais certaines lignes n’ont pas de date. Ajoutez une date à chaque ligne ou désactivez la colonne Date.");
+                    setIsSaving(false);
+                    return;
+                }
             }
 
             // Date validation
@@ -660,6 +658,15 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 return;
             }
 
+
+            // --- Optimization: Check if clean state && Send Action ---
+            if (initialData?.id && !isDirty && nextActionRef.current === 'send') {
+                // Skip saving & logging, proceed directly to sending
+                setIsComposerOpen(true);
+                nextActionRef.current = null;
+                setIsSaving(false); // Reset saving state
+                return;
+            }
 
             // --- 2. Data Construction ---
             const documentData = {
@@ -738,7 +745,18 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             // Simulate a brief delay to show the loading state
             await new Promise(resolve => setTimeout(resolve, 500));
             toast.success(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès!`);
-            router.push(type === "Facture" ? "/factures" : "/devis");
+
+
+            if (nextActionRef.current === 'send') {
+                if (initialData?.id === savedId) {
+                    setIsComposerOpen(true);
+                    nextActionRef.current = null;
+                } else {
+                    router.replace(type === "Facture" ? `/factures/${savedId}?action=send` : `/devis/${savedId}?action=send`);
+                }
+            } else {
+                router.push(type === "Facture" ? "/factures" : "/devis");
+            }
         } catch (error: any) {
             console.error("Critical Error saving:", error);
             // This catches unexpected client-side crashes not handled by result.success
@@ -751,7 +769,32 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
 
     const handleGeneratePDF = async () => {
+        // Guard: Block download if invoice is not saved
+        if (!initialData?.id) {
+            toast.error("La facture doit être enregistrée avant de pouvoir être téléchargée. Téléchargement interdit", {
+                duration: 5000,
+                style: {
+                    background: '#EF4444',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 500
+                }
+            });
+            return;
+        }
+
         const formData = watch();
+
+        // Date Column Validation for PDF
+        if (showDateColumn) {
+            const items = formData.items || [];
+            const missingDate = items.some((item: any) => !item.date);
+            if (missingDate) {
+                toast.error("La colonne Date est activée mais certaines lignes n’ont pas de date. Ajoutez une date à chaque ligne ou désactivez la colonne Date.");
+                return;
+            }
+        }
+
         const client = clients.find(c => c.id === formData.clientId);
 
         if (!client || !societe) {
@@ -772,14 +815,23 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         } as unknown as Facture | Devis;
 
         // Auto-update status to "Envoyé" if it's a saved Draft and we are downloading
-        if (initialData?.id && initialData.statut === 'Brouillon') {
+        if (initialData?.id) {
             try {
                 if (type === "Facture") {
-                    await updateInvoice({ ...documentData as Facture, statut: 'Envoyée' });
+                    // Only update to "Téléchargée" if current is "Brouillon" (don't overwrite "Envoyée" or "Payée")
+                    if (initialData.statut === "Brouillon") {
+                        await updateInvoice({ ...documentData as Facture, statut: 'Téléchargée' });
+                        await markInvoiceAsDownloaded(initialData.id);
+                    }
                 } else {
-                    await updateQuote({ ...documentData as Devis, statut: 'Envoyé' });
+                    // Devis Logic: Brouillon -> Téléchargé. If already Envoyé, do nothing.
+                    if (initialData.statut === "Brouillon") {
+                        await updateQuote({ ...documentData as Devis, statut: 'Téléchargé' });
+                        // We might need a helper markQuoteAsDownloaded if we want to track it, but logically just status update is key here.
+                        // Using generic logAction below.
+                    }
                 }
-                logAction('update', type === 'Facture' ? 'facture' : 'devis', `${type} téléchargé(Statut passé à Envoyé)`, initialData.id);
+                logAction('update', type === 'Facture' ? 'facture' : 'devis', `${type} téléchargé`, initialData.id);
                 refreshData();
             } catch (error) {
                 console.error("Error updating status on download:", error);
@@ -816,7 +868,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 showTTCColumn,
                 discountEnabled
             },
-            ...(type === "Facture" ? { statut: "Brouillon", echeance: (formData as any).echeance || "" } : { statut: "Brouillon", dateValidite: (formData as any).dateValidite || "" })
+            ...(type === "Facture" ? { statut: initialData?.statut || "Brouillon", echeance: (formData as any).echeance || "" } : { statut: initialData?.statut || "Brouillon", dateValidite: (formData as any).dateValidite || "" })
         } as unknown as Facture | Devis;
 
         const url = generateInvoicePDF(documentData, societe, client, {
@@ -870,7 +922,6 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
     const onInvalid = (errors: any) => {
         console.error("Form Validation Errors:", errors);
-
         const fieldLabels: Record<string, string> = {
             clientId: "Client",
             items: "Lignes",
@@ -878,21 +929,52 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             echeance: type === "Facture" ? "Échéance" : "Date de validité",
             numero: "Numéro"
         };
-
         const missingFields = Object.keys(errors)
             .map(key => fieldLabels[key] || key)
-            .filter((value, index, self) => self.indexOf(value) === index); // Unique (cas où items.root et items coincident)
+            .filter((value, index, self) => self.indexOf(value) === index);
 
         if (missingFields.length > 0) {
             toast.error(`Champs obligatoires manquants : ${missingFields.join(", ")}`);
-        } else {
-            toast.error("Veuillez vérifier les champs du formulaire.");
+        }
+    };
+
+
+    const handleStatusChange = async (newStatus: string) => {
+        if (!initialData?.id) return;
+
+        try {
+            if (type === "Facture") {
+                let datePaiement: Date | undefined;
+                if (newStatus === "Payée") {
+                    const defaultDate = new Date().toISOString().split('T')[0];
+                    const inputDate = window.prompt("Date de paiement (AAAA-MM-JJ) :", defaultDate);
+                    if (!inputDate) return; // Cancelled by user
+                    datePaiement = new Date(inputDate);
+                    if (isNaN(datePaiement.getTime())) {
+                        toast.error("Date invalide");
+                        return;
+                    }
+                }
+
+                await updateInvoice({
+                    ...initialData as Facture,
+                    statut: newStatus as StatusFacture,
+                    datePaiement: datePaiement ? datePaiement.toISOString() : undefined
+                });
+            } else {
+                await updateQuote({ ...initialData as Devis, statut: newStatus as StatusDevis });
+            }
+            toast.success(`Statut modifié : ${newStatus}`);
+            refreshData();
+        } catch (error) {
+            console.error("Error updating status:", error);
+            toast.error("Erreur lors de la mise à jour du statut");
         }
     };
 
     return (
         <FormProvider {...methods}>
-            <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="w-full max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <button
@@ -904,8 +986,22 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <ArrowLeft className="h-5 w-5" />
                         </button>
                         <div>
-                            <h2 className="text-3xl font-bold tracking-tight text-foreground">{pageTitle}</h2>
-                            <p className="text-gray-400 mt-1">Édition en cours</p>
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-3xl font-bold tracking-tight text-foreground">{pageTitle}</h2>
+                                {initialData && (
+                                    <StatusBadge
+                                        status={initialData.statut}
+                                        type={type}
+                                        onChange={handleStatusChange}
+                                        readOnly={isReadOnly && !["Envoyée", "Envoyé"].includes(initialData.statut)}
+                                    />
+                                )}
+
+
+                            </div>
+                            <p className="text-gray-400 mt-1 text-sm">
+                                {initialData?.numero ? `Réf: ${initialData.numero}` : "Nouveau document"}
+                            </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -921,10 +1017,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 }}
                                 disabled={isReadOnly}
                                 className={cn(
-                                    "p-2 rounded-lg transition-colors",
+                                    "p-2 rounded-lg transition-colors border",
                                     isReadOnly
-                                        ? "text-muted-foreground opacity-50 cursor-not-allowed"
-                                        : "text-muted-foreground hover:text-foreground glass cursor-pointer"
+                                        ? "text-muted-foreground opacity-50 cursor-not-allowed border-transparent"
+                                        : "bg-muted/50 dark:bg-white/5 border-border dark:border-white/10 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground cursor-pointer"
                                 )}
                             >
                                 <Settings className="h-5 w-5" />
@@ -1013,7 +1109,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                                                                 discountType === 'pourcentage'
                                                                     ? "bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-500/30"
-                                                                    : "text-muted-foreground border-white/10 hover:bg-white/5",
+                                                                    : "text-muted-foreground border-border dark:border-white/10 hover:bg-muted/50 dark:hover:bg-white/5",
                                                                 isReadOnly && "opacity-50 cursor-not-allowed"
                                                             )}
                                                         >
@@ -1080,26 +1176,32 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
                         {(type === "Facture" || type === "Devis") && initialData?.id && (
                             <div title={
-                                isArchived ? `${type} archivée : modification impossible` :
-                                    isSent ? `${type} envoyée : modification impossible` :
-                                        isLocked ? `Déverrouiller ${type === 'Facture' ? 'la facture' : 'le devis'}` : `Verrouiller ${type === 'Facture' ? 'la facture' : 'le devis'}`
+                                isHardLocked
+                                    ? "Document verrouillé par son statut (Irréversible)"
+                                    : isLocked
+                                        ? "Cliquez pour déverrouiller"
+                                        : "Cliquez pour verrouiller"
                             }>
                                 <button
                                     type="button"
-                                    onClick={(isSent || isArchived) ? undefined : handleToggleLock}
-                                    disabled={isSent || isArchived}
+                                    onClick={(isHardLocked || isLocking) ? undefined : handleToggleLock}
+                                    disabled={isHardLocked || isLocking}
                                     className={cn(
                                         "p-2 rounded-lg transition-all duration-200 border",
-                                        isLocked || isSent || isArchived
+                                        isLocked || isHardLocked
                                             ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                            : "bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10 hover:text-foreground",
-                                        (isSent || isArchived) && "opacity-50 cursor-not-allowed"
+                                            : "bg-muted/50 dark:bg-white/5 text-muted-foreground border-border dark:border-white/10 hover:bg-muted dark:hover:bg-white/10 hover:text-foreground",
+                                        (isHardLocked || isLocking) && "opacity-50 cursor-not-allowed"
                                     )}
                                 >
-                                    {isLocked || isSent || isArchived ? (
-                                        <Lock className="h-4 w-4" />
+                                    {isLocking ? (
+                                        <div className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                                     ) : (
-                                        <Unlock className="h-4 w-4" />
+                                        (isLocked || isHardLocked) ? (
+                                            <Lock className="h-5 w-5" />
+                                        ) : (
+                                            <Unlock className="h-5 w-5" />
+                                        )
                                     )}
                                 </button>
                             </div>
@@ -1107,7 +1209,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <button
                             type="button"
                             onClick={handlePreview}
-                            className="p-2 text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 glass rounded-lg transition-colors cursor-pointer"
+                            className="p-2 rounded-lg border transition-all duration-200 bg-muted/50 dark:bg-white/5 border-border dark:border-white/10 text-muted-foreground hover:bg-blue-500/10 hover:text-blue-500 hover:border-blue-500/20 cursor-pointer"
                             title="Aperçu PDF"
                         >
                             <Eye className="h-5 w-5" />
@@ -1115,26 +1217,54 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <button
                             type="button"
                             onClick={handleGeneratePDF}
-                            className="p-2 text-muted-foreground hover:text-foreground glass rounded-lg transition-colors cursor-pointer"
+                            className="p-2 rounded-lg border transition-all duration-200 bg-muted/50 dark:bg-white/5 border-border dark:border-white/10 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground hover:border-border dark:hover:border-white/20 cursor-pointer"
                             title="Télécharger PDF"
                         >
                             <Download className="h-5 w-5" />
                         </button>
-                        {initialData?.id && (type === "Facture" || type === "Devis") && (
+                        {(type === "Devis" || type === "Facture") && (
                             <>
                                 <button
                                     type="button"
                                     onClick={() => setHistoryPanelOpen(true)}
-                                    className="p-2 text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 glass rounded-lg transition-colors cursor-pointer"
+                                    className="p-2 rounded-lg border transition-all duration-200 bg-muted/50 dark:bg-white/5 border-border dark:border-white/10 text-muted-foreground hover:bg-blue-500/10 hover:text-blue-500 hover:border-blue-500/20 cursor-pointer"
                                     title="Historique des envois"
                                 >
                                     <Clock className="h-5 w-5" />
                                 </button>
+                                {initialData?.emails && initialData.emails.length > 0 && (() => {
+                                    const lastSent = [...initialData.emails]
+                                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                        .find(e => e.status === 'sent');
+
+                                    if (lastSent) {
+                                        const dateSent = new Date(lastSent.date);
+                                        return (
+                                            <div
+                                                className="flex flex-col items-end justify-center mr-1.5 cursor-help group leading-3"
+                                                title={`Envoyé le ${dateSent.toLocaleDateString()} à ${dateSent.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                            >
+                                                <span className="text-[10px] text-muted-foreground/70 mb-0.5">Dernier envoi :</span>
+                                                <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground transition-colors">
+                                                    {dateSent.toLocaleDateString()}
+                                                </span>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                                 <button
                                     type="button"
-                                    onClick={() => setIsComposerOpen(true)}
-                                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 font-medium"
-                                    title="Envoyer la facture"
+                                    onClick={() => {
+                                        nextActionRef.current = 'send';
+                                        handleSubmit((data) => onSubmit(data))();
+                                    }}
+                                    disabled={initialData?.statut === "Annulée" || initialData?.statut === "Refusé"}
+                                    className={cn(
+                                        "px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 font-medium",
+                                        (initialData?.statut === "Annulée" || initialData?.statut === "Refusé") && "opacity-50 cursor-not-allowed bg-blue-500/50 hover:bg-blue-500/50"
+                                    )}
+                                    title={type === "Facture" ? "Envoyer la facture" : "Envoyer le devis"}
                                 >
                                     <Send className="h-4 w-4" />
                                     Envoyer
@@ -1174,17 +1304,20 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 <button
                                     type="button"
                                     onClick={() => !isReadOnly && setIsClientOpen(!isClientOpen)}
-                                    disabled={isReadOnly}
+                                    // disabled={isReadOnly} // Removed to prevent native disabled styles
+                                    tabIndex={isReadOnly ? -1 : 0}
                                     className={cn(
-                                        "w-full h-11 rounded-lg glass-input px-4 text-foreground text-left flex items-center justify-between focus:ring-1 focus:ring-white/20",
-                                        isReadOnly && "opacity-60 cursor-not-allowed",
-                                        errors.clientId && "ring-1 ring-red-500 border-red-500/50"
+                                        "w-full h-11 rounded-lg glass-input px-4 text-foreground text-left flex items-center justify-between focus:ring-1 focus:ring-primary/20",
+                                        isReadOnly && "opacity-60 pointer-events-none" // Removed cursor-not-allowed, removed border-transparent implication if any
                                     )}
                                 >
                                     <span className={!selectedClient ? "text-muted-foreground" : ""}>
                                         {selectedClient ? selectedClient.nom : "Sélectionner un client..."}
                                     </span>
-                                    {!isReadOnly && <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />}
+                                    <ChevronsUpDown className={cn(
+                                        "h-4 w-4 text-muted-foreground",
+                                        isReadOnly && "invisible"
+                                    )} />
                                 </button>
 
                                 {isClientOpen && (
@@ -1198,7 +1331,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                     placeholder="Rechercher..."
                                                     value={clientSearch}
                                                     onChange={(e) => setClientSearch(e.target.value)}
-                                                    className="w-full h-9 rounded-md bg-white/5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground border-none focus:ring-1 focus:ring-white/20"
+                                                    className="w-full h-9 rounded-md bg-muted/50 dark:bg-white/5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground border-none focus:ring-1 focus:ring-primary/20"
                                                 />
                                             </div>
                                         </div>
@@ -1221,7 +1354,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                             "w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group transition-colors",
                                                             selectedClientId === client.id
                                                                 ? "bg-emerald-500/20 text-emerald-500"
-                                                                : "text-foreground hover:bg-white/10"
+                                                                : "text-foreground hover:bg-muted dark:hover:bg-white/10"
                                                         )}
                                                     >
                                                         {client.nom}
@@ -1255,13 +1388,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <div className="grid grid-cols-3 gap-4">
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground">Numéro</label>
-                                <input {...register("numero")} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
+                                <input {...register("numero")} readOnly={isReadOnly} disabled={false} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")} />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground">
                                     {type === "Facture" ? "Date d'émission" : "Date de création"}
                                 </label>
-                                <input type="date" {...register("dateEmission", { required: true })} disabled={isReadOnly} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")} />
+                                <input type="date" {...register("dateEmission", { required: true })} readOnly={isReadOnly} disabled={false} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")} />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground">
@@ -1291,8 +1424,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             }
                                         }
                                     })}
-                                    disabled={isReadOnly}
-                                    className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 cursor-not-allowed")}
+
+                                    readOnly={isReadOnly}
+                                    disabled={false}
+                                    className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")}
                                 />
                             </div>
                         </div>
@@ -1339,8 +1474,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                 }
                                             }
                                         })}
-                                        className="w-full h-11 rounded-lg glass-input px-4 text-foreground cursor-pointer"
-                                        disabled={isReadOnly}
+                                        className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground cursor-pointer", isReadOnly && "opacity-60 pointer-events-none")}
+                                        tabIndex={isReadOnly ? -1 : 0}
                                     >
                                         <option value="">Sélectionner...</option>
                                         <option value="À réception">À réception</option>
@@ -1356,8 +1491,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                     <input
                                         {...register("numeroEnregistrement")}
                                         placeholder="Ex : RC123456"
-                                        className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
-                                        disabled={isReadOnly}
+                                        className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")}
+                                        readOnly={isReadOnly}
+                                        disabled={false}
                                     />
                                 </div>
                             </div>
@@ -1580,7 +1716,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                     "0.8fr", // TVA
                                     showTTCColumn ? "1.2fr" : null, // Total TTC
                                     discountEnabled ? "1.1fr" : null, // Remise (moved to end)
-                                    !isReadOnly ? "0.4fr" : null
+                                    "0.4fr"
                                 ].filter(Boolean).join(" ")
                             }}>
                             <div className="pl-1">Description</div>
@@ -1591,7 +1727,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             <div className="text-center">TVA</div>
                             {showTTCColumn && <div className="text-right">Total TTC</div>}
                             {discountEnabled && <div className="text-right">Remise</div>}
-                            {!isReadOnly && <div></div>}
+                            <div></div>
                         </div>
 
                         <div className="space-y-2">
@@ -1619,31 +1755,32 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             </Reorder.Group>
                         </div>
 
-                        {!isReadOnly && (
-                            <button
-                                type="button"
-                                onClick={() => append({
-                                    id: uuidv4(),
-                                    description: "",
-                                    quantite: 1,
-                                    prixUnitaire: 0,
-                                    tva: defaultTva,
-                                    totalLigne: 0,
-                                    // @ts-ignore
-                                    type: 'produit',
-                                    remise: 0,
-                                    // @ts-ignore
-                                    remiseType: discountType
-                                })}
-                                className="mt-4 flex items-center justify-center w-full py-3 border-2 border-dashed border-white/10 rounded-xl text-muted-foreground hover:text-blue-500 hover:border-blue-500/30 hover:bg-blue-500/5 transition-all group"
-                            >
-                                <Plus className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
-                                Ajouter une ligne
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => !isReadOnly && append({
+                                id: uuidv4(),
+                                description: "",
+                                quantite: 1,
+                                prixUnitaire: 0,
+                                tva: defaultTva,
+                                totalLigne: 0,
+                                // @ts-ignore
+                                type: 'produit',
+                                remise: 0,
+                                // @ts-ignore
+                                remiseType: discountType
+                            })}
+                            className={cn(
+                                "mt-4 flex items-center justify-center w-full py-3 border-2 border-dashed border-border dark:border-white/10 rounded-xl text-muted-foreground hover:text-blue-500 hover:border-blue-500/30 hover:bg-blue-500/5 transition-all group",
+                                isReadOnly && "invisible pointer-events-none"
+                            )}
+                        >
+                            <Plus className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
+                            Ajouter une ligne
+                        </button>
                     </div>
 
-                    <div className="h-px bg-white/20 dark:bg-white/10" />
+                    <div className="h-px bg-border dark:bg-white/10" />
 
                     {/* Global Discount Section */}
                     <div className="glass-card rounded-xl p-6">
@@ -1653,7 +1790,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 id="applyGlobalDiscount"
                                 checked={(watchedRemiseGlobale || 0) > 0}
                                 onChange={(e) => setValue("remiseGlobale", e.target.checked ? 5 : 0)}
-                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                                className="w-4 h-4 rounded border-border dark:border-white/20 bg-muted/50 dark:bg-white/5 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
                                 disabled={isReadOnly}
                             />
                             <label htmlFor="applyGlobalDiscount" className="text-sm font-medium text-foreground cursor-pointer">
@@ -1673,10 +1810,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             min="0"
                                             max={watchedRemiseGlobaleType === 'pourcentage' ? "100" : undefined}
                                             {...register("remiseGlobale", { valueAsNumber: true })}
-                                            className="flex-1 h-10 rounded-lg bg-white/5 border border-white/10 px-3 text-foreground focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            className="flex-1 h-10 rounded-lg bg-muted/50 dark:bg-white/5 border border-border dark:border-white/10 px-3 text-foreground focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                             disabled={isReadOnly}
                                         />
-                                        <div className="flex rounded-lg bg-white/5 border border-white/10 p-1">
+                                        <div className="flex rounded-lg bg-muted/50 dark:bg-white/5 border border-border dark:border-white/10 p-1">
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -1778,7 +1915,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 <span>TVA</span>
                                 <span>{totals.tva.toFixed(2)} €</span>
                             </div>
-                            <div className="h-px bg-white/20 dark:bg-white/10 my-2" />
+                            <div className="h-px bg-border dark:bg-white/10 my-2" />
                             <div className="flex justify-between text-xl font-bold text-foreground">
                                 <span>Total TTC</span>
                                 <span>{totals.ttc.toFixed(2)} €</span>
@@ -1812,8 +1949,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 </button>
                             </div>
                             <div className="flex items-center gap-2 text-muted-foreground">
-                                <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
-                                <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
+                                <button className="p-1 hover:bg-muted dark:hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
+                                <button className="p-1 hover:bg-muted dark:hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
@@ -1825,9 +1962,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 defaultMessage={draftData ? draftData.message : `Madame, Monsieur, \n\nVeuillez trouver ci - joint votre ${type === 'Facture' ? 'facture' : 'devis'} n°${initialData.numero}.\n\nCordialement, \n${societe?.nom || ""} `}
                                 mainAttachmentName={`${type}_${initialData.numero}.pdf`}
                                 onSend={async (data) => {
+                                    setIsComposerOpen(false);
                                     await sendEmail(initialData as Facture | Devis, data, {
-                                        onSuccess: () => setIsComposerOpen(false)
+                                        onSuccess: () => {
+                                            refreshData();
+                                        }
                                     });
+
                                 }}
                             />
                         </div>
@@ -1835,10 +1976,23 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 )
             }
 
+            {/* Auto-open composer effect */}
+            {useEffect(() => {
+                if (initialData?.id && searchParams.get('action') === 'send') {
+                    setIsComposerOpen(true);
+
+                    // Surgical URL cleanup: remove only 'action' parameter
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.delete('action');
+                    const newQuery = params.toString();
+                    router.replace(`${pathname}${newQuery ? `?${newQuery}` : ''}`, { scroll: false });
+                }
+            }, [initialData?.id, searchParams, pathname, router]) as any}
+
             {/* Undo Notification */}
             {
                 isUndoVisible && (
-                    <div className="fixed bottom-6 right-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                    <div className="fixed bottom-6 right-6 bg-background border border-border text-foreground dark:bg-[#1e1e1e] dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
                         <div className="flex flex-col">
                             <span className="font-medium">Message envoyé</span>
                             <span className="text-xs text-muted-foreground">Envoi en cours...</span>
@@ -1885,5 +2039,119 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             />
         </FormProvider >
+    );
+}
+
+function StatusBadge({ status, type, onChange, readOnly }: { status: string, type: "Facture" | "Devis", onChange: (s: string) => void, readOnly?: boolean }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    // Close on click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (ref.current && !ref.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [isOpen]);
+
+    const getStatusColor = (s: string) => {
+        switch (s) {
+            case "Accepté":
+            case "Facturé":
+                return "bg-[#F0FDF4] text-[#15803D] border-[#DCFCE7] dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/20";
+            case "Payée":
+            case "Signé":
+            case "Converti":
+                return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
+            case "Envoyée":
+            case "Envoyé":
+                return "bg-[#EFF6FF] text-[#1D4ED8] border-[#DBEAFE] dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/20";
+            case "Téléchargée":
+            case "Téléchargé":
+                return "bg-[#F0F9FF] text-[#0369A1] border-[#BAE6FD] dark:bg-sky-500/20 dark:text-sky-300 dark:border-sky-500/20";
+            case "Refusé":
+            case "Annulée":
+            case "Perdu":
+                return "bg-[#FEF2F2] text-[#B91C1C] border-[#FEE2E2] dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/20";
+            case "Brouillon":
+            default:
+                return "bg-[#F9FAFB] text-[#6B7280] border-[#E5E7EB] dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/20";
+        }
+    };
+
+    const baseOptions = type === "Facture"
+        ? ["Brouillon", "Payée", "Annulée"] // "Envoyée" & "Téléchargée" removed - system only
+        : ["Brouillon", "Envoyé", "Accepté", "Refusé"]; // "Facturé" removed - system only
+
+    const options = (type === "Facture" && status !== "Brouillon")
+        ? baseOptions.filter(opt => {
+            if (status === "Annulée") return opt === "Annulée" || opt === "Archivée"; // Strict isolation
+            if (opt === "Brouillon") return false;
+            return true;
+        })
+        : baseOptions;
+
+    // Hard block interactive if status is Annulée (Already handled by readOnly prop passed from Parent, but extra safety here)
+    const isInteractive = !readOnly && status !== "Annulée";
+
+    return (
+        <>
+            <div className="relative inline-block ml-3" ref={ref}>
+                <button
+                    type="button"
+                    onClick={() => isInteractive && setIsOpen(!isOpen)}
+                    disabled={!isInteractive}
+                    className={cn(
+                        "px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-colors",
+                        getStatusColor(status),
+                        isInteractive ? "hover:bg-opacity-20 cursor-pointer" : "opacity-80 cursor-default"
+                    )}
+                >
+                    {status}
+                    {isInteractive && <ChevronsUpDown className="h-3 w-3 opacity-50" />}
+                </button>
+
+                {isOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-40 z-[60] rounded-lg border border-border bg-background/95 backdrop-blur-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-200">
+                        {options.map((opt) => (
+                            <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                    if (opt === "Annulée") {
+                                        setIsOpen(false);
+                                        setIsConfirmingCancel(true);
+                                    } else {
+                                        onChange(opt);
+                                        setIsOpen(false);
+                                    }
+                                }}
+                                className={cn(
+                                    "w-full text-left px-2 py-1.5 rounded text-sm transition-colors",
+                                    status === opt ? "bg-muted dark:bg-white/10 font-medium" : "hover:bg-muted/50 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <ConfirmationModal
+                isOpen={isConfirmingCancel}
+                onClose={() => setIsConfirmingCancel(false)}
+                onConfirm={() => {
+                    onChange("Annulée");
+                    setIsConfirmingCancel(false);
+                }}
+                title="Confirmer l'annulation"
+                message="Attention : Le statut 'Annulée' est irréversible. La facture passera en lecture seule et ne pourra plus être modifiée. Êtes-vous sûr de vouloir continuer ?"
+            />
+        </>
     );
 }

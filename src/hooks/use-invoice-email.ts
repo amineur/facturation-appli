@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { generateInvoicePDF } from '@/lib/pdf-generator';
-import { updateInvoice, updateQuote } from '@/app/actions';
+import { updateInvoice, updateQuote, registerDocumentEmailSent } from '@/app/actions';
 import { useData } from '@/components/data-provider';
 import { Facture, Devis, EmailLog } from '@/types';
 
@@ -54,15 +54,10 @@ export function useInvoiceEmail() {
                     attachments: attachments.map(att => ({ name: att.filename, type: att.contentType, content: att.content as string })),
                     relatedEmailId: options?.relatedEmailId
                 };
-                if (isDevis) {
-                    const updatedQuote = { ...(invoice as Devis), emails: [...(invoice.emails || []), scheduledLog] };
-                    if (updatedQuote.statut === 'Brouillon') updatedQuote.statut = 'Envoyé';
-                    await updateQuote(updatedQuote);
-                } else {
-                    const updatedFacture = { ...(invoice as Facture), emails: [...(invoice.emails || []), scheduledLog] };
-                    if (updatedFacture.statut === 'Brouillon') updatedFacture.statut = 'Envoyée';
-                    await updateInvoice(updatedFacture);
-                }
+
+                const allEmails = [...(invoice.emails || []), scheduledLog];
+                await registerDocumentEmailSent(isDevis ? 'devis' : 'facture', invoice.id, allEmails);
+
                 toast.success(`Programmé pour le ${format(new Date(emailData.scheduledAt), "d MMM HH:mm", { locale: fr })}`);
                 refreshData();
                 options?.onSuccess?.();
@@ -79,6 +74,8 @@ export function useInvoiceEmail() {
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error);
 
+                    console.log("[DEBUG_EMAIL] Step 1: Succès API Mail", result.messageId);
+
                     const newEmailLog: EmailLog = {
                         id: uuidv4(), documentId: invoice.id, date: new Date().toISOString(),
                         actionType: isRelance ? 'relance' : 'envoi',
@@ -87,32 +84,28 @@ export function useInvoiceEmail() {
                         attachments: attachments.map(att => ({ name: att.filename, type: att.contentType })),
                         relatedEmailId: options?.relatedEmailId
                     };
-                    if (isDevis) {
-                        const updatedDevis = {
-                            ...(invoice as Devis),
-                            emails: [...(invoice.emails || []), newEmailLog]
-                        };
-                        if (updatedDevis.statut === 'Brouillon') {
-                            updatedDevis.statut = 'Envoyé';
-                        }
-                        await updateQuote(updatedDevis);
-                    } else {
-                        const updatedFacture = {
-                            ...(invoice as Facture),
-                            emails: [...(invoice.emails || []), newEmailLog]
-                        };
-                        if (updatedFacture.statut === 'Brouillon') {
-                            updatedFacture.statut = 'Envoyée';
-                        }
-                        await updateInvoice(updatedFacture);
-                    }
+
+                    const allEmails = [...(invoice.emails || []), newEmailLog];
+
+                    console.log("[DEBUG_EMAIL] Step 2: Appel Server Action Unified", { type: isDevis ? 'devis' : 'facture', id: invoice.id });
+
+                    const serverRes = await registerDocumentEmailSent(isDevis ? 'devis' : 'facture', invoice.id, allEmails);
+
+                    if (!serverRes.success) throw new Error(serverRes.error);
+
+                    console.log("[DEBUG_EMAIL] Step 3: Réponse Server Action OK");
 
                     if (result.previewUrl) window.open(result.previewUrl, '_blank');
 
                     toast.success(isRelance ? "Relance envoyée avec succès" : "Email envoyé avec succès");
                     logAction('update', isDevis ? 'devis' : 'facture', `${isRelance ? 'Relance' : 'Email'} envoyé pour ${isDevis ? 'le devis' : 'la facture'} ${invoice.numero} à ${emailData.to}`, invoice.id);
-                    refreshData();
+
+                    console.log("[DEBUG_EMAIL] Step 4: RefreshData call");
+                    await refreshData();
+
+                    console.log("[DEBUG_EMAIL] Step 5: UI Flow Complete (Modal closure should have happened, history is refreshed)");
                 } catch (e: any) {
+                    console.error("[DEBUG_EMAIL] Error in executeSend:", e);
                     toast.error("Erreur envoi: " + e.message);
                 }
             };

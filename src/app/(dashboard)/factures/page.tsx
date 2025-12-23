@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
-import { deleteRecord, updateInvoice, markInvoiceAsSent, createClient, createInvoice } from "@/app/actions";
+import { deleteRecord, updateInvoice, markInvoiceAsSent, createClient, createInvoice, markInvoiceAsDownloaded } from "@/app/actions";
 import { EmailComposer } from "@/components/features/EmailComposer";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, X } from "lucide-react";
@@ -80,6 +80,46 @@ function InvoicesPage() {
     const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
     const [historyInvoice, setHistoryInvoice] = useState<Facture | null>(null);
 
+    const handleOpenEmail = (facture: Facture) => {
+        setComposeInvoice(facture);
+        setIsComposerOpen(true);
+        setDraftData(null);
+    };
+
+    const handleDownload = (facture: Facture) => {
+        const client = clients.find(c => c.id === facture.clientId);
+
+        // Validation Date Column
+        if (facture.config?.showDateColumn) {
+            const missingDate = facture.items.some(item => !item.date);
+            if (missingDate) {
+                toast.error("La colonne Date est activée mais certaines lignes n’ont pas de date. Veuillez corriger le document avant de générer le PDF.");
+                return;
+            }
+        }
+
+        if (!societe) {
+            toast.error("Informations de la société manquantes.");
+            return;
+        }
+
+        if (client) {
+            generateInvoicePDF(facture, societe, client, {});
+            logAction('read', 'facture', `Facture ${facture.numero} téléchargée`, facture.id);
+
+            if (facture.statut === "Brouillon") {
+                markInvoiceAsDownloaded(facture.id).then((res) => {
+                    if (res.success) {
+                        logAction('update', 'facture', `Statut Facture ${facture.numero} changé pour Téléchargée (Download)`, facture.id);
+                        refreshData();
+                    }
+                });
+            }
+        } else {
+            toast.error("Client introuvable pour cette facture.");
+        }
+    };
+
     // Read status filter from URL on mount
     useEffect(() => {
         const statusParam = searchParams.get("status");
@@ -100,9 +140,18 @@ function InvoicesPage() {
                 return;
             }
 
+
+            // Validation Date Column
+            if (facture.config?.showDateColumn) {
+                const missingDate = facture.items.some(item => !item.date);
+                if (missingDate) {
+                    alert("La colonne Date est activée mais certaines lignes n’ont pas de date. Veuillez corriger le document avant de générer l'aperçu.");
+                    return;
+                }
+            }
+
             const url = generateInvoicePDF(facture, societe, client, {
-                returnBlob: true,
-                templateOverride: facture.config as any
+                returnBlob: true
             });
             if (url && typeof url === 'string') {
                 setPreviewUrl(url);
@@ -344,7 +393,7 @@ function InvoicesPage() {
                     <h2 className="text-3xl font-bold tracking-tight text-foreground">Factures</h2>
                     <div className="flex items-center gap-4 mt-1">
                         <p className="text-muted-foreground">Suivi de la facturation.</p>
-                        <div className="h-4 w-[1px] bg-white/10"></div>
+                        <div className="h-4 w-[1px] bg-border dark:bg-white/10"></div>
                         <p className="text-emerald-500 font-medium">
                             Total affiché : {totalFilteredTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                         </p>
@@ -367,7 +416,7 @@ function InvoicesPage() {
                             placeholder="Rechercher par numéro ou client..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="h-10 w-full rounded-lg glass-input pl-10 pr-4 text-sm transition-all focus:ring-1 focus:ring-white/20 text-foreground"
+                            className="h-10 w-full rounded-lg glass-input pl-10 pr-4 text-sm transition-all focus:ring-1 focus:ring-primary/20 text-foreground"
                         />
                     </div>
                     <div className="relative w-full md:w-48">
@@ -375,7 +424,7 @@ function InvoicesPage() {
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as StatusFacture | "ALL")}
-                            className="h-10 w-full rounded-lg px-4 pl-10 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-white/20 hover:border-white/30 focus:border-white/40 focus:ring-0 transition-colors"
+                            className="h-10 w-full rounded-lg px-4 pl-10 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-border dark:border-white/20 hover:border-primary/30 focus:border-primary/50 focus:ring-0 transition-colors"
                         >
                             <option value="ALL" className="text-foreground bg-background">Tous les statuts</option>
                             <option value="Brouillon" className="text-foreground bg-background">Brouillon</option>
@@ -409,7 +458,7 @@ function InvoicesPage() {
                         <div key={month}>
                             <div className="flex items-center justify-between mb-4 pl-1">
                                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{month}</h3>
-                                <span className="text-xs font-medium text-muted-foreground bg-white/5 px-2 py-1 rounded-md">
+                                <span className="text-xs font-medium text-muted-foreground bg-muted/50 dark:bg-white/5 px-2 py-1 rounded-md">
                                     Total : {monthlyTotal.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                 </span>
                             </div>
@@ -429,43 +478,17 @@ function InvoicesPage() {
                                             <th className="px-3 py-4 font-medium text-right w-[150px]">Action</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-white/5">
+                                    <tbody className="divide-y divide-border dark:divide-white/5">
                                         {sortedInvoices.map((facture) => {
                                             const client = clients.find(c => c.id === facture.clientId);
 
-                                            const handleDownload = () => {
-                                                if (!societe) {
-                                                    toast.error("Informations de la société manquantes.");
-                                                    return;
-                                                }
-                                                if (client) {
-                                                    generateInvoicePDF(facture, societe, client, {});
-                                                    logAction('read', 'facture', `Facture ${facture.numero} téléchargée`, facture.id);
 
-                                                    if (facture.statut === "Brouillon" || facture.statut === "Retard") {
-                                                        markInvoiceAsSent(facture.id).then((res) => {
-                                                            if (res.success) {
-                                                                logAction('update', 'facture', `Statut Facture ${facture.numero} changé pour Envoyée (Download)`, facture.id);
-                                                                refreshData();
-                                                            }
-                                                        });
-                                                    }
-                                                } else {
-                                                    toast.error("Client introuvable pour cette facture.");
-                                                }
-                                            };
-
-                                            const handleSend = () => {
-                                                setComposeInvoice(facture);
-                                                setIsComposerOpen(true);
-                                                setDraftData(null); // Clear previous draft
-                                            };
 
                                             return (
                                                 <tr
                                                     key={facture.id}
                                                     onClick={() => handlePreview(facture)}
-                                                    className="hover:bg-white/5 transition-colors group cursor-pointer"
+                                                    className="hover:bg-muted/50 dark:hover:bg-white/5 transition-colors group cursor-pointer"
                                                 >
                                                     <td className="px-3 py-4 font-medium text-foreground">
                                                         <div className="flex items-center gap-2">
@@ -496,13 +519,30 @@ function InvoicesPage() {
                                                         </button>
                                                     </td>
                                                     <td className="px-3 py-4 text-right relative z-10 whitespace-nowrap">
-                                                        <div className="flex justify-end gap-1">
+                                                        <div className="flex justify-end gap-2">
                                                             <button onClick={(e) => { e.stopPropagation(); router.push(`/factures/${facture.id}`); }} className="p-1.5 text-muted-foreground hover:text-orange-500 hover:bg-orange-500/10 rounded-md transition-colors" title="Modifier"><Pencil className="h-3.5 w-3.5" /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDownload(); }} className="p-1.5 text-muted-foreground hover:text-green-500 hover:bg-green-500/10 rounded-md transition-colors" title="Télécharger"><Download className="h-3.5 w-3.5" /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleSend(); }} className="p-1.5 text-muted-foreground hover:text-indigo-500 hover:bg-indigo-500/10 rounded-md transition-colors" title="Envoyer par email"><Send className="h-3.5 w-3.5" /></button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (facture.statut !== "Annulée") {
+                                                                        handleOpenEmail(facture);
+                                                                    }
+                                                                }}
+                                                                className={cn(
+                                                                    "p-1.5 rounded-md transition-colors",
+                                                                    facture.statut === "Annulée"
+                                                                        ? "text-muted-foreground/30 cursor-not-allowed"
+                                                                        : "text-muted-foreground hover:text-indigo-500 hover:bg-indigo-500/10"
+                                                                )}
+                                                                title={facture.statut === "Annulée" ? "Envoi désactivé" : "Envoyer par email"}
+                                                            >
+                                                                <Send className="h-3.5 w-3.5" />
+                                                            </button>
                                                             <button onClick={(e) => { e.stopPropagation(); setHistoryInvoice(facture); setHistoryPanelOpen(true); }} className="p-1.5 text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 rounded-md transition-colors" title="Historique des envois"><Clock className="h-3.5 w-3.5" /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDownload(facture); }} className="p-1.5 text-muted-foreground hover:text-green-500 hover:bg-green-500/10 rounded-md transition-colors" title="Télécharger"><Download className="h-3.5 w-3.5" /></button>
                                                             <button onClick={(e) => { e.stopPropagation(); handleDelete(facture.id); }} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Supprimer"><Trash2 className="h-3.5 w-3.5" /></button>
                                                         </div>
+
                                                     </td>
                                                 </tr>
                                             );
@@ -548,10 +588,29 @@ function InvoicesPage() {
                                                         {facture.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                                     </p>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={(e) => { e.stopPropagation(); router.push(`/factures/${facture.id}`); }} className="p-2 bg-white/5 rounded-lg text-muted-foreground hover:text-orange-400 active:bg-white/10"><Pencil className="h-4 w-4" /></button>
-                                                    <button onClick={(e) => { e.stopPropagation(); if (client && societe) generateInvoicePDF(facture, societe, client, {}); }} className="p-2 bg-white/5 rounded-lg text-muted-foreground hover:text-green-400 active:bg-white/10"><Download className="h-4 w-4" /></button>
+                                                <div className="flex gap-1">
+                                                    <button onClick={(e) => { e.stopPropagation(); router.push(`/factures/${facture.id}`); }} className="p-2 bg-muted/50 dark:bg-white/5 rounded-lg text-muted-foreground hover:text-orange-400 active:bg-muted dark:active:bg-white/10" title="Modifier"><Pencil className="h-4 w-4" /></button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (facture.statut !== "Annulée") {
+                                                                handleOpenEmail(facture);
+                                                            }
+                                                        }}
+                                                        className={cn(
+                                                            "p-2 rounded-lg transition-colors",
+                                                            facture.statut === "Annulée"
+                                                                ? "bg-muted/50 dark:bg-white/5 text-muted-foreground/30 cursor-not-allowed"
+                                                                : "bg-muted/50 dark:bg-white/5 text-muted-foreground hover:text-indigo-400 active:bg-muted dark:active:bg-white/10"
+                                                        )}
+                                                        title={facture.statut === "Annulée" ? "Envoi désactivé" : "Envoyer"}
+                                                    >
+                                                        <Send className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); setHistoryInvoice(facture); setHistoryPanelOpen(true); }} className="p-2 bg-muted/50 dark:bg-white/5 rounded-lg text-muted-foreground hover:text-blue-400 active:bg-muted dark:active:bg-white/10" title="Historique"><Clock className="h-4 w-4" /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDownload(facture); }} className="p-2 bg-muted/50 dark:bg-white/5 rounded-lg text-muted-foreground hover:text-emerald-400 active:bg-muted dark:active:bg-white/10" title="PDF"><Download className="h-4 w-4" /></button>
                                                 </div>
+
                                             </div>
                                         </div>
                                     );
@@ -593,11 +652,9 @@ function InvoicesPage() {
                                         onChange={(e) => setNewStatus(e.target.value as StatusFacture)}
                                         className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
                                     >
-                                        <option value="Brouillon">Brouillon</option>
-                                        <option value="Envoyée">Envoyée</option>
-                                        <option value="Payée">Payée</option>
-                                        <option value="Retard">Retard</option>
-                                        <option value="Annulée">Annulée</option>
+                                        {(selectedInvoice?.statut === "Brouillon" ? ["Brouillon"] : []).concat(["Payée", "Retard", "Annulée"]).map((status) => (
+                                            <option key={status} value={status}>{status}</option>
+                                        ))}
                                     </select>
                                 </div>
 
@@ -620,7 +677,7 @@ function InvoicesPage() {
                             <div className="flex items-center gap-3 pt-4">
                                 <button
                                     onClick={() => setStatusModalOpen(false)}
-                                    className="flex-1 px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-white/10 rounded-lg transition-colors"
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted dark:hover:bg-white/10 rounded-lg transition-colors"
                                 >
                                     Annuler
                                 </button>
@@ -651,8 +708,8 @@ function InvoicesPage() {
                             </button>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
-                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
-                            <button className="p-1 hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
+                            <button className="p-1 hover:bg-muted dark:hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><Minimize2 className="h-4 w-4" /></button>
+                            <button className="p-1 hover:bg-muted dark:hover:bg-white/10 rounded" onClick={(e) => { e.stopPropagation(); setIsComposerOpen(false); }}><X className="h-4 w-4" /></button>
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden bg-background dark:bg-[#1e1e1e]">
@@ -663,8 +720,11 @@ function InvoicesPage() {
                             defaultMessage={draftData ? draftData.message : `Madame, Monsieur,\n\nVeuillez trouver ci-joint votre facture n°${composeInvoice.numero}.\n\nCordialement,\n${societe?.nom || ""}`}
                             mainAttachmentName={`Facture_${composeInvoice.numero}.pdf`}
                             onSend={async (data) => {
+                                setIsComposerOpen(false);
                                 await sendEmail(composeInvoice, data, {
-                                    onSuccess: () => setIsComposerOpen(false)
+                                    onSuccess: () => {
+                                        refreshData();
+                                    }
                                 });
                             }}
                         />
@@ -674,7 +734,7 @@ function InvoicesPage() {
 
             {/* Undo Notification */}
             {isUndoVisible && (
-                <div className="fixed bottom-6 right-6 bg-muted border border-border text-foreground dark:bg-zinc-900 dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
+                <div className="fixed bottom-6 right-6 bg-background border border-border text-foreground dark:bg-[#1e1e1e] dark:border-zinc-800 dark:text-white px-6 py-4 rounded-lg shadow-2xl z-[60] flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300 min-w-[320px]">
                     <div className="flex flex-col">
                         <span className="font-medium">Message envoyé</span>
                         <span className="text-xs text-muted-foreground">Envoi en cours...</span>

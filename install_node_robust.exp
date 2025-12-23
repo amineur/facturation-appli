@@ -1,0 +1,30 @@
+#!/usr/bin/expect
+
+set timeout 300
+set host "ssh.cluster128.hosting.ovh.net"
+set user "studihp-applications"
+set password "11FRjvlk25"
+
+spawn ssh -o StrictHostKeyChecking=no $user@$host "
+    echo 'Cleaning up...' &&
+    rm -rf nodejs node-v* &&
+    echo 'Downloading Node.js (Curl)...' &&
+    curl -O https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.xz &&
+    echo 'Extracting with robust flags...' &&
+    tar -xf node-v20.10.0-linux-x64.tar.xz --no-same-owner --touch &&
+    mv node-v20.10.0-linux-x64 nodejs &&
+    mkdir -p bin &&
+    rm -f bin/node bin/npm bin/npx &&
+    ln -s ~/nodejs/bin/node ~/bin/node &&
+    ln -s ~/nodejs/bin/npm ~/bin/npm &&
+    ln -s ~/nodejs/bin/npx ~/bin/npx &&
+    export PATH=\$HOME/bin:\$PATH &&
+    echo '---VERIFY---' &&
+    node -v &&
+    echo '---END---'
+"
+
+expect "password:"
+send "$password\r"
+
+expect -ex "---END---"

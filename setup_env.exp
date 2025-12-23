@@ -1,0 +1,29 @@
+#!/usr/bin/expect
+
+set timeout 20
+set host "ssh.cluster128.hosting.ovh.net"
+set user "studihp-applications"
+set password "11FRjvlk25"
+
+spawn ssh -o StrictHostKeyChecking=no $user@$host "
+    echo 'Setting up environment...' &&
+    mkdir -p ~/bin &&
+    echo 'Linking binaries...' &&
+    ln -sf ~/nodejs/bin/node ~/bin/node &&
+    ln -sf ~/nodejs/bin/npm ~/bin/npm &&
+    ln -sf ~/nodejs/bin/npx ~/bin/npx &&
+    echo 'Updating permission...' &&
+    chmod +x ~/nodejs/bin/node &&
+    echo 'Exporting PATH...' &&
+    export PATH=\$HOME/bin:\$PATH &&
+    echo '---VERIFY_NODE---' &&
+    node -v &&
+    echo '---VERIFY_NPM---' &&
+    npm -v &&
+    echo '---END---'
+"
+
+expect "password:"
+send "$password\r"
+
+expect -ex "---END---"

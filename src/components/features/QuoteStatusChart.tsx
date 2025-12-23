@@ -1,8 +1,43 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef, cloneElement, isValidElement } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Devis } from "@/types";
+
+// Robust Guard to prevent Recharts from rendering with invalid dimensions
+// Injects exact dimensions to bypass Recharts auto-measurement which fails in some contexts
+const ChartGuard = ({ children, height = 350 }: { children: React.ReactNode, height?: number | string }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    setDimensions({ width, height });
+                } else {
+                    setDimensions(null);
+                }
+            }
+        });
+
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    return (
+        <div ref={containerRef} style={{ width: '100%', height: height, minWidth: 0 }} className="w-full min-w-0">
+            {dimensions && isValidElement(children) ?
+                cloneElement(children as React.ReactElement<any>, { width: dimensions.width, height: dimensions.height })
+                : <div style={{ height: '100%', width: '100%' }} />
+            }
+        </div>
+    );
+};
+
 
 interface QuoteStatusChartProps {
     quotes: Devis[]; // Filtered quotes for the period
@@ -72,28 +107,30 @@ export function QuoteStatusChart({ quotes, globalQuotes }: QuoteStatusChartProps
     return (
         <div className="flex flex-col md:flex-row items-center justify-around gap-8 w-full px-4 md:px-12">
             <div className="h-[260px] w-[260px] relative shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                            data={data}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={85}
-                            outerRadius={110}
-                            paddingAngle={data.length === 1 ? 0 : 5}
-                            dataKey="value"
-                            stroke="none"
-                        >
-                            {data.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                        </Pie>
-                        <Tooltip
-                            formatter={(value: number) => value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
-                            contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
-                        />
-                    </PieChart>
-                </ResponsiveContainer>
+                <ChartGuard height="100%">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={data}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={85}
+                                outerRadius={110}
+                                paddingAngle={data.length === 1 ? 0 : 5}
+                                dataKey="value"
+                                stroke="none"
+                            >
+                                {data.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                            </Pie>
+                            <Tooltip
+                                formatter={(value: number) => value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                                contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                            />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </ChartGuard>
                 {/* Center Text displaying Signed Amount */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-sm text-muted-foreground font-medium uppercase tracking-wider mb-1">Signé</span>

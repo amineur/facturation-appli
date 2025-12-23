@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 import { InvoiceStatusChart } from "@/components/features/InvoiceStatusChart";
 import { QuoteStatusChart } from "@/components/features/QuoteStatusChart";
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfDay, endOfDay, isBefore, subMonths } from "date-fns";
+import { computeDashboardMetrics } from "@/lib/dashboard";
+import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 
 type DateRangeType = "month" | "custom" | "3months" | "total";
 
@@ -26,12 +28,12 @@ export default function DashboardPage() {
     const { invoices: globalInvoices, quotes, clients } = useData();
 
     // -- Date Filter State --
-    // Default to Current Month
-    const [dateRange, setDateRange] = useState<DateRangeType>("month");
-
-    const [customStart, setCustomStart] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
-    const [customEnd, setCustomEnd] = useState<string>(format(endOfDay(new Date()), "yyyy-MM-dd"));
-    const [chartMode, setChartMode] = useState<"factures" | "devis">("factures");
+    const {
+        dateRange, setDateRange,
+        customStart, setCustomStart,
+        customEnd, setCustomEnd,
+        chartMode, setChartMode
+    } = useDashboardState();
 
     // -- Filtering Logic --
     const filteredData = useMemo(() => {
@@ -65,55 +67,18 @@ export default function DashboardPage() {
         };
     }, [globalInvoices, quotes, dateRange, customStart, customEnd]); // Depend on globalInvoices
 
-    const stats = useMemo(() => {
-        const paidInvoices = filteredData.invoices.filter(inv => inv.statut === "Payée");
-        const totalRevenue = paidInvoices.reduce((sum, inv) => sum + inv.totalTTC, 0);
-
-        return {
-            totalRevenue,
-            totalInvoices: filteredData.invoices.length,
-            totalQuotes: filteredData.quotes.length,
-            totalClients: clients.length, // Keep global count for clients
-        };
-    }, [filteredData, clients]);
-
-    const urgentData = useMemo(() => {
-        // Robust Date Comparison using date-fns
-        const todayStart = startOfDay(new Date());
-
-        const overdueInvoices = globalInvoices.filter(inv => {
-            if (inv.statut === "Payée" || inv.statut === "Annulée") return false;
-
-            // Explicit Retard status always counts as Overdue
-            if (inv.statut === "Retard") return true;
-
-            if (!inv.echeance) return false;
-
-            // Parse ISO string to Date and reset time to 00:00:00
-            const dueDateStart = startOfDay(parseISO(inv.echeance));
-
-            // Strict comparison: Due Date < Today ?
-            return isBefore(dueDateStart, todayStart);
+    // -- Centralized Metrics Calculation --
+    const metrics = useMemo(() => {
+        return computeDashboardMetrics({
+            invoices: filteredData.invoices,
+            quotes: filteredData.quotes,
+            globalInvoices: globalInvoices,
+            globalClientsCount: clients.length,
+            // These dates are just for context if needed
+            dateStart: filteredData.start,
+            dateEnd: filteredData.end
         });
-
-        const dueSoonInvoices = globalInvoices.filter(inv => {
-            if (inv.statut === "Payée" || inv.statut === "Annulée" || inv.statut === "Retard") return false;
-            if (!inv.echeance) return false;
-
-            const dueDateStart = startOfDay(parseISO(inv.echeance));
-
-            // Diff in Days
-            const diffTime = dueDateStart.getTime() - todayStart.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            return diffDays >= 0 && diffDays <= 7;
-        });
-
-        const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + inv.totalTTC, 0);
-        const dueSoonAmount = dueSoonInvoices.reduce((sum, inv) => sum + inv.totalTTC, 0);
-
-        return { overdueInvoices, dueSoonInvoices, overdueAmount, dueSoonAmount };
-    }, [globalInvoices]); // Uses GLOBAL invoices from context
+    }, [filteredData, globalInvoices, clients]);
 
     const recentActivity = useMemo(() => {
         // Activity from FILTERED data
@@ -268,7 +233,12 @@ export default function DashboardPage() {
                     <div className="flex-1 flex items-center justify-center">
                         {/* Ensure chart uses Filtered Data */}
                         {chartMode === "factures" ? (
-                            <InvoiceStatusChart invoices={filteredData.invoices} globalInvoices={globalInvoices} />
+                            <InvoiceStatusChart
+                                invoices={filteredData.invoices}
+                                globalInvoices={globalInvoices}
+                                chartData={metrics.chartData}
+                                totalOverdue={metrics.overduePeriod}
+                            />
                         ) : (
                             <QuoteStatusChart quotes={filteredData.quotes} globalQuotes={quotes} />
                         )}
@@ -277,28 +247,28 @@ export default function DashboardPage() {
 
                 {/* Alerts Column (1/3 width) - Always VISIBLE regardless of date */}
                 <div className="space-y-6">
-                    {/* Urgency Cards */}
-                    {(urgentData.overdueInvoices.length > 0 || urgentData.dueSoonInvoices.length > 0) ? (
+                    {/* Urgency Cards (Global Alerts) */}
+                    {(metrics.overdueCountGlobal > 0 || metrics.dueSoonCount > 0) ? (
                         <div className="space-y-4">
-                            {urgentData.overdueInvoices.length > 0 && (
+                            {metrics.overdueCountGlobal > 0 && (
                                 <div className="glass-card rounded-2xl p-5 border-l-4 border-red-500">
                                     <div className="flex items-start gap-4">
                                         <div className="p-2 bg-red-500/20 rounded-lg shrink-0">
                                             <AlertCircle className="h-6 w-6 text-red-500" />
                                         </div>
                                         <div>
-                                            <h3 className="text-base font-semibold text-foreground">Retard</h3>
+                                            <h3 className="text-base font-semibold text-foreground">Retard Global</h3>
                                             <p className="text-sm text-muted-foreground mt-1">
                                                 <span className="font-bold text-red-500">
-                                                    {urgentData.overdueAmount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                                                    {metrics.overdueGlobal.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                                 </span>
-                                                {" "}en retard ({urgentData.overdueInvoices.length})
+                                                {" "}en retard ({metrics.overdueCountGlobal})
                                             </p>
                                         </div>
                                     </div>
                                 </div>
                             )}
-                            {urgentData.dueSoonInvoices.length > 0 && (
+                            {metrics.dueSoonCount > 0 && (
                                 <div className="glass-card rounded-2xl p-5 border-l-4 border-orange-500">
                                     <div className="flex items-start gap-4">
                                         <div className="p-2 bg-orange-500/20 rounded-lg shrink-0">
@@ -308,9 +278,9 @@ export default function DashboardPage() {
                                             <h3 className="text-base font-semibold text-foreground">Échéance -7j</h3>
                                             <p className="text-sm text-muted-foreground mt-1">
                                                 <span className="font-bold text-orange-500">
-                                                    {urgentData.dueSoonAmount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                                                    {metrics.dueSoonAmount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                                 </span>
-                                                {" "}à venir ({urgentData.dueSoonInvoices.length})
+                                                {" "}à venir ({metrics.dueSoonCount})
                                             </p>
                                         </div>
                                     </div>
@@ -334,20 +304,20 @@ export default function DashboardPage() {
                             <div>
                                 <p className="text-xs text-muted-foreground">Chiffre d'Affaires</p>
                                 <p className="text-xl font-bold text-foreground">
-                                    {stats.totalRevenue.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                                    {metrics.totalRevenue.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                 </p>
                             </div>
                             <div>
                                 <p className="text-xs text-muted-foreground">Devis</p>
-                                <p className="text-xl font-bold text-foreground">{stats.totalQuotes}</p>
+                                <p className="text-xl font-bold text-foreground">{metrics.quoteCountPeriod}</p>
                             </div>
                             <div>
                                 <p className="text-xs text-muted-foreground">Factures</p>
-                                <p className="text-xl font-bold text-foreground">{stats.totalInvoices}</p>
+                                <p className="text-xl font-bold text-foreground">{metrics.invoiceCountPeriod}</p>
                             </div>
                             <div>
                                 <p className="text-xs text-muted-foreground">Clients Total</p>
-                                <p className="text-xl font-bold text-foreground">{stats.totalClients}</p>
+                                <p className="text-xl font-bold text-foreground">{metrics.clientCountTotal}</p>
                             </div>
                         </div>
                     </div>

@@ -52,10 +52,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
 
     const fetchData = async (silent: boolean = false) => {
-        if (process.env.NODE_ENV !== "production") console.time("TotalLoadTime");
+        const startTime = performance.now();
         if (!silent) setIsLoading(true);
 
-        const userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
+
+
+        let userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
         const TARGET_EMAIL = "amine@euromedmultimedia.com";
 
         if (process.env.NODE_ENV === 'development') {
@@ -77,15 +79,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
             if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] No userId in localStorage, skipping fetchUserById`);
         }
 
-        // 2. Process User - AUTO-REPAIR: Fix localStorage if needed
+        // 2. Process User - AUTH SYNC (Cookie -> Client)
         let finalUser = null;
 
         if (process.env.NODE_ENV === 'development') console.log('[AUTH] Starting user resolution, storageUserId:', userId);
 
-        // Try to load user from DB
+        // Try to load user from DB using ID from storage
         let userResFromStorage = userId ? userResResult : null;
 
-        // If no userId in storage OR user not found in DB → AUTO-REPAIR
+        // If no local userID, check SERVER SESSION (HttpOnly Cookie) via getCurrentUser action
+        if (!userId) {
+            if (process.env.NODE_ENV === 'development') console.log('[AUTH] No localStorage ID, checking Server Session (Cookie)...');
+            // We use getCurrentUser which checks cookie
+            const sessionRes = await import("@/app/actions").then(mod => mod.getCurrentUser());
+            if (sessionRes && sessionRes.success) {
+                // Handle mixed return types from actions (some use 'data', some use 'user')
+                // @ts-ignore
+                const sessionUser = sessionRes.data || sessionRes.user;
+
+                if (sessionUser) {
+                    if (process.env.NODE_ENV === 'development') console.log('[AUTH] Found Server Session User:', sessionUser.id);
+                    userResFromStorage = { success: true, data: sessionUser };
+                    userId = sessionUser.id;
+                    // Sync to localStorage for future consistency
+                    if (userId) localStorage.setItem("glassy_current_user_id", userId);
+                }
+            }
+        }
+
+        // If STILL no user, attempt auto-repair (Dev Fallback)
         if (!userId || !userResFromStorage || !userResFromStorage.success || !userResFromStorage.data) {
             if (process.env.NODE_ENV === 'development') console.log('[AUTH] User not found or missing, attempting auto-repair...');
 
@@ -106,8 +128,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🚨 Fallback 2: fetchDefaultUser (last resort)`);
                 const defaultUserRes = await import('@/app/actions').then(m => m.getDefaultUser());
 
-                if (defaultUserRes.success && defaultUserRes.user) {
-                    finalUser = defaultUserRes.user;
+                if (defaultUserRes.success && defaultUserRes.data) {
+                    finalUser = defaultUserRes.data;
                     if (process.env.NODE_ENV === 'development') console.log('[AUTH] ✅ User resolved by DEFAULT fallback.');
                 }
             }
@@ -158,45 +180,71 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // 3. Process Societes & Entity Data
         let validSocietes: Societe[] = [];
         let activeSociete: Societe | undefined;
+        let shouldRedirectToOnboarding = false;
 
-        if (societesRes && societesRes.success && societesRes.data && societesRes.data.length > 0) {
+        if (societesRes && societesRes.success && societesRes.data) {
             validSocietes = societesRes.data as Societe[];
             setSocietes(validSocietes);
+        }
 
-            let storedId = dataService.getActiveSocieteId();
+        // --- SCOPE RESOLUTION LOGIC ---
+        if (validSocietes.length === 0) {
+            // Case 0: No societies
+            if (process.env.NODE_ENV === 'development') console.log('[DATA_SCOPE] No societies found. Marking for onboarding.');
+            shouldRedirectToOnboarding = true;
+            setSociete(null);
+
+            // Clean stale storage if any
+            if (typeof window !== 'undefined') localStorage.removeItem("glassy_active_societe");
+
+        } else {
+            // Case 1+: Check stored ID
+            let storedId = dataService.getActiveSocieteId(); // might return "soc_1" default
+
+            // Validate stored ID against real list
             activeSociete = validSocietes.find(s => s.id === storedId);
 
             if (!activeSociete) {
-                activeSociete = validSocietes[0];
-                dataService.switchSociete(activeSociete.id);
+                // Invalid or Stale ID
+                if (validSocietes.length === 1) {
+                    // Auto-fix: Only one choice
+                    activeSociete = validSocietes[0];
+                    if (process.env.NODE_ENV === 'development') console.log('[DATA_SCOPE] Auto-selecting single society:', activeSociete.nom);
+                    dataService.switchSociete(activeSociete.id); // Valid switch (persists)
+                } else {
+                    // Multiple choices but invalid ID -> Default to first (Soft fallback)
+                    // (Ideally redirect to /societe/select, but for now fallback to first is smoother)
+                    activeSociete = validSocietes[0];
+                    if (process.env.NODE_ENV === 'development') console.log('[DATA_SCOPE] ID invalid, defaulting to first society:', activeSociete.nom);
+                    dataService.switchSociete(activeSociete.id);
+                }
             }
-        } else {
-            if (process.env.NODE_ENV === 'development') console.warn("No societies found in Database.");
-            setSocietes([]);
-            setSociete(null);
         }
 
-        // DIAGNOSTIC: Log complete scoping BEFORE fetching
-        if (process.env.NODE_ENV === 'development') {
-            console.log('[DATA_SCOPE] 🔍 SCOPING CHECK:', {
-                storageUserId: typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null,
-                resolvedUserId: finalUser?.id,
-                resolvedUserEmail: finalUser?.email,
-                userCurrentSocieteId: finalUser?.currentSocieteId,
-                activeSocieteId: activeSociete?.id,
-                activeSocieteName: activeSociete?.nom,
-                validSocietesCount: validSocietes.length
-            });
+        // --- END RESOLUTION ---
+
+        if (shouldRedirectToOnboarding) {
+            if (pathname !== "/onboarding" && pathname !== "/login") {
+                router.push("/onboarding");
+            }
+            if (!silent) setIsLoading(false);
+            return; // STOP HERE
         }
 
+        // Only fetch data if we have an active society
         if (activeSociete) {
             setSociete(activeSociete);
             const currentSocieteId = activeSociete.id;
 
+            // Ensure dataService knows about it (sync)
+            if (typeof window !== 'undefined' && localStorage.getItem("glassy_active_societe") !== currentSocieteId) {
+                localStorage.setItem("glassy_active_societe", JSON.stringify(activeSociete));
+            }
+
             // DIAGNOSTIC: Log query params
             if (process.env.NODE_ENV === 'development') console.log(`[DATA_SCOPE] 🚀 FETCHING DATA for Societe: [${currentSocieteId}] "${activeSociete.nom}"`);
 
-            // Parallelize Entity Fetches (already done, but keeping structure)
+            // Parallelize Entity Fetches
             const [clientsRes, productsRes, invoicesRes, quotesRes] = await Promise.all([
                 fetchClients(currentSocieteId),
                 fetchProducts(currentSocieteId),
@@ -215,39 +263,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
             // Log details if empty
             if (invoicesRes.data?.length === 0) {
-                if (process.env.NODE_ENV === 'development') console.warn('[DATA_SCOPE] ⚠️ Zero invoices returned. Checking DB directly via fetchInvoices("Euromedmultimedia")...');
-            }
-
-            // DIAGNOSTIC: Log final results
-            if (process.env.NODE_ENV === 'development') {
-                console.log('[RESULTS]', {
-                    invoices: invoicesRes.data?.length || 0,
-                    quotes: quotesRes.data?.length || 0,
-                    clients: clientsRes.data?.length || 0,
-                    products: productsRes.data?.length || 0
-                });
-            }
-
-            if (quotesRes.success && quotesRes.data && quotesRes.data.length > 0) {
-                const sample = quotesRes.data[0];
-                if (process.env.NODE_ENV === 'development') {
-                    console.log('[QUOTE_DEBUG] Sample Quote:', {
-                        id: sample.id,
-                        numero: sample.numero,
-                        isLocked: (sample as any).isLocked,
-                        keys: Object.keys(sample)
-                    });
-                }
+                if (process.env.NODE_ENV === 'development') console.warn('[DATA_SCOPE] ⚠️ Zero invoices returned.');
             }
 
             if (clientsRes.success && clientsRes.data) setClients(clientsRes.data);
             if (productsRes.success && productsRes.data) setProducts(productsRes.data);
             if (invoicesRes.success && invoicesRes.data) setInvoices(invoicesRes.data);
             if (quotesRes.success && quotesRes.data) setQuotes(quotesRes.data);
+        } else {
+            // Should be unreachable due to onboarding check, but guard anyway
+            console.warn("[DATA_SCOPE] No active society resolved, skipping data fetch.");
         }
 
         if (!silent) setIsLoading(false);
-        if (process.env.NODE_ENV !== "production") console.timeEnd("TotalLoadTime");
+        if (process.env.NODE_ENV !== "production") {
+            const duration = (performance.now() - startTime).toFixed(2);
+            console.log(`[TotalLoadTime] Finished in ${duration}ms`);
+        }
 
         // Lazy load history (15 items) to not block UI
         // Explicitly pass the resolved currentSocieteId to ensure we are fetching for the right scope

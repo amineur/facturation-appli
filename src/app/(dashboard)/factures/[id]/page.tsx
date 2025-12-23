@@ -27,7 +27,7 @@ export default function EditFacturePage({ params }: { params: Promise<{ id: stri
         }
     }, [id, invoices, isDataLoading, router]);
 
-    if (loading || isDataLoading) {
+    if (loading || (isDataLoading && !invoice)) {
         return <div className="p-8 text-center text-muted-foreground">Chargement de la facture...</div>;
     }
 

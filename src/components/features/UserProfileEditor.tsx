@@ -16,12 +16,10 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
     const { user, refreshData } = useData();
     const [isSaving, setIsSaving] = useState(false);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-    useEffect(() => {
-        if (user?.avatarUrl) {
-            setAvatarPreview(user.avatarUrl);
-        }
-    }, [user]);
+    // Removed useEffect that sets avatarPreview from user.avatarUrl to allow "source of truth" logic in render.
+    // The render logic now handles (avatarPreview || serverUrl).
 
     const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormData>({
         defaultValues: {
@@ -44,24 +42,49 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
         if (!user) return;
         setIsSaving(true);
         try {
-            // Create updated user object
-            const updatedUser = { ...user, fullName: data.fullName, email: data.email };
+            // 1. Handle Avatar Upload First (if pending)
+            console.log("[DEBUG] Starting Save. Pending File?", !!pendingFile);
+            if (pendingFile) {
+                const formData = new FormData();
+                formData.append('file', pendingFile);
+                formData.append('userId', user.id);
 
-            // Handle password change
+                const res = await fetch('/api/users/avatar', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const jsonRes = await res.json();
+                console.log("[DEBUG] Upload Response:", res.status, jsonRes);
+
+                if (!res.ok) {
+                    throw new Error(jsonRes.error || 'Avatar upload failed');
+                }
+            }
+
+            // 2. Handle Profile Data Update
+            const updatedUser = { ...user, fullName: data.fullName, email: data.email };
             if (data.newPassword) {
                 updatedUser.password = data.newPassword;
             }
 
-            if (avatarPreview && avatarPreview !== user.avatarUrl) {
-                updatedUser.avatarUrl = avatarPreview;
-            }
+            // Note: We don't set avatarUrl manually here because the server action/DB
+            // manages it via the upload or the user fetch. 
+            // The refreshData() call below will pull the new avatarUrl.
 
-            dataService.saveUser(updatedUser);
-            refreshData(); // Updates the global user context
+            console.log("[DEBUG] Sending Update User Payload:", updatedUser);
+
+            await dataService.saveUser(updatedUser);
+
+            // 3. Global Refresh to update Header
+            await refreshData();
+
+            setPendingFile(null);
+            setAvatarPreview(null); // Reset preview to force fallback to user.avatarUrl (now updated in context)
             toast.success("Profil mis à jour avec succès");
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            toast.error("Erreur lors de la mise à jour");
+            toast.error(error.message || "Erreur lors de la mise à jour");
         } finally {
             setIsSaving(false);
         }
@@ -80,11 +103,23 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                 <div className="flex items-center gap-4 pb-6 border-b border-white/5">
                     <div className="relative group">
                         <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg overflow-hidden border-2 border-white/10">
-                            {(user as any)?.hasAvatar || avatarPreview ? (
-                                <img src={avatarPreview || `/api/users/avatar/${user.id}?t=${Date.now()}`} alt="Avatar" className="h-full w-full object-cover" />
-                            ) : (
-                                user.fullName.charAt(0)
-                            )}
+                            {(() => {
+                                // Priority: 1. Local Preview (Pending) -> 2. Server URL (Confirmed) -> 3. Fallback Initials
+                                const showPreview = !!avatarPreview;
+                                const showServer = !avatarPreview && (user as any)?.hasAvatar;
+
+                                if (showPreview) {
+                                    return <img src={avatarPreview!} alt="Avatar Preview" className="h-full w-full object-cover" />;
+                                }
+                                if (showServer) {
+                                    return <img
+                                        src={`/api/users/avatar/${user.id}?t=${user.updatedAt ? new Date(user.updatedAt).getTime() : 0}`}
+                                        alt="Avatar"
+                                        className="h-full w-full object-cover"
+                                    />;
+                                }
+                                return user.fullName.charAt(0);
+                            })()}
                         </div>
                         <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-full cursor-pointer">
                             <Camera className="h-6 w-6 text-white" />
@@ -92,7 +127,7 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                                 type="file"
                                 className="hidden"
                                 accept="image/*"
-                                onChange={async (e) => {
+                                onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (!file) return;
 
@@ -101,46 +136,18 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                                         return;
                                     }
 
-                                    const formData = new FormData();
-                                    formData.append('file', file);
-                                    formData.append('userId', user.id); // Pass User ID
-
-                                    const loadingToast = toast.loading("Upload en cours...");
-
-                                    try {
-                                        const res = await fetch('/api/users/avatar', {
-                                            method: 'POST',
-                                            body: formData,
-                                        });
-
-                                        if (!res.ok) {
-                                            const errData = await res.json();
-                                            throw new Error(errData.error || 'Upload failed');
-                                        }
-
-                                        await refreshData(); // Force refresh to update user state (hasAvatar)
-
-                                        // Optimistic preview update?
-                                        // The backend cleared avatarUrl, but set hasAvatar=true.
-                                        // We should now rely on the GET endpoint.
-                                        // Let's reload the user to be sure or just set a temp preview.
-                                        // Since we refreshed data, the user object should update.
-                                        // But for immediate feedback, let's look at the result.
-                                        setAvatarPreview(URL.createObjectURL(file));
-
-                                        toast.dismiss(loadingToast);
-                                        toast.success("Avatar sauvegardé !");
-                                    } catch (err: any) {
-                                        console.error(err);
-                                        toast.dismiss(loadingToast);
-                                        toast.error(err.message || "Erreur lors de l'upload");
-                                    }
+                                    // Local Preview + Pending State Only
+                                    setPendingFile(file);
+                                    setAvatarPreview(URL.createObjectURL(file));
                                 }}
                             />
                         </label>
                         {avatarPreview && (
                             <button
-                                onClick={() => setAvatarPreview(null)}
+                                onClick={() => {
+                                    setAvatarPreview(null);
+                                    setPendingFile(null);
+                                }}
                                 className="absolute -top-1 -right-1 bg-red-500 rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors"
                             >
                                 <X className="h-3 w-3 text-white" />
