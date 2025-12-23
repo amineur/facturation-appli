@@ -11,6 +11,8 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
+export const dynamic = 'force-dynamic';
+
 export default function ClientDetailsPageWrapper(props: any) {
     return (
         <Suspense fallback={<div className="flex h-screen items-center justify-center">Chargement...</div>}>
