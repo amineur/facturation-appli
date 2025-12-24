@@ -26,7 +26,7 @@ export const generateInvoicePDF = (
     try {
         // Load Defaults but mostly override with User Request logic
         // We still respect colors from Template if provided, otherwise default to Reference style.
-        let template: PdfTemplate = options?.templateOverride || dataService.getPdfTemplate();
+        const template: PdfTemplate = options?.templateOverride || dataService.getPdfTemplate();
 
         // --- HARDCODED REFERENCE STYLE ---
         // User requested to "Reproduce the layout", implying strict adherence to the new design.
@@ -59,7 +59,7 @@ export const generateInvoicePDF = (
             dateEcheance = format(new Date(document.dateValidite), "dd/MM/yyyy", { locale: fr });
         }
 
-        let y = 20; // Start Y
+        const y = 20; // Start Y
 
         // ==========================================
         // 1. HEADER

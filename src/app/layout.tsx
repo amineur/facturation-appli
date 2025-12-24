@@ -5,7 +5,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { DataProvider } from "@/components/data-provider";
 import { Toaster } from "sonner";
 import { FaviconUpdater } from "@/components/features/FaviconUpdater";
-import { DebugLogger } from "@/components/features/DebugLogger";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -56,7 +55,7 @@ export async function generateMetadata(): Promise<Metadata> {
       template: "%s | Gestion Facturation",
       default: "Gestion Facturation",
     },
-    description: "Application de gestion de facturation simple et efficace",
+    description: "Gérez vos factures, devis et clients simplement avec notre application de facturation moderne. Suivez votre chiffre d'affaires et optimisez votre gestion financière.",
     icons: icons,
   };
 }
@@ -78,7 +77,6 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <DataProvider>
-            <DebugLogger />
             <FaviconUpdater />
             {children}
             <Toaster position="top-right" richColors theme="system" />

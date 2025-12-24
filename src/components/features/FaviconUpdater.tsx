@@ -1,105 +1,67 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useData } from "@/components/data-provider";
 
 export function FaviconUpdater() {
     const { societe } = useData();
-
-    const createdLinksRef = useRef<HTMLLinkElement[]>([]);
+    const logoUrl = societe?.logoUrl;
 
     useEffect(() => {
-        if (!societe?.logoUrl) return;
+        if (!logoUrl) return;
 
-        let currentObjectUrl: string | null = null;
-        const currentLinks: HTMLLinkElement[] = [];
-
-        const dataURItoBlob = (dataURI: string) => {
+        const updateFavicon = async () => {
             try {
-                const byteString = atob(dataURI.split(',')[1]);
-                const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                for (let i = 0; i < byteString.length; i++) {
-                    ia[i] = byteString.charCodeAt(i);
-                }
-                return new Blob([ab], { type: mimeString });
-            } catch (e) {
-                console.error("Failed to convert data URI to Blob", e);
-                return null;
+                // Fetch et conversion en Blob
+                const response = await fetch(logoUrl);
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+
+                // Types de liens à mettre à jour
+                const linkTypes = [
+                    { rel: 'icon', sizes: null },
+                    { rel: 'shortcut icon', sizes: null },
+                    { rel: 'apple-touch-icon', sizes: null }
+                ];
+
+                linkTypes.forEach(({ rel, sizes }) => {
+                    // Chercher un lien existant (RÉUTILISER au lieu de SUPPRIMER)
+                    let link = document.querySelector<HTMLLinkElement>(
+                        sizes
+                            ? `link[rel="${rel}"][sizes="${sizes}"]`
+                            : `link[rel="${rel}"]`
+                    );
+
+                    // Si pas trouvé, en créer un nouveau
+                    if (!link) {
+                        link = document.createElement('link');
+                        link.rel = rel;
+                        if (sizes) link.sizes.value = sizes;
+                        document.head.appendChild(link);
+                    }
+
+                    // Mettre à jour (ou définir) les attributs
+                    link.href = blobUrl;
+                    link.type = blob.type;
+                });
+
+                console.log('✅ Favicon mis à jour via réutilisation des liens existants');
+
+                // Cleanup function
+                return () => {
+                    URL.revokeObjectURL(blobUrl);
+                };
+            } catch (error) {
+                console.error('❌ Erreur lors de la mise à jour du favicon:', error);
             }
         };
 
-        const addLink = (rel: string, finalUrl: string, mimeType?: string) => {
-            const link = document.createElement('link');
-            link.rel = rel;
-            link.href = finalUrl;
-            link.dataset.managedBy = "glass-favicon-updater";
-
-            // Apply specific type logic
-            if (mimeType) {
-                link.type = mimeType;
-            } else if (societe.logoUrl!.toLowerCase().endsWith('.svg')) {
-                if (rel === 'mask-icon') {
-                    link.setAttribute('color', societe.primaryColor || '#000000');
-                } else if (rel !== 'apple-touch-icon') {
-                    link.type = 'image/svg+xml';
-                }
-            }
-
-            document.head.appendChild(link);
-            currentLinks.push(link);
-        };
-
-        // Cleanup PREVIOUS links from THIS component instance only
-        const cleanupLinks = () => {
-            createdLinksRef.current.forEach((link: HTMLLinkElement) => {
-                if (link.parentNode) {
-                    link.parentNode.removeChild(link);
-                }
-            });
-            createdLinksRef.current = [];
-        };
-
-        // Determine the URL to use
-        const isDataUri = societe.logoUrl.startsWith('data:');
-        let finalUrl = societe.logoUrl;
-        let mimeType = '';
-
-        if (isDataUri) {
-            const blob = dataURItoBlob(societe.logoUrl);
-            if (blob) {
-                currentObjectUrl = URL.createObjectURL(blob);
-                finalUrl = currentObjectUrl;
-                mimeType = blob.type;
-            }
-        } else {
-            finalUrl = `${societe.logoUrl}?t=${new Date().getTime()}`;
-        }
-
-        // 1. Clean up old links before adding new ones
-        cleanupLinks();
-
-        // 2. Add new links
-        addLink('icon', finalUrl, mimeType);
-        addLink('shortcut icon', finalUrl, mimeType);
-        addLink('apple-touch-icon', finalUrl, mimeType);
-
-        if (mimeType === 'image/svg+xml' || (!isDataUri && societe.logoUrl.toLowerCase().endsWith('.svg'))) {
-            addLink('mask-icon', finalUrl, mimeType);
-        }
-
-        // 3. Store new links in ref for next cycle or unmount
-        createdLinksRef.current = currentLinks;
+        const cleanupPromise = updateFavicon();
 
         return () => {
-            cleanupLinks();
-            if (currentObjectUrl) {
-                URL.revokeObjectURL(currentObjectUrl);
-            }
+            cleanupPromise.then(cleanup => cleanup && cleanup());
         };
-
-    }, [societe?.logoUrl, societe?.primaryColor]); // Re-run whenever logoUrl changes
+    }, [logoUrl]);
 
     return null;
 }

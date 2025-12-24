@@ -15,23 +15,60 @@ export default function EditDevisPage({ params }: { params: Promise<{ id: string
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!isDataLoading) {
-            const found = quotes.find(q => q.id === id);
-            if (found) {
-                setQuote(found);
-                setLoading(false);
-            } else {
-                // If not found (e.g. after company switch), redirect to list
-                router.push('/devis');
+        let isMounted = true;
+
+        const loadQuote = async () => {
+            // 1. Try to find in global state first (optimistic)
+            const cached = quotes.find(q => q.id === id);
+
+            // If cached has items, use it (it's a full version)
+            // But if it's lite (items empty), we MIGHT need to fetch. 
+            // However, a new quote might genuinely have no items.
+            // Best strategy: If we have a cached version, display it immediately (skeleton/lite), 
+            // AND fetch details in background if we suspect it's stale or lite.
+            // For now, simpler: Just fetch details to be safe and ensure "Full" object.
+
+            if (cached && cached.items && cached.items.length > 0) {
+                if (isMounted) {
+                    setQuote(cached);
+                    setLoading(false);
+                }
+                // Return early? Or verify fresh? Let's trust cache if it has items for speed.
+                return;
             }
+
+            // 2. Fetch fresh details
+            try {
+                const { fetchQuoteDetails } = await import("@/app/actions");
+                const result = await fetchQuoteDetails(id);
+                if (result.success && result.data) {
+                    if (isMounted) {
+                        setQuote(result.data);
+                        setLoading(false);
+                    }
+                } else {
+                    if (isMounted) {
+                        // If not found, redirect
+                        router.push('/devis');
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to load quote details", error);
+                if (isMounted) router.push('/devis');
+            }
+        };
+
+        if (id) {
+            loadQuote();
         }
-    }, [id, quotes, isDataLoading, router]);
+
+        return () => { isMounted = false; };
+    }, [id, quotes, router]); // Quotes dependency allows update if global state changes, but we primarily fetch.
 
     if (loading && !quote) {
         return <div className="p-8 text-center text-muted-foreground">Chargement du devis...</div>;
     }
 
-    // This part should rarely be reached due to redirect, but kept for safety
     if (!quote) return null;
 
     return <InvoiceEditor type="Devis" initialData={quote} />;

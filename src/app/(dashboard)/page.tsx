@@ -12,12 +12,21 @@ import {
     Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { InvoiceStatusChart } from "@/components/features/InvoiceStatusChart";
-import { QuoteStatusChart } from "@/components/features/QuoteStatusChart";
+import dynamic from 'next/dynamic';
+import { Skeleton } from "@/components/ui/skeleton";
+
+const InvoiceStatusChart = dynamic(() => import("@/components/features/InvoiceStatusChart").then(mod => mod.InvoiceStatusChart), {
+    loading: () => <Skeleton className="w-full h-[300px] rounded-xl" />,
+    ssr: false
+});
+const QuoteStatusChart = dynamic(() => import("@/components/features/QuoteStatusChart").then(mod => mod.QuoteStatusChart), {
+    loading: () => <Skeleton className="w-full h-[300px] rounded-xl" />,
+    ssr: false
+});
 import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay, subMonths } from "date-fns";
 import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 import { fetchDashboardMetrics } from "@/app/actions";
-import { Skeleton } from "@/components/ui/skeleton";
+
 
 type DateRangeType = "month" | "custom" | "3months" | "total";
 export default function DashboardPage() {
@@ -212,6 +221,7 @@ export default function DashboardPage() {
                             type="date"
                             value={customStart}
                             onChange={(e) => handleDateChange('start', e.target.value)}
+                            aria-label="Date de début"
                             className="bg-transparent border border-gray-200 dark:border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] dark:text-white"
                         />
                         <span className="text-sm text-muted-foreground">au</span>
@@ -219,6 +229,7 @@ export default function DashboardPage() {
                             type="date"
                             value={customEnd}
                             onChange={(e) => handleDateChange('end', e.target.value)}
+                            aria-label="Date de fin"
                             className="bg-transparent border border-gray-200 dark:border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] dark:text-white"
                         />
                     </div>

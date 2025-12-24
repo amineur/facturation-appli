@@ -221,7 +221,7 @@ class DataService {
             currentUser.currentSocieteId = id;
             this.saveUser(currentUser);
         }
-        window.location.reload();
+        // window.location.reload(); // REMOVED: Causes User Flash & Cold Start Latency
     }
 
     getSocietes(): Societe[] {

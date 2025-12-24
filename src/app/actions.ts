@@ -399,7 +399,7 @@ export async function fetchClients(societeId: string): Promise<{ success: boolea
     }
 }
 
-export async function fetchInvoicesLite(societeId: string): Promise<{ success: boolean, data?: Partial<Facture>[], error?: string }> {
+export async function fetchInvoicesLite(societeId: string, limit?: number): Promise<{ success: boolean, data?: Partial<Facture>[], error?: string }> {
     try {
         const invoices = await prisma.facture.findMany({
             // @ts-ignore
@@ -424,7 +424,8 @@ export async function fetchInvoicesLite(societeId: string): Promise<{ success: b
             orderBy: [
                 { dateEmission: 'desc' },
                 { numero: 'desc' }
-            ]
+            ],
+            take: limit || undefined
         });
 
         const mapped = invoices.map((inv: any) => ({
@@ -511,62 +512,62 @@ async function fetchInvoicesLegacy(societeId: string): Promise<{ success: boolea
 export async function fetchDashboardMetrics(societeId: string, range: { start: Date, end: Date }) {
     try {
         // Server-side aggregation for Dashboard
-        const totalRevenue = await prisma.facture.aggregate({
-            // @ts-ignore
-            where: {
-                societeId,
-                deletedAt: null,
-                statut: "Payée",
-                dateEmission: {
-                    gte: range.start,
-                    lte: range.end
-                }
-            },
-            _sum: { totalTTC: true }
-        });
-
-        const counts = await prisma.facture.groupBy({
-            // @ts-ignore
-            by: ['statut'],
-            where: {
-                societeId,
-                deletedAt: null,
-                dateEmission: {
-                    gte: range.start,
-                    lte: range.end
-                }
-            },
-            _count: true
-        });
-
-        const overdue = await prisma.facture.aggregate({
-            // @ts-ignore
-            where: {
-                societeId,
-                deletedAt: null,
-                statut: "Retard" // Or logic based on echeance date < now
-            },
-            _sum: { totalTTC: true },
-            _count: true
-        });
-
-        // Due Soon (next 7 days)
+        // Pre-calculate date for parallel execution
         const nextWeek = new Date();
         nextWeek.setDate(nextWeek.getDate() + 7);
-        const dueSoon = await prisma.facture.aggregate({
-            // @ts-ignore
-            where: {
-                societeId,
-                deletedAt: null,
-                statut: { in: ["Envoyée", "Brouillon"] },
-                dateEcheance: {
-                    lte: nextWeek,
-                    gte: new Date()
-                }
-            },
-            _sum: { totalTTC: true },
-            _count: true
-        });
+
+        const [totalRevenue, counts, overdue, dueSoon] = await Promise.all([
+            prisma.facture.aggregate({
+                // @ts-ignore
+                where: {
+                    societeId,
+                    deletedAt: null,
+                    statut: "Payée",
+                    dateEmission: {
+                        gte: range.start,
+                        lte: range.end
+                    }
+                },
+                _sum: { totalTTC: true }
+            }),
+            prisma.facture.groupBy({
+                // @ts-ignore
+                by: ['statut'],
+                where: {
+                    societeId,
+                    deletedAt: null,
+                    dateEmission: {
+                        gte: range.start,
+                        lte: range.end
+                    }
+                },
+                _count: true
+            }),
+            prisma.facture.aggregate({
+                // @ts-ignore
+                where: {
+                    societeId,
+                    deletedAt: null,
+                    statut: "Retard" // Or logic based on echeance date < now
+                },
+                _sum: { totalTTC: true },
+                _count: true
+            }),
+            prisma.facture.aggregate({
+                // @ts-ignore
+                where: {
+                    societeId,
+                    deletedAt: null,
+                    statut: { in: ["Envoyée", "Brouillon"] },
+                    dateEcheance: {
+                        lte: nextWeek,
+                        gte: new Date()
+                    }
+                },
+                _sum: { totalTTC: true },
+                _count: true
+            })
+        ]);
 
         return {
             success: true,
@@ -624,6 +625,100 @@ export async function fetchInvoiceDetails(id: string): Promise<{ success: boolea
             config: inv.config ? JSON.parse(inv.config) : {}
         };
 
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchQuoteDetails(id: string): Promise<{ success: boolean, data?: Devis, error?: string }> {
+    try {
+        const quote = await prisma.devis.findUnique({
+            where: { id }
+        });
+
+        if (!quote) return { success: false, error: "Devis introuvable" };
+
+        let items = [];
+        let emails = [];
+        try {
+            if (quote.itemsJSON) items = JSON.parse(quote.itemsJSON);
+            if (quote.emailsJSON) emails = JSON.parse(quote.emailsJSON);
+        } catch (e) {
+            console.error("Error parsing JSON fields", e);
+        }
+
+        const mapped: Devis = {
+            id: quote.id,
+            numero: quote.numero,
+            clientId: quote.clientId,
+            societeId: quote.societeId,
+            dateEmission: quote.dateEmission.toISOString(),
+            dateValidite: quote.dateValidite ? quote.dateValidite.toISOString() : "",
+            statut: quote.statut as any,
+            totalHT: quote.totalHT,
+            totalTTC: quote.totalTTC,
+            items: items,
+            emails: emails,
+            type: "Devis",
+            createdAt: quote.createdAt ? quote.createdAt.toISOString() : undefined,
+            updatedAt: quote.updatedAt ? quote.updatedAt.toISOString() : undefined,
+            isLocked: quote.isLocked,
+            config: quote.config ? JSON.parse(quote.config) : {}
+        };
+
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchQuotesLite(societeId: string, limit?: number): Promise<{ success: boolean, data?: Partial<Devis>[], error?: string }> {
+    try {
+        const quotes = await prisma.devis.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: null, statut: { not: 'Archivé' } },
+            select: {
+                id: true,
+                numero: true,
+                clientId: true,
+                societeId: true,
+                dateEmission: true,
+                dateValidite: true,
+                statut: true,
+                totalHT: true,
+                totalTTC: true,
+                isLocked: true,
+                createdAt: true,
+                updatedAt: true,
+                config: true,
+                client: { select: { nom: true } }
+            },
+            orderBy: [
+                { dateEmission: 'desc' },
+                { numero: 'desc' }
+            ],
+            take: limit || undefined
+        });
+
+        const mapped = quotes.map((q: any) => ({
+            id: q.id,
+            numero: q.numero,
+            clientId: q.clientId,
+            societeId: q.societeId,
+            dateEmission: q.dateEmission.toISOString(),
+            dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
+            statut: q.statut as any,
+            totalHT: q.totalHT,
+            totalTTC: q.totalTTC,
+            isLocked: q.isLocked,
+            items: [], // Empty for lite
+            emails: [],
+            type: "Devis" as const,
+            createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
+            updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
+            config: q.config ? JSON.parse(q.config) : {}
+        }));
         return { success: true, data: mapped };
     } catch (error: any) {
         return { success: false, error: error.message };
@@ -1014,7 +1109,7 @@ export async function updateInvoice(invoice: Facture) {
         }
 
         // Prepare Data
-        let societeId = invoice.societeId || currentInvoice.societeId || "Euromedmultimedia";
+        const societeId = invoice.societeId || currentInvoice.societeId || "Euromedmultimedia";
         const processedItems = await ensureProductsExist(invoice.items || [], societeId);
         const itemsJson = JSON.stringify(processedItems);
         // emailsJSON: preserved (not from form data)
@@ -1557,7 +1652,7 @@ export async function updateOverdueInvoices() {
             },
             data: { statut: "Retard" }
         });
-        revalidatePath("/", "layout");
+        // revalidatePath("/", "layout"); // REMOVED: Causes full app reload/blink on company switch
         return { success: true, count: res.count };
     } catch (error: any) {
         return { success: false, error: error.message };

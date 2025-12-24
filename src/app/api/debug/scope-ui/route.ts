@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         const activeSociete = allSocietes.find(s => s.id === activeSocieteId);
 
         // 4. Count data scoped by activeSocieteId
-        let counts = {
+        const counts = {
             factures: 0,
             devis: 0,
             clients: 0,

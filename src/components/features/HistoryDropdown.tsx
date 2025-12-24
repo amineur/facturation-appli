@@ -63,6 +63,7 @@ export function HistoryDropdown() {
         <div className="relative">
             <button
                 onClick={() => setIsOpen(!isOpen)}
+                aria-label="Historique des activités"
                 className="relative rounded-full p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
             >
                 <History className="h-5 w-5" />

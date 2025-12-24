@@ -1,5 +1,5 @@
 import { useState, useRef, KeyboardEvent, useEffect } from "react";
-import { SafePortal } from "@/components/ui/SafePortal";
+import { createPortal } from "react-dom";
 import {
     Send, Paperclip, X, Plus, User, Calendar, Clock, ChevronDown, ChevronRight,
     Bold, Italic, Underline, AlignLeft, List, Link, Image, Trash2, Smile, Type
@@ -41,6 +41,9 @@ export function EmailComposer({
     const [isSending, setIsSending] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const modalRef = useRef<HTMLDivElement>(null);
+
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
 
     // Close menu when clicking outside
     useEffect(() => {
@@ -306,31 +309,33 @@ export function EmailComposer({
             </div>
 
             {/* Scheduling Modal - Portal */}
-            {showScheduleModal && (
-                <SafePortal>
+            {showScheduleModal && mounted && (() => {
+                const portalRoot = document.getElementById('glass-portal-root');
+                if (!portalRoot) return null;
+                return createPortal(
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
                         <div ref={modalRef} className="w-full max-w-sm bg-background/95 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                             {/* Same Modal Content as before */}
                             <div className="p-4 border-b border-border dark:border-white/10 flex justify-between items-center">
                                 <h3 className="text-lg font-semibold">Programmer l'envoi</h3>
-                                <button type="button" onClick={() => setShowScheduleModal(false)}>
+                                <button onClick={() => setShowScheduleModal(false)}>
                                     <X className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                                 </button>
                             </div>
                             {!customDateMode ? (
                                 <div className="py-2">
                                     <div className="px-4 pb-2"><p className="text-xs text-muted-foreground">Heure normale d'Europe centrale</p></div>
-                                    <button type="button" onClick={() => handleSchedulePreset('tomorrow-morning')} className="w-full text-left px-6 py-3 hover:bg-white/5 flex justify-between items-center text-sm group">
+                                    <button onClick={() => handleSchedulePreset('tomorrow-morning')} className="w-full text-left px-6 py-3 hover:bg-white/5 flex justify-between items-center text-sm group">
                                         <span>Demain matin</span> <span className="text-muted-foreground">{format(setHours(addDays(new Date(), 1), 8), "d MMM HH:mm", { locale: fr })}</span>
                                     </button>
-                                    <button type="button" onClick={() => handleSchedulePreset('tomorrow-afternoon')} className="w-full text-left px-6 py-3 hover:bg-white/5 flex justify-between items-center text-sm group">
+                                    <button onClick={() => handleSchedulePreset('tomorrow-afternoon')} className="w-full text-left px-6 py-3 hover:bg-white/5 flex justify-between items-center text-sm group">
                                         <span>Demain après-midi</span> <span className="text-muted-foreground">{format(setHours(addDays(new Date(), 1), 13), "d MMM HH:mm", { locale: fr })}</span>
                                     </button>
-                                    <button type="button" onClick={() => handleSchedulePreset('monday-morning')} className="w-full text-left px-6 py-3 hover:bg-white/5 flex justify-between items-center text-sm group">
+                                    <button onClick={() => handleSchedulePreset('monday-morning')} className="w-full text-left px-6 py-3 hover:bg-white/5 flex justify-between items-center text-sm group">
                                         <span>Lundi matin</span> <span className="text-muted-foreground">{format(setHours(nextMonday(new Date()), 8), "d MMM HH:mm", { locale: fr })}</span>
                                     </button>
                                     <div className="my-2 border-t border-white/5" />
-                                    <button type="button" onClick={() => setCustomDateMode(true)} className="w-full text-left px-6 py-3 hover:bg-white/5 flex items-center gap-3 text-sm">
+                                    <button onClick={() => setCustomDateMode(true)} className="w-full text-left px-6 py-3 hover:bg-white/5 flex items-center gap-3 text-sm">
                                         <Calendar className="h-4 w-4 text-muted-foreground" />
                                         Choisir une date et une heure
                                     </button>
@@ -342,15 +347,16 @@ export function EmailComposer({
                                         <input type="datetime-local" value={customDateValue} onChange={(e) => setCustomDateValue(e.target.value)} min={new Date().toISOString().slice(0, 16)} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none" />
                                     </div>
                                     <div className="flex justify-end gap-2 pt-2">
-                                        <button type="button" onClick={() => setCustomDateMode(false)} className="px-4 py-2 text-sm hover:bg-white/10 rounded-lg transition-colors">Retour</button>
-                                        <button type="button" onClick={handleCustomSchedule} className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">Programmer</button>
+                                        <button onClick={() => setCustomDateMode(false)} className="px-4 py-2 text-sm hover:bg-white/10 rounded-lg transition-colors">Retour</button>
+                                        <button onClick={handleCustomSchedule} className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">Programmer</button>
                                     </div>
                                 </div>
                             )}
                         </div>
-                    </div>
-                </SafePortal>
-            )}
+                    </div>,
+                    portalRoot
+                )
+            })()}
         </form>
     );
 }
