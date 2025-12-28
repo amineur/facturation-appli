@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0",
-    "build": "next build",
+    "dev": "next dev -H 0.0.0.0 --webpack",
+    "build": "sh scripts/vercel-build.sh",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate"
@@ -33,6 +33,7 @@
     "react-dom": "19.2.0",
     "react-hook-form": "^7.68.0",
     "recharts": "^3.5.1",
+    "sharp": "^0.34.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "uuid": "^13.0.0",

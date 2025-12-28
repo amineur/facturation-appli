@@ -138,6 +138,9 @@ model Produit {
   updatedAt DateTime @updatedAt
 
   @@index([societeId])
+
+  factureItems FactureItem[]
+  devisItems   DevisItem[]
 }
 
 model Facture {
@@ -168,6 +171,7 @@ model Facture {
   deletedAt DateTime?
 
   paiements Paiement[]
+  items     FactureItem[]
 
   isLocked   Boolean   @default(false)
   archivedAt DateTime?
@@ -206,6 +210,8 @@ model Devis {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   config    String    @default("{}")
+
+  items     DevisItem[]
 
   @@index([societeId])
   @@index([clientId])
@@ -246,4 +252,46 @@ model HistoryEntry {
   @@index([userId])
   @@index([societeId])
   @@index([entityId])
+}
+
+model FactureItem {
+  id           String  @id @default(cuid())
+  factureId    String
+  facture      Facture @relation(fields: [factureId], references: [id], onDelete: Cascade)
+  produitId    String?
+  produit      Produit? @relation(fields: [produitId], references: [id])
+  description  String
+  quantite     Float
+  prixUnitaire Float
+  tva          Float
+  remise       Float?  @default(0)
+  remiseType   String? @default("pourcentage") // "pourcentage" or "montant"
+  montantHT    Float
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([factureId])
+  @@index([produitId])
+}
+
+model DevisItem {
+  id           String  @id @default(cuid())
+  devisId      String
+  devis        Devis   @relation(fields: [devisId], references: [id], onDelete: Cascade)
+  produitId    String?
+  produit      Produit? @relation(fields: [produitId], references: [id])
+  description  String
+  quantite     Float
+  prixUnitaire Float
+  tva          Float
+  remise       Float?  @default(0)
+  remiseType   String? @default("pourcentage") // "pourcentage" or "montant"
+  montantHT    Float
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([devisId])
+  @@index([produitId])
 }

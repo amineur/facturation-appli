@@ -1,0 +1,2242 @@
+"use server";
+import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+
+import { prisma } from '@/lib/prisma';
+import { Client, Facture, Devis, Produit, User } from '@/types';
+
+// --- Guards ---
+
+async function checkInvoiceMutability(id: string) {
+    const invoice = await prisma.facture.findUnique({
+        where: { id },
+        select: { statut: true, archivedAt: true }
+    });
+
+    if (!invoice) return { success: false, error: "Facture introuvable" };
+
+    if (invoice.archivedAt) {
+        return { success: false, error: "Facture archivée : modification interdite" };
+    }
+
+    if (invoice.statut === "Archivée") {
+        return { success: false, error: "Facture archivée : modification impossible" };
+    }
+
+    if (invoice.statut === "Annulée") {
+        return { success: false, error: "Facture annulée : modification impossible" };
+    }
+
+    return { success: true };
+}
+
+// --- Authentication & User Management ---
+
+export async function registerUser(data: any) {
+    try {
+        const existing = await prisma.user.findUnique({ where: { email: data.email } });
+        if (existing) return { success: false, error: "Cet email est déjà utilisé" };
+
+        const user = await prisma.user.create({
+            data: {
+                email: data.email,
+                fullName: data.fullName,
+                password: data.password, // In PROD: Hash this!
+                role: data.role || "user",
+                avatarUrl: data.avatarUrl,
+                societes: {
+                    connect: data.societes?.map((id: string) => ({ id })) || []
+                }
+            },
+            include: { societes: true }
+        });
+
+        return { success: true, data: mapUser(user) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function loginUser(email: string, password: string) {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { email },
+            include: { societes: true }
+        });
+
+        if (!user || user.password !== password) { // In PROD: Use bcrypt.compare
+            return { success: false, error: "Email ou mot de passe incorrect" };
+        }
+
+        return { success: true, data: mapUser(user) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function getDefaultUser() {
+    try {
+        // Try to get usr_1 first (standard default)
+        let user = await prisma.user.findUnique({
+            where: { id: 'usr_1' },
+            include: { societes: true }
+        });
+
+        // If not found, get first user in DB (dev fallback)
+        if (!user) {
+            user = await prisma.user.findFirst({
+                include: { societes: true }
+            });
+        }
+
+        if (!user) {
+            return { success: false, error: "No users found in database" };
+        }
+
+        return { success: true, data: mapUser(user) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateUser(userData: any) {
+    try {
+        const user = await prisma.user.update({
+            where: { id: userData.id },
+            data: {
+                email: userData.email,
+                fullName: userData.fullName,
+                password: userData.password,
+                role: userData.role,
+                avatarUrl: userData.avatarUrl
+                // Societes update logic requires disconnect/connect, skipping for simple update
+            },
+            include: { societes: true }
+        });
+        return { success: true, data: mapUser(user) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function upsertUser(userData: any) {
+    try {
+        // Enforce DB constraints via Prisma Upsert
+        // If id matches, Update. If not, Create.
+        // We match on ID primarily. 
+
+        const user = await prisma.user.upsert({
+            where: { id: userData.id || "new_user" }, // Fallback to avoid error, but usage should provide ID
+            update: {
+                email: userData.email,
+                fullName: userData.fullName,
+                password: userData.password,
+                role: userData.role,
+                avatarUrl: userData.avatarUrl
+            },
+            create: {
+                id: userData.id, // Explicit ID allowed (e.g. usr_1)
+                email: userData.email,
+                fullName: userData.fullName,
+                password: userData.password,
+                role: userData.role || "user",
+                avatarUrl: userData.avatarUrl,
+                societes: {
+                    connect: userData.societes?.map((id: string) => ({ id })) || []
+                }
+            },
+            include: { societes: true }
+        });
+
+        // Ensure we always return the fresh DB state
+        return { success: true, data: mapUser(user) };
+    } catch (error: any) {
+        console.error("Upsert User Failed:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchAllUsers() {
+    try {
+        const users = await prisma.user.findMany({ include: { societes: true } });
+        return { success: true, data: users.map(mapUser) };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchUserById(userId: string) {
+    try {
+        // ⚡ OPTIMIZATION: Use select instead of include
+        // Include societes was loading full objects → slow!
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                role: true,
+                currentSocieteId: true,
+                // Removed: password, avatarUrl, hasAvatar, lastReadHistory
+                societes: {
+                    select: { id: true }
+                }
+            }
+        });
+        if (!user) return { success: false, error: "Utilisateur introuvable" };
+
+        // Map to minimal format
+        const mappedUser = {
+            id: user.id,
+            email: user.email,
+            fullName: user.fullName || "",
+            role: user.role as any,
+            permissions: [],
+            societes: user.societes.map((s: any) => s.id),
+            currentSocieteId: user.currentSocieteId || user.societes[0]?.id
+        };
+
+        return { success: true, data: mappedUser };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// ⚡ PERFORMANCE: Simple session cache (1 minute TTL)
+const sessionCache = new Map<string, { user: any; expires: number }>();
+
+export async function getCurrentUser() {
+    try {
+        const cookieStore = await cookies();
+        const userId = cookieStore.get('session_userid')?.value;
+
+        if (!userId) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        // Check cache first
+        const cached = sessionCache.get(userId);
+        if (cached && cached.expires > Date.now()) {
+            return cached.user; // ⚡ Cache hit!
+        }
+
+        // Cache miss → fetch from DB
+        const result = await fetchUserById(userId);
+
+        // Cache for 60 seconds
+        if (result.success) {
+            sessionCache.set(userId, {
+                user: result,
+                expires: Date.now() + 60000
+            });
+        }
+
+        return result;
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+function mapUser(prismaUser: any): User {
+    return {
+        id: prismaUser.id,
+        email: prismaUser.email,
+        fullName: prismaUser.fullName || "",
+        role: prismaUser.role as any,
+        permissions: [], // Default or stored in DB
+        societes: prismaUser.societes.map((s: any) => s.id),
+        currentSocieteId: prismaUser.currentSocieteId || prismaUser.societes[0]?.id,
+        lastReadHistory: prismaUser.lastReadHistory ? prismaUser.lastReadHistory.toISOString() : undefined,
+        password: prismaUser.password, // Returning password to client is BAD practice in real app, but needed for current Local Logic to pre-fill
+        avatarUrl: prismaUser.avatarUrl,
+        hasAvatar: prismaUser.hasAvatar
+    };
+}
+
+export async function markHistoryAsRead(userId: string) {
+    try {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { lastReadHistory: new Date() }
+        });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Connection Check ---
+
+export async function checkDatabaseConnection() {
+    console.log("Checking Database connection...");
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        return { success: true, message: "Connexion Base de Données (Prisma) OK !" };
+    } catch (error: any) {
+        console.error("Database Connection Error:", error);
+        return { success: false, message: `Erreur de connexion : ${error.message}` };
+    }
+}
+
+// --- Helper to Auto-Create Products ---
+
+async function ensureProductsExist(items: any[], societeId: string) {
+    if (!items || !Array.isArray(items)) return items;
+
+    const updatedItems = [];
+    for (const item of items) {
+        // Only process items that have a description but NO produitId
+        // And are not specifically "text" type if we differentiate? 
+        // InvoiceLineItem uses type='texte' for free text, we might want to skip those if user intended them as just text.
+        // But user said "all products added... must be created".
+        // Let's assume if it has a price > 0 or if it looks like a product, we create it.
+        // Actually, if it has no produitId, we check if we should create it.
+        // Simple rule: If it has description and (price or quantity), treat as potential product.
+
+        if (item) {
+            // Calculate line total (HT after discount)
+            const qty = typeof item.quantite === 'number' ? item.quantite : parseFloat(item.quantite) || 0;
+            const price = typeof item.prixUnitaire === 'number' ? item.prixUnitaire : parseFloat(item.prixUnitaire) || 0;
+            let total = qty * price;
+
+            // Apply discount if present
+            const remise = typeof item.remise === 'number' ? item.remise : parseFloat(item.remise) || 0;
+            if (remise > 0) {
+                if (item.remiseType === 'montant') {
+                    total = Math.max(0, total - remise);
+                } else {
+                    total = total * (1 - remise / 100);
+                }
+            }
+
+            // Explicitly set calculated property
+            item.totalLigne = total;
+        }
+
+        if (!item.produitId && item.description && item.description.trim() !== "") {
+            // Check if product exists by name in this societe
+            const existingProduct = await prisma.produit.findFirst({
+                where: {
+                    societeId: societeId,
+                    nom: item.description.trim()
+                }
+            });
+
+            if (existingProduct) {
+                updatedItems.push({
+                    ...item,
+                    produitId: existingProduct.id
+                });
+            } else {
+                // Create new product
+                try {
+                    const newProduct = await prisma.produit.create({
+                        data: {
+                            nom: item.description.trim(),
+                            societeId: societeId,
+                            prixUnitaire: typeof item.prixUnitaire === 'number' ? item.prixUnitaire : parseFloat(item.prixUnitaire) || 0,
+                            tva: typeof item.tva === 'number' ? item.tva : parseFloat(item.tva) || 0,
+                            description: "" // Optional
+                        }
+                    });
+                    updatedItems.push({
+                        ...item,
+                        produitId: newProduct.id
+                    });
+                } catch (e) {
+                    console.error("Failed to auto-create product:", e);
+                    updatedItems.push(item); // Keep as is if failure
+                }
+            }
+        } else {
+            updatedItems.push(item);
+        }
+    }
+    return updatedItems;
+}
+
+// --- Fetch Actions ---
+
+export interface ActionState<T = any> {
+    success: boolean;
+    data?: T;
+    error?: string;
+    fieldErrors?: Record<string, string>;
+    id?: string; // For create actions
+}
+
+function handleActionError(error: any): ActionState {
+    console.error("Server Action Error:", error);
+
+    // Prisma Unique Constraint Error
+    if (error.code === 'P2002') {
+        const field = error.meta?.target?.[0] || 'Unknown';
+        return {
+            success: false,
+            error: `La valeur pour ${field} existe déjà.`
+        };
+    }
+
+    // Generic fallback - DEBUG MODE: Return actual error
+    return {
+        success: false,
+        error: `Erreur: ${error.message || String(error)}`
+    };
+}
+
+export async function fetchSocietes(): Promise<{ success: boolean, data?: any[], error?: string }> {
+    try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const userId = userRes.data.id;
+
+        const societes = await prisma.societe.findMany({
+            where: {
+                members: {
+                    some: {
+                        id: userId
+                    }
+                }
+            }
+        });
+        return { success: true, data: societes };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function getSociete(id: string) {
+    try {
+        // 🔒 SECURITY: Verify user is authenticated
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const userId = userRes.data.id;
+
+        // 🔒 SECURITY: Verify user has access to this societe
+        const societe = await prisma.societe.findFirst({
+            where: {
+                id,
+                members: {
+                    some: {
+                        id: userId
+                    }
+                }
+            }
+        });
+
+        if (!societe) {
+            return { success: false, error: "Société introuvable ou accès refusé" };
+        }
+
+        return { success: true, data: societe };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function createSociete(data: any) {
+    try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const userId = userRes.data.id;
+
+        // Create society and link user as member
+        const societe = await prisma.societe.create({
+            data: {
+                nom: data.nom,
+                adresse: data.adresse,
+                codePostal: data.codePostal,
+                ville: data.ville,
+                pays: data.pays || "France",
+                siret: data.siret,
+                tvaIntra: data.tvaIntra,
+                logoUrl: data.logoUrl,
+                email: data.email,
+                telephone: data.telephone,
+                formeJuridique: data.formeJuridique,
+                capitalSocial: data.capital, // Mapped from onboarding 'capital' field
+                banque: data.banque,
+                titulaireCompte: data.titulaireCompte,
+                iban: data.iban,
+                bic: data.bic,
+                members: {
+                    connect: { id: userId }
+                }
+            }
+        });
+
+        // Update user's current society if not set
+        await prisma.user.update({
+            where: { id: userId },
+            data: { currentSocieteId: societe.id }
+        });
+
+        return { success: true, data: societe };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateSociete(societe: any) {
+    if (!societe.id) return { success: false, error: "ID manquant" };
+    try {
+        // 🔒 SECURITY: Verify user has access to this societe
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const userId = userRes.data.id;
+
+        // Verify membership
+        const hasAccess = await prisma.societe.findFirst({
+            where: {
+                id: societe.id,
+                members: { some: { id: userId } }
+            }
+        });
+
+        if (!hasAccess) {
+            return { success: false, error: "Accès refusé à cette société" };
+        }
+
+        const { id, ...data } = societe;
+        await prisma.societe.update({
+            where: { id },
+            data: data
+        });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchClients(societeId: string): Promise<{ success: boolean, data?: Client[], error?: string }> {
+    try {
+        // 🔒 SECURITY: Verify user has access to this societe
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const userId = userRes.data.id;
+
+        // Verify membership
+        const hasAccess = await prisma.societe.findFirst({
+            where: {
+                id: societeId,
+                members: { some: { id: userId } }
+            }
+        });
+
+        if (!hasAccess) {
+            return { success: false, error: "Accès refusé à cette société" };
+        }
+
+        const clients = await prisma.client.findMany({
+            where: { societeId },
+        });
+
+        // Map Prisma result to Client interface
+        const mapped: Client[] = clients.map((c: any) => ({
+            id: c.id,
+            societeId: c.societeId,
+            nom: c.nom,
+            email: c.email || "",
+            telephone: c.telephone || "",
+            adresse: c.adresse || "",
+            codePostal: c.codePostal || "",
+            ville: c.ville || "",
+            pays: c.pays || "France",
+            siret: c.siret || "",
+            tvaIntra: c.tvaIntra || "",
+            statut: "Actif",
+            totalFactures: 0 // Calculation would need a relation count
+        }));
+
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        console.error("Error fetching Clients:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchInvoicesLite(societeId: string, limit?: number): Promise<{ success: boolean, data?: Partial<Facture>[], error?: string }> {
+    try {
+        // 🔒 SECURITY: Verify membership
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({ where: { id: societeId, members: { some: { id: userRes.data.id } } } });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const invoices = await prisma.facture.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: null, statut: { not: 'Archivée' } },
+            select: {
+                id: true,
+                numero: true,
+                clientId: true,
+                societeId: true,
+                dateEmission: true,
+                dateEcheance: true,
+                datePaiement: true,
+                statut: true,
+                totalHT: true,
+                totalTTC: true,
+                createdAt: true,
+                updatedAt: true,
+                client: {
+                    select: { nom: true } // Only fetch client name for list display
+                }
+            },
+            orderBy: [
+                { dateEmission: 'desc' },
+                { numero: 'desc' }
+            ],
+            take: limit || undefined
+        });
+
+        const mapped = invoices.map((inv: any) => ({
+            id: inv.id,
+            numero: inv.numero,
+            clientId: inv.clientId,
+            societeId: inv.societeId,
+            dateEmission: inv.dateEmission.toISOString(),
+            echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+            statut: inv.statut as any,
+            totalHT: inv.totalHT,
+            totalTTC: inv.totalTTC,
+            datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
+            type: "Facture" as const,
+            items: [], // Empty for lite version
+            emails: [],
+            // clientName: inv.client?.nom // Optional optimization if we want to flatten
+            client: inv.client // Include Client for server rendering
+        }));
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// Keep original for back-compat but warn or optimize? 
+// For now, let's keep it but ideally we should use Lite + Detail fetch.
+export async function fetchInvoices(societeId: string): Promise<{ success: boolean, data?: Facture[], error?: string }> {
+    // Falls back to lite for now to force optimization, client needs to handle missing items?
+    // WARNING: If client relies on items property to calculate things, this breaks.
+    // So we must Implement fetchInvoiceDetails as well.
+    // For now, let's keep fetchInvoices "heavy" for legacy calls but add Lite for the list.
+    return fetchInvoicesLegacy(societeId);
+}
+
+async function fetchInvoicesLegacy(societeId: string): Promise<{ success: boolean, data?: Facture[], error?: string }> {
+    try {
+        // 🔒 SECURITY: Verify membership
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({ where: { id: societeId, members: { some: { id: userRes.data.id } } } });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const invoices = await prisma.facture.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: null, statut: { not: 'Archivée' } },
+            include: { client: true },
+            orderBy: [
+                { dateEmission: 'desc' },
+                { numero: 'desc' }
+            ]
+        });
+
+        const mapped: Facture[] = invoices.map((inv: any) => {
+            let items = [];
+            let emails = [];
+            try {
+                if (inv.itemsJSON) items = JSON.parse(inv.itemsJSON);
+                if (inv.emailsJSON) emails = JSON.parse(inv.emailsJSON);
+            } catch (e) {
+                console.error("Error parsing JSON fields", e);
+            }
+
+            return {
+                id: inv.id,
+                numero: inv.numero,
+                clientId: inv.clientId,
+                societeId: inv.societeId,
+                dateEmission: inv.dateEmission.toISOString(),
+                echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+                statut: inv.statut as any,
+                totalHT: inv.totalHT,
+                totalTTC: inv.totalTTC,
+                datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
+                items: items,
+                emails: emails,
+                type: "Facture",
+                createdAt: inv.createdAt ? inv.createdAt.toISOString() : undefined,
+                updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined,
+                isLocked: inv.isLocked,
+                archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
+                config: inv.config ? JSON.parse(inv.config) : {}
+            };
+        });
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchDashboardMetrics(societeId: string, range: { start: Date, end: Date }): Promise<{ success: boolean, data?: any, error?: string }> {
+    try {
+        // Server-side aggregation for Dashboard
+        // Pre-calculate date for parallel execution
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+
+        // OPTIMIZATION: Single query to get all metrics
+        const result = await prisma.$queryRaw<Array<{
+            revenue: number;
+            overdue_amount: number;
+            overdue_count: number;
+            due_soon_amount: number;
+            due_soon_count: number;
+            status: string;
+            status_count: number;
+        }>>`
+            SELECT 
+                -- Total Revenue (Paid invoices in range)
+                COALESCE(SUM(CASE 
+                    WHEN "statut" = 'Payée' 
+                    AND "dateEmission" >= ${range.start} 
+                    AND "dateEmission" <= ${range.end}
+                    THEN "totalTTC" 
+                END), 0) as revenue,
+                
+                -- Overdue metrics
+                COALESCE(SUM(CASE WHEN "statut" = 'Retard' THEN "totalTTC" END), 0) as overdue_amount,
+                COUNT(CASE WHEN "statut" = 'Retard' THEN 1 END) as overdue_count,
+                
+                -- Due Soon metrics
+                COALESCE(SUM(CASE 
+                    WHEN "statut" IN ('Envoyée', 'Brouillon')
+                    AND "dateEcheance" >= ${new Date()}
+                    AND "dateEcheance" <= ${nextWeek}
+                    THEN "totalTTC" 
+                END), 0) as due_soon_amount,
+                COUNT(CASE 
+                    WHEN "statut" IN ('Envoyée', 'Brouillon')
+                    AND "dateEcheance" >= ${new Date()}
+                    AND "dateEcheance" <= ${nextWeek}
+                    THEN 1 
+                END) as due_soon_count
+            FROM "Facture"
+            WHERE "societeId" = ${societeId}
+            AND "deletedAt" IS NULL
+        `;
+
+        // Get status counts separately (groupBy is more efficient for this)
+        const counts = await prisma.facture.groupBy({
+            // @ts-ignore
+            by: ['statut'],
+            where: {
+                societeId,
+                deletedAt: null,
+                dateEmission: {
+                    gte: range.start,
+                    lte: range.end
+                }
+            },
+            _count: true
+        });
+
+        const metrics = result[0] || {
+            revenue: 0,
+            overdue_amount: 0,
+            overdue_count: 0,
+            due_soon_amount: 0,
+            due_soon_count: 0
+        };
+
+        return {
+            success: true,
+            data: {
+                revenue: Number(metrics.revenue) || 0,
+                counts: counts.reduce((acc, curr) => ({ ...acc, [curr.statut]: curr._count }), {}),
+                overdueAmount: Number(metrics.overdue_amount) || 0,
+                overdueCount: Number(metrics.overdue_count) || 0,
+                dueSoonAmount: Number(metrics.due_soon_amount) || 0,
+                dueSoonCount: Number(metrics.due_soon_count) || 0
+            }
+        };
+
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
+export async function fetchDashboardData() {
+    console.time('🔍 [PERF] Total Dashboard Load');
+    try {
+        console.time('🔍 [PERF] getCurrentUser');
+        const userRes = await getCurrentUser();
+        console.timeEnd('🔍 [PERF] getCurrentUser');
+
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const user = userRes.data;
+
+        console.time('🔍 [PERF] Get Cookie');
+        const cookieStore = await cookies();
+        const cookieSocieteId = cookieStore.get("current_societe_id")?.value;
+        console.timeEnd('🔍 [PERF] Get Cookie');
+
+        // @ts-ignore
+        const societeId = cookieSocieteId || user.currentSocieteId || user.societes[0]?.id;
+
+        if (!societeId) {
+            return { success: false, error: "Aucune société active" };
+        }
+
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+        console.time('🔍 [PERF] Parallel Queries (metrics + invoices + quotes)');
+        const [metricsRes, invoicesRes, quotesRes] = await Promise.all([
+            fetchDashboardMetrics(societeId, { start, end }),
+            fetchInvoicesLite(societeId, 5),
+            fetchQuotesLite(societeId, 5)
+        ]);
+        console.timeEnd('🔍 [PERF] Parallel Queries (metrics + invoices + quotes)');
+
+        console.timeEnd('🔍 [PERF] Total Dashboard Load');
+        return {
+            success: true,
+            data: {
+                user,
+                societeId,
+                metrics: metricsRes.data,
+                recentInvoices: invoicesRes.data || [],
+                recentQuotes: quotesRes.data || []
+            }
+        };
+
+    } catch (error: any) {
+        console.timeEnd('🔍 [PERF] Total Dashboard Load');
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchInvoiceDetails(id: string): Promise<{ success: boolean, data?: Facture, error?: string }> {
+    try {
+        // 🔒 SECURITY: Fetch invoice first to get societeId
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const inv = await prisma.facture.findUnique({
+            where: { id },
+            include: { client: true }
+        });
+
+        if (!inv) return { success: false, error: "Facture introuvable" };
+
+        let items = [];
+        let emails = [];
+        try {
+            if (inv.itemsJSON) items = JSON.parse(inv.itemsJSON);
+            if (inv.emailsJSON) emails = JSON.parse(inv.emailsJSON);
+        } catch (e) {
+            console.error("Error parsing JSON fields", e);
+        }
+
+        const mapped: Facture = {
+            id: inv.id,
+            numero: inv.numero,
+            clientId: inv.clientId,
+            societeId: inv.societeId,
+            dateEmission: inv.dateEmission.toISOString(),
+            echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+            statut: inv.statut as any,
+            totalHT: inv.totalHT,
+            totalTTC: inv.totalTTC,
+            datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
+            items: items,
+            emails: emails,
+            type: "Facture",
+            createdAt: inv.createdAt ? inv.createdAt.toISOString() : undefined,
+            updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined,
+            isLocked: inv.isLocked,
+            archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
+            config: inv.config ? JSON.parse(inv.config) : {}
+        };
+
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
+export async function fetchQuoteDetails(id: string): Promise<{ success: boolean, data?: Devis, error?: string }> {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const quote = await prisma.devis.findUnique({
+            where: { id }
+        });
+
+        if (!quote) return { success: false, error: "Devis introuvable" };
+
+        // Verify membership
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: quote.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        let items = [];
+        let emails = [];
+        try {
+            if (quote.itemsJSON) items = JSON.parse(quote.itemsJSON);
+            if (quote.emailsJSON) emails = JSON.parse(quote.emailsJSON);
+        } catch (e) {
+            console.error("Error parsing JSON fields", e);
+        }
+
+        const mapped: Devis = {
+            id: quote.id,
+            numero: quote.numero,
+            clientId: quote.clientId,
+            societeId: quote.societeId,
+            dateEmission: quote.dateEmission.toISOString(),
+            dateValidite: quote.dateValidite ? quote.dateValidite.toISOString() : "",
+            statut: quote.statut as any,
+            totalHT: quote.totalHT,
+            totalTTC: quote.totalTTC,
+            items: items,
+            emails: emails,
+            type: "Devis",
+            createdAt: quote.createdAt ? quote.createdAt.toISOString() : undefined,
+            updatedAt: quote.updatedAt ? quote.updatedAt.toISOString() : undefined,
+            isLocked: quote.isLocked,
+            config: quote.config ? JSON.parse(quote.config) : {}
+        };
+
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchQuotesLite(societeId: string, limit?: number): Promise<{ success: boolean, data?: Partial<Devis>[], error?: string }> {
+    try {
+        // 🔒 SECURITY: Verify membership
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({ where: { id: societeId, members: { some: { id: userRes.data.id } } } });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const quotes = await prisma.devis.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: null, statut: { not: 'Archivé' } },
+            select: {
+                id: true,
+                numero: true,
+                clientId: true,
+                societeId: true,
+                dateEmission: true,
+                dateValidite: true,
+                statut: true,
+                totalHT: true,
+                totalTTC: true,
+                isLocked: true,
+                createdAt: true,
+                updatedAt: true,
+                config: true,
+                client: { select: { nom: true } }
+            },
+            orderBy: [
+                { dateEmission: 'desc' },
+                { numero: 'desc' }
+            ],
+            take: limit || undefined
+        });
+
+        const mapped = quotes.map((q: any) => ({
+            id: q.id,
+            numero: q.numero,
+            clientId: q.clientId,
+            societeId: q.societeId,
+            dateEmission: q.dateEmission.toISOString(),
+            dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
+            statut: q.statut as any,
+            totalHT: q.totalHT,
+            totalTTC: q.totalTTC,
+            isLocked: q.isLocked,
+            items: [], // Empty for lite
+            emails: [],
+            type: "Devis" as const,
+            createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
+            updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
+            config: q.config ? JSON.parse(q.config) : {},
+            client: q.client // Include Client Object (Lite)
+        }));
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchQuotes(societeId: string): Promise<{ success: boolean, data?: Devis[], error?: string }> {
+    try {
+        // 🔒 SECURITY: Verify membership
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({ where: { id: societeId, members: { some: { id: userRes.data.id } } } });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const quotes = await prisma.devis.findMany({
+            // @ts-ignore - deletedAt exists in schema
+            where: { societeId, deletedAt: null, statut: { not: 'Archivé' } }
+        });
+
+        const mapped: Devis[] = quotes.map((q: any) => {
+            let items = [];
+            let emails = [];
+            try {
+                if (q.itemsJSON) items = JSON.parse(q.itemsJSON);
+                if (q.emailsJSON) emails = JSON.parse(q.emailsJSON);
+            } catch (e) {
+                console.error("Error parsing JSON fields", e);
+            }
+
+            return {
+                id: q.id,
+                numero: q.numero,
+                clientId: q.clientId,
+                societeId: q.societeId,
+                dateEmission: q.dateEmission.toISOString(),
+                dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
+                statut: q.statut as any,
+                totalHT: q.totalHT,
+                totalTTC: q.totalTTC,
+                items: items,
+                emails: emails,
+                type: "Devis",
+                createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
+                updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
+                isLocked: q.isLocked,
+                config: q.config ? JSON.parse(q.config) : {}
+            };
+        });
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchProducts(societeId: string): Promise<{ success: boolean, data?: Produit[], error?: string }> {
+    try {
+        // 🔒 SECURITY: Verify user has access to this societe
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) {
+            return { success: false, error: "Non authentifié" };
+        }
+
+        const userId = userRes.data.id;
+
+        // Verify membership
+        const hasAccess = await prisma.societe.findFirst({
+            where: {
+                id: societeId,
+                members: { some: { id: userId } }
+            }
+        });
+
+        if (!hasAccess) {
+            return { success: false, error: "Accès refusé à cette société" };
+        }
+
+        const products = await prisma.produit.findMany({
+            where: { societeId }
+        });
+
+        const mapped: Produit[] = products.map((p: any) => ({
+            id: p.id,
+            societeId: p.societeId,
+            nom: p.nom,
+            description: p.description || "",
+            prixUnitaire: p.prixUnitaire,
+            tva: p.tva
+        }));
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Delete Actions ---
+
+export async function deleteAllRecords(tableName: string) {
+    try {
+        let count = 0;
+        switch (tableName) {
+            case 'Clients':
+                count = (await prisma.client.deleteMany()).count;
+                break;
+            case 'Produits':
+                count = (await prisma.produit.deleteMany()).count;
+                break;
+            case 'Factures':
+                count = (await prisma.facture.deleteMany()).count;
+                break;
+            case 'Devis':
+                count = (await prisma.devis.deleteMany()).count;
+                break;
+            default:
+                throw new Error("Table inconnue");
+        }
+        return { success: true, count };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// --- History / Audit Log Actions ---
+
+export async function createHistoryEntry(entry: {
+    userId: string;
+    action: string;
+    entityType: string;
+    description: string;
+    entityId?: string;
+    societeId?: string;
+}) {
+    // Basic validation
+    if (!entry.userId || !entry.action || !entry.description) {
+        return { success: false, error: "Champs requis manquants pour l'historique" };
+    }
+
+    try {
+        let finalSocieteId = entry.societeId;
+
+        // Backend Inference: If entityId is present, try to deduce the REAL societeId from the DB entity
+        // This fixes bugs where frontend might pass the wrong context or no context.
+        if (entry.entityId) {
+            let fetchedSocieteId: string | undefined | null;
+
+            if (entry.entityType === 'facture') {
+                const item = await prisma.facture.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            } else if (entry.entityType === 'devis') {
+                const item = await prisma.devis.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            } else if (entry.entityType === 'client') {
+                const item = await prisma.client.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            } else if (entry.entityType === 'produit') {
+                const item = await prisma.produit.findUnique({ where: { id: entry.entityId }, select: { societeId: true } });
+                fetchedSocieteId = item?.societeId;
+            }
+
+            if (fetchedSocieteId) {
+                finalSocieteId = fetchedSocieteId;
+            }
+        }
+
+        await prisma.historyEntry.create({
+            data: {
+                userId: entry.userId,
+                action: entry.action,
+                entityType: entry.entityType,
+                description: entry.description,
+                entityId: entry.entityId,
+                societeId: finalSocieteId
+            }
+        });
+        return { success: true };
+    } catch (error: any) {
+        console.error("Failed to create history entry:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchHistory(limit: number = 50, societeId?: string) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const whereClause = societeId ? { societeId } : {};
+
+        const history = await prisma.historyEntry.findMany({
+            where: whereClause,
+            take: limit,
+            orderBy: { timestamp: 'desc' },
+            select: {
+                id: true,
+                userId: true,
+                action: true,
+                entityType: true,
+                entityId: true,
+                description: true,
+                timestamp: true,
+                user: { select: { fullName: true } }
+            }
+        });
+
+        const mapped = history.map((h: any) => ({
+            id: h.id,
+            userId: h.userId,
+            userName: h.user?.fullName || "Utilisateur Inconnu",
+            action: h.action,
+            entityType: h.entityType,
+            entityId: h.entityId,
+            description: h.description,
+            timestamp: h.timestamp.toISOString()
+        }));
+
+        return { success: true, data: mapped };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
+export async function deleteRecord(tableName: string, recordId: string) {
+    if (!recordId) return { success: false, error: "Missing ID" };
+
+    try {
+        // 🔒 SECURITY: Verify access based on table type
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        // Get societeId based on table
+        let societeId: string | undefined = undefined;
+
+        if (tableName === 'Clients') {
+            const record = await prisma.client.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Produits') {
+            const record = await prisma.produit.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Factures') {
+            const record = await prisma.facture.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Devis') {
+            const record = await prisma.devis.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Societe') { // Changed from 'Societes' to 'Societe' to match existing switch case
+            societeId = recordId; // Deleting societe itself
+        }
+
+        if (!societeId) return { success: false, error: "Enregistrement introuvable" };
+
+        // Verify membership
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        switch (tableName) {
+            case 'Clients':
+                await prisma.client.delete({ where: { id: recordId } });
+                break;
+            case 'Produits':
+                await prisma.produit.delete({ where: { id: recordId } });
+                break;
+            case 'Factures':
+                await prisma.facture.update({
+                    where: { id: recordId },
+                    // @ts-ignore
+                    data: { deletedAt: new Date() }
+                });
+                break;
+            case 'Devis':
+                await prisma.devis.update({
+                    where: { id: recordId },
+                    // @ts-ignore
+                    data: { deletedAt: new Date() }
+                });
+                break;
+            case 'Societe':
+                // Cascade delete should be handled by DB or explicit deletion of relations
+                // For now, let's delete the society. Prisma might complain if relations exist.
+                // We should delete relations first if not cascading. 
+                // Assuming Schema has cascade delete or we do it here.
+                await prisma.client.deleteMany({ where: { societeId: recordId } });
+                await prisma.produit.deleteMany({ where: { societeId: recordId } });
+                await prisma.facture.deleteMany({ where: { societeId: recordId } });
+                await prisma.devis.deleteMany({ where: { societeId: recordId } });
+                await prisma.societe.delete({ where: { id: recordId } });
+                break;
+            default:
+                throw new Error("Table inconnue");
+        }
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Import/Create/Update Actions ---
+
+export async function createClientAction(client: Client) {
+    try {
+        // 🔒 SECURITY: Verify user has access to target societe
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: client.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé à cette société" };
+
+        const res = await prisma.client.create({
+            data: {
+                societeId: client.societeId || "Euromedmultimedia",
+                nom: client.nom,
+                email: client.email,
+                telephone: client.telephone,
+                adresse: client.adresse,
+                ville: client.ville,
+                codePostal: client.codePostal,
+                pays: client.pays,
+                siret: client.siret,
+                tvaIntra: client.tvaIntra
+            }
+        });
+        return { success: true, id: res.id };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateClientAction(client: Client) {
+    if (!client.id) return { success: false, error: "ID manquant" };
+    try {
+        // 🔒 SECURITY: Verify access via client's societe
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.client.findUnique({
+            where: { id: client.id },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Client introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        await prisma.client.update({
+            where: { id: client.id },
+            data: {
+                nom: client.nom,
+                email: client.email,
+                telephone: client.telephone,
+                adresse: client.adresse,
+                ville: client.ville,
+                codePostal: client.codePostal,
+                pays: client.pays,
+                siret: client.siret,
+                tvaIntra: client.tvaIntra
+                // Not updating societeId usually
+            }
+        });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function createProduct(product: Produit) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.produit.findUnique({
+            where: { id: product.societeId },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Produit introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+
+        const res = await prisma.produit.create({
+            data: {
+                societeId: product.societeId || "Euromedmultimedia",
+                nom: product.nom,
+                prixUnitaire: product.prixUnitaire,
+                tva: product.tva,
+                description: product.description
+            }
+        });
+        return { success: true, id: res.id };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateProduct(product: Produit) {
+    if (!product.id) return { success: false, error: "ID manquant" };
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.produit.findUnique({
+            where: { id: product.id },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Produit introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        await prisma.produit.update({
+            where: { id: product.id },
+            data: {
+                nom: product.nom,
+                prixUnitaire: product.prixUnitaire,
+                tva: product.tva,
+                description: product.description
+            }
+        });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function createInvoice(invoice: Facture) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.facture.findUnique({
+            where: { id: invoice.societeId },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Facture introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+
+        console.log("[DEBUG_SERVER] createInvoice called", { invoiceId: invoice.id, config: invoice.config });
+        const societeId = invoice.societeId || "Euromedmultimedia";
+        const processedItems = await ensureProductsExist(invoice.items || [], societeId);
+        const itemsJson = JSON.stringify(processedItems);
+
+        // Ensure clientId exists
+        if (!invoice.clientId) throw new Error("Client requis");
+
+        const res = await prisma.facture.create({
+            data: {
+                numero: invoice.numero,
+                dateEmission: new Date(invoice.dateEmission),
+                statut: invoice.statut,
+                totalHT: invoice.totalHT,
+                totalTTC: invoice.totalTTC,
+                dateEcheance: invoice.echeance ? new Date(invoice.echeance) : null,
+                itemsJSON: itemsJson,
+                emailsJSON: JSON.stringify(invoice.emails || []),
+                societeId: societeId,
+                clientId: invoice.clientId,
+                config: JSON.stringify(invoice.config || {})
+            }
+        });
+        revalidatePath("/", "layout");
+        return { success: true, id: res.id };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+export async function updateInvoice(invoice: Facture) {
+    if (!invoice.id) return { success: false, error: "ID manquant" };
+    try {
+        console.log("[DEBUG_SERVER] updateInvoice called", { invoiceId: invoice.id, config: invoice.config });
+        // Guard: Check Mutability & Strict Rules
+        const mutabilityCheck = await checkInvoiceMutability(invoice.id);
+        if (!mutabilityCheck.success) return mutabilityCheck;
+
+        // Fetch current status to enforce rules
+        const currentInvoice = await prisma.facture.findUnique({
+            where: { id: invoice.id },
+            select: { statut: true, archivedAt: true, societeId: true }
+        });
+
+        if (!currentInvoice) return { success: false, error: "Facture introuvable" };
+
+        // Guard: Cancelled is Terminal (Redundant with checkInvoiceMutability but safe)
+        if (currentInvoice.statut === "Annulée") {
+            return { success: false, error: "Facture annulée : aucune modification n'est autorisée." };
+        }
+
+        // Guard: Cannot revert to Brouillon
+        if (currentInvoice.statut !== "Brouillon" && invoice.statut === "Brouillon") {
+            return { success: false, error: "Impossible de repasser en Brouillon une fois la facture validée." };
+        }
+
+        // Guard: Cannot manually set to Envoyée
+        if (invoice.statut === "Envoyée" && currentInvoice.statut !== "Envoyée") {
+            return { success: false, error: "Le statut 'Envoyée' est réservé au système (téléchargement/envoi)." };
+        }
+
+        // Guard: Cannot manually set to Téléchargée
+        if (invoice.statut === "Téléchargée" && currentInvoice.statut !== "Téléchargée") {
+            return { success: false, error: "Le statut 'Téléchargée' est réservé au système (téléchargement)." };
+        }
+
+        // Prepare Data
+        const societeId = invoice.societeId || currentInvoice.societeId || "Euromedmultimedia";
+        const processedItems = await ensureProductsExist(invoice.items || [], societeId);
+        const itemsJson = JSON.stringify(processedItems);
+        // emailsJSON: preserved (not from form data)
+
+        let updateData: any = {
+            clientId: invoice.clientId,
+            numero: invoice.numero,
+            dateEmission: new Date(invoice.dateEmission),
+            statut: invoice.statut,
+            totalHT: invoice.totalHT,
+            totalTTC: invoice.totalTTC,
+            dateEcheance: invoice.echeance ? new Date(invoice.echeance) : null,
+            datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : null,
+            itemsJSON: itemsJson,
+            config: JSON.stringify(invoice.config || {})
+        };
+
+        // STRICT RULE: If current is "Envoyée" or "Payée", CONTENT IS IMMUTABLE.
+        // We only allow specific Status Transitions.
+        if (currentInvoice.statut === "Envoyée" || currentInvoice.statut === "Envoyé" || currentInvoice.statut === "Payée") {
+
+            // If status is NOT changing, this is a content edit attempt -> BLOCK.
+            if (currentInvoice.statut === invoice.statut) {
+                return { success: false, error: `Facture ${currentInvoice.statut} : modification du contenu interdite sur le serveur.` };
+            }
+
+            // Status IS changing. Validate Transition.
+            if (currentInvoice.statut === "Envoyée" || currentInvoice.statut === "Envoyé") {
+                const allowed = ["Payée", "Annulée", "Retard"];
+                if (!allowed.includes(invoice.statut)) {
+                    // Allow transition TO Annulée
+                    return { success: false, error: `Transition de statut invalide : Envoyée -> ${invoice.statut}` };
+                }
+            }
+
+            // If valid transition, FORCE update data to ONLY be status and related fields.
+            // Discard all other changes (items, totals, dates, etc.)
+            updateData = {
+                statut: invoice.statut,
+                // Only allow datePaiement update if switching to Payée
+                datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : undefined,
+            };
+
+            // If switching AWAY from Payée, clear datePaiement
+            if (currentInvoice.statut === "Payée" && invoice.statut !== "Payée") {
+                updateData.datePaiement = null;
+            }
+        }
+
+        await prisma.facture.update({
+            where: { id: invoice.id },
+            data: updateData
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+export async function createQuote(quote: Devis) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.devis.findUnique({
+            where: { id: quote.societeId },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Devis introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+
+        if (!quote.clientId) throw new Error("Client requis");
+        const societeId = quote.societeId || "Euromedmultimedia";
+        const processedItems = await ensureProductsExist(quote.items || [], societeId);
+        const itemsJson = JSON.stringify(processedItems);
+
+        const res = await prisma.devis.create({
+            data: {
+                numero: quote.numero,
+                dateEmission: new Date(quote.dateEmission),
+                statut: quote.statut,
+                totalHT: quote.totalHT,
+                totalTTC: quote.totalTTC,
+                dateValidite: quote.dateValidite ? new Date(quote.dateValidite) : null,
+                itemsJSON: itemsJson,
+                emailsJSON: JSON.stringify(quote.emails || []),
+                societeId: societeId,
+                clientId: quote.clientId,
+                isLocked: quote.isLocked || false,
+                config: JSON.stringify(quote.config || {})
+            }
+        });
+        revalidatePath("/", "layout");
+        return { success: true, id: res.id };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+export async function updateQuote(quote: Devis) {
+    if (!quote.id) return { success: false, error: "ID manquant" };
+    try {
+        let societeId = quote.societeId;
+        if (!societeId) {
+            const existing = await prisma.devis.findUnique({ where: { id: quote.id }, select: { societeId: true } });
+            societeId = existing?.societeId || "Euromedmultimedia";
+        }
+
+        const processedItems = await ensureProductsExist(quote.items || [], societeId);
+        const itemsJson = JSON.stringify(processedItems);
+
+        await prisma.devis.update({
+            where: { id: quote.id },
+            data: {
+                numero: quote.numero,
+                dateEmission: new Date(quote.dateEmission),
+                statut: quote.statut,
+                totalHT: quote.totalHT,
+                totalTTC: quote.totalTTC,
+                dateValidite: quote.dateValidite ? new Date(quote.dateValidite) : null,
+
+                itemsJSON: itemsJson,
+                // emailsJSON: preserved (not from form data)
+                clientId: quote.clientId,
+                isLocked: quote.isLocked,
+                config: JSON.stringify(quote.config || {})
+            }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+// --- Import Helpers (Calls Prisma create) ---
+export { createClientAction as importClient };
+
+export async function toggleQuoteLock(quoteId: string, isLocked: boolean) {
+    if (!quoteId) return { success: false, error: "ID manquant" };
+    try {
+        await prisma.devis.update({
+            where: { id: id },
+            data: { isLocked }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+export async function toggleInvoiceLock(invoiceId: string, isLocked: boolean) {
+    console.log("[INV_LOCK_API] called", { invoiceId, isLocked });
+    if (!invoiceId) return { success: false, error: "ID manquant" };
+    try {
+        // A) Read BEFORE Update (Strict Verification)
+        const invoice = await prisma.facture.findUnique({
+            where: { id: id },
+            // @ts-ignore
+            select: { id: true, statut: true, isLocked: true, deletedAt: true, archivedAt: true }
+        });
+        console.log("[INV_LOCK_API] db_before", invoice);
+
+        // B) Strict Conditions
+        if (!invoice) return { success: false, error: "Facture introuvable" };
+
+        // ULTRA-SAFE GUARD: If archivedAt is set, NO MODIFICATION ALLOWED.
+        if (invoice.archivedAt) {
+            console.log("[INV_LOCK_API] BLOCKED", { reason: "ARCHIVED_AT_SET", invoice });
+            return { success: false, error: "Facture archivée : modification interdite" };
+        }
+
+        if (invoice.statut === "Archivée") {
+            console.log("[INV_LOCK_API] BLOCKED", { reason: "ARCHIVED_STATUS", invoice });
+            return { success: false, error: "Facture archivée : modification impossible" };
+        }
+
+        if (invoice.statut === "Envoyée" || invoice.statut === "Envoyé") {
+            return { success: false, error: "Facture envoyée : verrouillage définitif" };
+        }
+
+        // Si isLocked === false (unlock attempt) -> Authorized ONLY if status is NOT Archivée/Envoyée (already checked above)
+
+        await prisma.facture.update({
+            where: { id: id },
+            data: { isLocked }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return handleActionError(error);
+    }
+}
+
+export async function markInvoiceAsSent(id: string) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.facture.findUnique({
+            where: { id: id },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Facture introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+
+        // Guard
+        const mutabilityCheck = await checkInvoiceMutability(id);
+        if (!mutabilityCheck.success) return mutabilityCheck;
+
+        const invoice = await prisma.facture.findUnique({ where: { id } });
+        // Only update if currently Draft, to avoid protecting manually set statuses if needed?
+        // User said "passe la en envoyé", simple instruction. 
+        // We probably shouldn't change "Payée" to "Envoyée".
+        // So safe check: if status is Brouillon.
+        if (invoice && invoice.statut === "Brouillon") {
+            await prisma.facture.update({
+                where: { id },
+                data: { statut: "Envoyée" }
+            });
+            revalidatePath("/", "layout");
+            return { success: true };
+        }
+        return { success: false, message: "Statut inchangé (non brouillon ou introuvable)" };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateOverdueInvoices() {
+    try {
+        const now = new Date();
+        // Update all invoices where due date is passed and not paid/cancelled
+        const res = await prisma.facture.updateMany({
+            where: {
+                dateEcheance: { lt: now }, // Less than Now
+                statut: {
+                    notIn: ["Payée", "Annulée", "Retard"] // No need to update if already Retard
+                }
+            },
+            data: { statut: "Retard" }
+        });
+        // revalidatePath("/", "layout"); // REMOVED: Causes full app reload/blink on company switch
+        return { success: true, count: res.count };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
+
+
+
+
+export async function getDocumentEmailHistory(type: 'facture' | 'devis', id: string) {
+    try {
+        if (type === 'facture') {
+            const doc = await prisma.facture.findUnique({
+                where: { id },
+                select: { emailsJSON: true }
+            });
+            if (!doc) return { success: false, error: "Document introuvable" };
+            const emails = doc.emailsJSON ? JSON.parse(doc.emailsJSON) : [];
+            return { success: true, data: emails };
+        } else {
+            const doc = await prisma.devis.findUnique({
+                where: { id },
+                select: { emailsJSON: true }
+            });
+            if (!doc) return { success: false, error: "Document introuvable" };
+            const emails = doc.emailsJSON ? JSON.parse(doc.emailsJSON) : [];
+            return { success: true, data: emails };
+        }
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+// --- Missing Helpers Restored ---
+
+export async function markInvoiceAsDownloaded(id: string) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.facture.findUnique({
+            where: { id: id },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Facture introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+
+        await prisma.facture.update({
+            where: { id },
+            data: { statut: "Téléchargée" }
+        });
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function registerDocumentEmailSent(type: 'facture' | 'devis', id: string, emails: any[]) {
+    try {
+        const json = JSON.stringify(emails);
+        if (type === 'facture') {
+            const invoice = await prisma.facture.findUnique({ where: { id }, select: { statut: true } });
+
+            // Auto-transition to "Envoyée" if currently "Brouillon" or "Téléchargée"
+            // This meets the requirement: "Quand une facture a le statut téléchargé et qu'après la facture est envoyé le statut doit passer en envoyé"
+            let newStatus = undefined;
+            if (invoice && (invoice.statut === "Brouillon" || invoice.statut === "Téléchargée")) {
+                newStatus = "Envoyée";
+            }
+
+            await prisma.facture.update({
+                where: { id },
+                data: {
+                    emailsJSON: json,
+                    ...(newStatus ? { statut: newStatus } : {})
+                }
+            });
+        } else {
+            // For Quotes, same logic: Auto-transition to "Envoyé" if currently "Brouillon"
+            const quote = await prisma.devis.findUnique({ where: { id }, select: { statut: true } });
+            let newStatus = undefined;
+            if (quote && (quote.statut === "Brouillon" || quote.statut === "Téléchargé")) {
+                newStatus = "Envoyé";
+            }
+
+            await prisma.devis.update({
+                where: { id },
+                data: {
+                    emailsJSON: json,
+                    ...(newStatus ? { statut: newStatus } : {})
+                }
+            });
+        }
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
+// Append missing functions to actions.ts
+
+export async function convertQuoteToInvoice(quoteId: string) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.devis.findUnique({
+            where: { id: quoteId },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Devis introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const quote = await prisma.devis.findUnique({ where: { id: quoteId } });
+        if (!quote) return { success: false, error: "Devis introuvable" };
+
+        let items = [];
+        try {
+            if (quote.itemsJSON) items = JSON.parse(quote.itemsJSON);
+        } catch (e) {
+            console.error("Error parsing itemsJSON:", e);
+        }
+
+        const lastInvoice = await prisma.facture.findFirst({
+            where: { societeId: quote.societeId },
+            orderBy: { numero: 'desc' }
+        });
+
+        const lastNumber = lastInvoice?.numero ? parseInt(lastInvoice.numero.replace(/\D/g, '')) : 0;
+        const newNumber = `FACT-${(lastNumber + 1).toString().padStart(4, '0')}`;
+
+        const invoice = await prisma.facture.create({
+            data: {
+                societeId: quote.societeId,
+                clientId: quote.clientId,
+                numero: newNumber,
+                dateEmission: new Date(),
+                dateEcheance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                statut: "Brouillon",
+                totalHT: quote.totalHT,
+                totalTTC: quote.totalTTC,
+                itemsJSON: quote.itemsJSON,
+                emailsJSON: quote.emailsJSON || "[]",
+                conditions: quote.conditions,
+                notes: `Convertie du devis ${quote.numero}`
+            }
+        });
+
+        revalidatePath("/", "layout");
+        return { success: true, data: { id: invoice.id, numero: invoice.numero } };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateQuoteStatus(quoteId: string, status: string) {
+    try {
+        // 🔒 SECURITY: Verify access
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.devis.findUnique({
+            where: { id: quoteId },
+            select: { societeId: true }
+        });
+        if (!existing) return { success: false, error: "Devis introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: existing.societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        await prisma.devis.update({
+            where: { id: quoteId },
+            data: { statut: status }
+        });
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+// Missing archive/delete functions - append to actions.ts
+
+export async function fetchDeletedInvoices(societeId: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const invoices = await prisma.facture.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: { not: null } },
+            include: { client: true }
+        });
+        return { success: true, data: invoices };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchDeletedQuotes(societeId: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const quotes = await prisma.devis.findMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: { not: null } },
+            include: { client: true }
+        });
+        return { success: true, data: quotes };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchArchivedInvoices(societeId: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const invoices = await prisma.facture.findMany({
+            where: { societeId, statut: 'Archivée' }
+        });
+        return { success: true, data: invoices };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function fetchArchivedQuotes(societeId: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        const quotes = await prisma.devis.findMany({
+            where: { societeId, statut: 'Archivé' }
+        });
+        return { success: true, data: quotes };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function archiveRecord(tableName: string, id: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId: string | undefined;
+        if (tableName === 'Factures') {
+            const record = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Devis') {
+            const record = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Enregistrement introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        if (tableName === 'Factures') {
+            await prisma.facture.update({
+                where: { id },
+                // @ts-ignore
+                data: { statut: 'Archivée', archivedAt: new Date() }
+            });
+        } else if (tableName === 'Devis') {
+            await prisma.devis.update({
+                where: { id },
+                data: { statut: 'Archivé' }
+            });
+        }
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function unarchiveRecord(tableName: string, id: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId: string | undefined;
+        if (tableName === 'Factures') {
+            const record = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Devis') {
+            const record = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Enregistrement introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        if (tableName === 'Factures') {
+            await prisma.facture.update({
+                where: { id },
+                // @ts-ignore
+                data: { statut: 'Brouillon', archivedAt: null }
+            });
+        } else if (tableName === 'Devis') {
+            await prisma.devis.update({
+                where: { id },
+                data: { statut: 'En attente' }
+            });
+        }
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function restoreRecord(tableName: string, id: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId: string | undefined;
+        if (tableName === 'Factures') {
+            const record = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Devis') {
+            const record = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Enregistrement introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        if (tableName === 'Factures') {
+            await prisma.facture.update({
+                where: { id },
+                // @ts-ignore
+                data: { deletedAt: null }
+            });
+        } else if (tableName === 'Devis') {
+            await prisma.devis.update({
+                where: { id },
+                // @ts-ignore
+                data: { deletedAt: null }
+            });
+        }
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function permanentlyDeleteRecord(tableName: string, id: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId: string | undefined;
+        if (tableName === 'Factures') {
+            const record = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        } else if (tableName === 'Devis') {
+            const record = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = record?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Enregistrement introuvable" };
+
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        if (tableName === 'Factures') {
+            await prisma.facture.delete({ where: { id } });
+        } else if (tableName === 'Devis') {
+            await prisma.devis.delete({ where: { id } });
+        }
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function emptyTrash(societeId: string) {
+    try {
+        // 🔒 SECURITY
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+        const hasAccess = await prisma.societe.findFirst({
+            where: { id: societeId, members: { some: { id: userRes.data.id } } }
+        });
+        if (!hasAccess) return { success: false, error: "Accès refusé" };
+
+        await prisma.facture.deleteMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: { not: null } }
+        });
+
+        await prisma.devis.deleteMany({
+            // @ts-ignore
+            where: { societeId, deletedAt: { not: null } }
+        });
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}

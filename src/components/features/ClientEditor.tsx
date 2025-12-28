@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
-import { createClient, updateClient } from "@/app/actions";
+import { createClientAction, updateClientAction as updateClient } from "@/app/actions-clients";
 import { Client } from "@/types";
 import { COUNTRIES } from "@/lib/countries";
 import Link from "next/link";
@@ -29,11 +29,12 @@ interface ClientFormValues {
     nomContact: string;
 }
 
-export function ClientEditor({ initialData }: { initialData?: Client }) {
+export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData?: Client, onSuccess?: (clientId: string) => void, onCancel?: () => void }) {
     const { refreshData, societe, setIsDirty, confirm, logAction } = useData();
     const router = useRouter();
     const searchParams = useSearchParams();
     const returnUrl = searchParams.get("returnUrl");
+
     const [countryOpen, setCountryOpen] = useState(false);
     const [countrySearch, setCountrySearch] = useState(initialData?.pays || "France");
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -123,7 +124,7 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
 
             if (isNew) {
                 // CREATE
-                const res = await createClient(clientData);
+                const res = await createClientAction(clientData);
                 if (!res.success || !res.id) {
                     throw new Error(res.error || "Erreur lors de la création");
                 }
@@ -142,6 +143,11 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
             await refreshData();
             toast.success("Client enregistré avec succès !");
 
+            if (onSuccess) {
+                onSuccess(clientData.id);
+                return;
+            }
+
             setTimeout(() => {
                 if (returnUrl) {
                     const separator = returnUrl.includes('?') ? '&' : '?';
@@ -158,42 +164,39 @@ export function ClientEditor({ initialData }: { initialData?: Client }) {
         }
     };
 
-    const handleBack = () => {
-        if (isDirty) {
-            // Need to import confirm from useData if not already
-            // Wait, useData in this file returns { refreshData, societe, setIsDirty }
-            // I need to update the destructuring in the component signature
-            // But I can't do it here easily since I'm replacing a specific block.
-            // I will assume I can access it or update the destructuring below.
-            // Actually, I should update the destructuring first or in this same call?
-            // No, I updated it to: const { refreshData, societe, setIsDirty } = useData();
-            // I need to add `confirm` there.
-        }
-    }
+    // ... (handleBack logic used if not in modal)
 
-    // Actually, I'll do a button that calls a function, and I'll add the hook implementation in a separate edit or multireplace.
-    // Let's use MultiReplace to add `confirm` to useData AND change the button.
     return (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (isDirty) {
-                                confirm({
-                                    title: "Modifications non enregistrées",
-                                    message: "Voulez-vous vraiment quitter ?",
-                                    onConfirm: () => router.push("/clients")
-                                });
-                            } else {
-                                router.push("/clients");
-                            }
-                        }}
-                        className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                    >
-                        <ArrowLeft className="h-5 w-5" />
-                    </button>
+                    {onCancel ? (
+                        <button
+                            type="button"
+                            onClick={onCancel}
+                            className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (isDirty) {
+                                    confirm({
+                                        title: "Modifications non enregistrées",
+                                        message: "Voulez-vous vraiment quitter ?",
+                                        onConfirm: () => router.push("/clients")
+                                    });
+                                } else {
+                                    router.push("/clients");
+                                }
+                            }}
+                            className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </button>
+                    )}
                     <div>
                         <h2 className="text-3xl font-bold tracking-tight text-foreground">{initialData ? "Modifier le Client" : "Nouveau Client"}</h2>
                         <p className="text-muted-foreground mt-1">Saisissez les informations du client.</p>

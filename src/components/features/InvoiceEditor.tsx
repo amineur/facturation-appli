@@ -23,6 +23,7 @@ import { EmailComposer } from "@/components/features/EmailComposer";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, Clock } from "lucide-react";
 import Link from "next/link";
+import { ClientEditor } from "./ClientEditor";
 
 
 
@@ -172,9 +173,16 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
     });
 
+    // State Declarations
     const [isClientOpen, setIsClientOpen] = useState(false);
     const [clientSearch, setClientSearch] = useState("");
+    const [isClientModalOpen, setIsClientModalOpen] = useState(false); // Modal state
+    const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false); // Confirmation modal
     const [isSaving, setIsSaving] = useState(false);
+
+    // Refs
+    // const nextActionRef... (already there)
+    const clientDropdownRef = useRef<HTMLDivElement>(null);
 
     // --- LOCK LOGIC: CLEAN REIMPLEMENTATION ---
 
@@ -350,8 +358,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             }
 
         }, (errors) => {
-            console.error("[DEBUG] Validation Errors:", errors);
-            toast.error("Formulaire invalide (champs manquants)");
+            console.error("[DEBUG] Validation Errors:", JSON.stringify(errors, null, 2));
+            const missingFields = Object.keys(errors).join(", ");
+            toast.error(`Formulaire invalide : ${missingFields || "champs manquants"}`);
         })();
     };
 
@@ -424,9 +433,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     });
 
     // Close settings on click outside
-    // Close settings on click outside
+    // settingsRef is defined above or here once
     const settingsRef = useRef<HTMLDivElement>(null);
-    const clientDropdownRef = useRef<HTMLDivElement>(null);
+    // clientDropdownRef removed here (moved to top)
+
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -569,6 +579,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             setValue(`items.${index}.prixUnitaire`, matchingProduct.prixUnitaire, { shouldDirty: true });
             setValue(`items.${index}.tva`, matchingProduct.tva, { shouldDirty: true });
             setValue(`items.${index}.produitId`, matchingProduct.id, { shouldDirty: true });
+        } else {
+            // Important: if user types a name that doesn't match, clear the ID 
+            // so the backend knows to treat it as a potential new product to auto-create.
+            setValue(`items.${index}.produitId`, undefined, { shouldDirty: true });
         }
     };
 
@@ -598,7 +612,9 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             // Detailed Item Validation
             let hasInvalidItems = false;
 
-            console.log("[DEBUG] onSubmit Payload:", JSON.stringify(data, null, 2));
+            console.log("[DEBUG_CLIENT] onSubmit triggered. Data:", JSON.stringify(data, null, 2));
+            console.log("[DEBUG_CLIENT] Client ID:", data.clientId);
+            console.log("[DEBUG_CLIENT] Items count:", data.items?.length);
 
             data.items.forEach((item, index) => {
                 // Ensure numbers
@@ -707,12 +723,17 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             } as unknown as Facture | Devis;
 
             // --- 3. Server Submission ---
+            console.log("[DEBUG_CLIENT] Calling Server Action. Type:", type, "ID:", initialData?.id);
             let result;
             if (type === "Facture") {
                 if (initialData?.id) {
+                    console.log("[DEBUG_CLIENT] Invoking updateInvoice...");
                     result = await updateInvoice(documentData as Facture);
+                    console.log("[DEBUG_CLIENT] updateInvoice returned:", result);
                 } else {
+                    console.log("[DEBUG_CLIENT] Invoking createInvoice...");
                     result = await createInvoice(documentData as Facture);
+                    console.log("[DEBUG_CLIENT] createInvoice returned:", result);
                 }
             } else {
                 if (initialData?.id) {
@@ -740,7 +761,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             await logAction(actionType, entityType, description, savedId);
 
-            refreshData();
+            // OPTIMIZATION: Restore refreshData to ensure list is updated
+            await refreshData();
 
             // Simulate a brief delay to show the loading state
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -765,10 +787,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 // The form will show updated data via refreshData() call above
             }
         } catch (error: any) {
-            console.error("Critical Error saving:", error);
+            console.error("[DEBUG_CLIENT] Critical Error saving:", error);
             // This catches unexpected client-side crashes not handled by result.success
             toast.error("Erreur critique: " + error.message);
         } finally {
+            // console.log("[DEBUG_CLIENT] Finally block - setIsSaving(false)");
             setIsSaving(false);
         }
     };
@@ -887,12 +910,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
     };
 
-    // Derived state for filtered clients
     const filteredClients = clients.filter(client =>
-        client.nom.toLowerCase().includes(clientSearch.toLowerCase())
+        client.nom.toLowerCase().includes(clientSearch.toLowerCase()) ||
+        client.email?.toLowerCase().includes(clientSearch.toLowerCase())
     );
-
-    // Get selected client name for display
     const selectedClientId = watch("clientId");
     const selectedClient = clients.find(c => c.id === selectedClientId);
 
@@ -904,7 +925,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
 
     // Unsaved Changes Modal State
-    const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+    // Cleaned up duplicates
 
     // Warn on unsaved changes
     useEffect(() => {
@@ -1373,13 +1394,17 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                             )}
                                         </div>
                                         <div className="p-2 border-t border-border dark:border-white/5 bg-muted/50 dark:bg-white/5">
-                                            <Link
-                                                href="/clients/new"
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsClientOpen(false);
+                                                    setIsClientModalOpen(true);
+                                                }}
                                                 className="w-full px-3 py-2 rounded-md text-sm flex items-center gap-2 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 transition-colors"
                                             >
                                                 <Plus className="h-4 w-4" />
                                                 Créer un nouveau client
-                                            </Link>
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -2045,11 +2070,26 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 message="Des modifications ont été apportées. Êtes-vous sûr de vouloir quitter sans enregistrer ?"
 
             />
-        </FormProvider >
+            {/* Client Creation Modal */}
+            {isClientModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-background dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl border border-border dark:border-white/10 p-6 animate-in zoom-in-95 duration-200">
+                        <ClientEditor
+                            onSuccess={(newClientId) => {
+                                setIsClientModalOpen(false);
+                                setValue("clientId", newClientId); // Auto select new client
+                            }}
+                            onCancel={() => setIsClientModalOpen(false)}
+                        />
+                    </div>
+                </div>
+            )}
+        </FormProvider>
     );
 }
 
 function StatusBadge({ status, type, onChange, readOnly }: { status: string, type: "Facture" | "Devis", onChange: (s: string) => void, readOnly?: boolean }) {
+    // Restore State
     const [isOpen, setIsOpen] = useState(false);
     const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
