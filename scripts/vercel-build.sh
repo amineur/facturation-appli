@@ -8,6 +8,6 @@ else
   echo "ℹ️ [Safe Mode] Local build detected. Skipping auto-migration to protect production DB."
 fi
 
-# Always run the Next.js build
-echo "📦 Building Next.js App..."
-next build
+# Always run the Next.js build using Webpack (required for custom config)
+echo "📦 Building Next.js App (Webpack Mode)..."
+next build --webpack
