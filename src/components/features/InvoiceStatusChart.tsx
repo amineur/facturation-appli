@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, useEffect, useRef, cloneElement, isValidElement } from "react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+// Optimized Recharts imports
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Facture } from "@/types";
 
 // Robust Guard to prevent Recharts from rendering with invalid dimensions

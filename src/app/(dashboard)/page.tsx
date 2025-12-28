@@ -12,12 +12,29 @@ import {
     Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { InvoiceStatusChart } from "@/components/features/InvoiceStatusChart";
-import { QuoteStatusChart } from "@/components/features/QuoteStatusChart";
+import dynamic from 'next/dynamic';
+import { LazyIdle } from "@/components/utils/LazyIdle";
+import { Skeleton } from "@/components/ui/skeleton";
 import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay, subMonths } from "date-fns";
 import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 import { fetchDashboardMetrics } from "@/app/actions";
-import { Skeleton } from "@/components/ui/skeleton";
+
+const InvoiceStatusChart = dynamic(() => import("@/components/features/InvoiceStatusChart").then(mod => mod.InvoiceStatusChart), {
+    loading: () => (
+        <div className="glass-card rounded-2xl p-6">
+            <Skeleton className="h-[300px] w-full" />
+        </div>
+    ),
+    ssr: false
+});
+const QuoteStatusChart = dynamic(() => import("@/components/features/QuoteStatusChart").then(mod => mod.QuoteStatusChart), {
+    loading: () => (
+        <div className="glass-card rounded-2xl p-6">
+            <Skeleton className="h-[300px] w-full" />
+        </div>
+    ),
+    ssr: false
+});
 
 type DateRangeType = "month" | "custom" | "3months" | "total";
 export default function DashboardPage() {
@@ -129,18 +146,6 @@ export default function DashboardPage() {
     const chartData = useMemo(() => {
         if (!serverMetrics) return [];
         return [
-            { name: "Payée", value: serverMetrics.revenue, color: "#10B981" }, // Note: This was revenue in original, checks logic
-            // Actually original used: { name: "Payé (Période)", value: caPeriod... }
-            // Let's stick to simple counts or amounts based on available data?
-            // The previous logic used Amounts for the Pie Chart.
-            // The server action returns 'counts' and 'revenue'. 
-            // We might need to ask server for 'amounts by status' if we want a Value-based Pie Chart.
-            // For now, let's use Counts for the chart to save complexity or assume functionality.
-            // ACTUALLY, checking previous code:
-            // "const chartData = [ { name: "Payé..", value: caPeriod } ... ]" -> It was VALUE (Amount).
-            // My server action currently returns aggregated totalRevenue, but not broken down by status for everything.
-            // Let's accept this limitation for the first pass or update server action.
-            // Simplification: We will hide the chart data or mock it until server action is updated for full breakdowns.
             { name: "Payée", value: serverMetrics.counts["Payée"] || 0, color: "#10B981" },
             { name: "Retard", value: serverMetrics.counts["Retard"] || 0, color: "#EF4444" },
             { name: "Brouillon", value: serverMetrics.counts["Brouillon"] || 0, color: "#94A3B8" }
@@ -212,6 +217,7 @@ export default function DashboardPage() {
                             type="date"
                             value={customStart}
                             onChange={(e) => handleDateChange('start', e.target.value)}
+                            aria-label="Filtrer par date de début"
                             className="bg-transparent border border-gray-200 dark:border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] dark:text-white"
                         />
                         <span className="text-sm text-muted-foreground">au</span>
@@ -219,6 +225,7 @@ export default function DashboardPage() {
                             type="date"
                             value={customEnd}
                             onChange={(e) => handleDateChange('end', e.target.value)}
+                            aria-label="Filtrer par date de fin"
                             className="bg-transparent border border-gray-200 dark:border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] dark:text-white"
                         />
                     </div>
@@ -243,14 +250,26 @@ export default function DashboardPage() {
                         {isLoadingMetrics ? (
                             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                         ) : chartMode === "factures" ? (
-                            <InvoiceStatusChart
-                                invoices={[]} // Not needed if we pass chartData directly? Adjusted component logic needed.
-                                globalInvoices={[]} // Adjusted
-                                chartData={chartData}
-                                totalOverdue={metrics.overdueAmount}
-                            />
+                            <LazyIdle placeholder={
+                                <div className="glass-card rounded-2xl p-6 w-full">
+                                    <Skeleton className="h-[300px] w-full" />
+                                </div>
+                            }>
+                                <InvoiceStatusChart
+                                    invoices={[]}
+                                    globalInvoices={[]}
+                                    chartData={chartData}
+                                    totalOverdue={metrics.overdueAmount}
+                                />
+                            </LazyIdle>
                         ) : (
-                            <QuoteStatusChart quotes={quotes} globalQuotes={quotes} /> // Keep quotes client-side for now
+                            <LazyIdle placeholder={
+                                <div className="glass-card rounded-2xl p-6 w-full">
+                                    <Skeleton className="h-[300px] w-full" />
+                                </div>
+                            }>
+                                <QuoteStatusChart quotes={quotes} globalQuotes={quotes} />
+                            </LazyIdle>
                         )}
                     </div>
                 </div>

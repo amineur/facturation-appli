@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Bell, Search, History, ChevronDown, User, Settings, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { dataService } from "@/lib/data-service";
@@ -11,11 +12,23 @@ import { HistoryDropdown } from "@/components/features/HistoryDropdown";
 export function Header() {
     const router = useRouter();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const { user } = useData();
+    const { user, isLoading } = useData();
 
     const handleLogout = () => {
         dataService.logout();
     };
+
+    // Optimistic fallback from localStorage
+    const [cachedName, setCachedName] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem("glassy_user_name_cache");
+            if (cached) setCachedName(cached);
+        }
+    }, []);
+
+    const displayName = user?.fullName || cachedName || (isLoading ? "" : "Utilisateur");
 
     return (
         <header className="flex h-16 items-center justify-between border-b border-white/10 px-6 glass sticky top-0 z-10 w-full">
@@ -36,18 +49,26 @@ export function Header() {
                     >
                         <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-500/20 overflow-hidden border border-white/10">
                             {user?.hasAvatar ? (
-                                <img
-                                    src={`/api/users/avatar/${user.id}?t=${user.updatedAt ? new Date(user.updatedAt).getTime() : 0}`}
+                                <Image
+                                    src={`/api/users/avatar/${user.id}?size=60`}
                                     alt="User"
+                                    width={60}
+                                    height={60}
                                     className="h-full w-full object-cover"
                                 />
                             ) : (
-                                user?.fullName?.charAt(0) || "U"
+                                displayName.charAt(0) || "U"
                             )}
                         </div>
                         <div className="hidden text-left md:block">
-                            <p className="text-sm font-medium text-foreground">{user?.fullName || "Utilisateur"}</p>
-                            <p className="text-xs text-muted-foreground">{user?.email}</p>
+                            <p className="text-sm font-medium text-foreground">
+                                {isLoading && !user ? (
+                                    <span className="animate-pulse bg-white/10 h-4 w-24 block rounded"></span>
+                                ) : (
+                                    displayName
+                                )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{user?.email || (isLoading ? <span className="animate-pulse bg-white/10 h-3 w-32 block rounded mt-1"></span> : "")}</p>
                         </div>
                         <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
                     </button>

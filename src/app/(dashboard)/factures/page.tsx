@@ -13,7 +13,8 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
-import { deleteRecord, updateInvoice, markInvoiceAsSent, createClient, createInvoice, markInvoiceAsDownloaded } from "@/app/actions";
+import { deleteRecord, updateInvoice, markInvoiceAsSent, createInvoice, markInvoiceAsDownloaded } from "@/app/actions";
+import { createClientAction as createClient } from "@/app/actions-clients";
 import { EmailComposer } from "@/components/features/EmailComposer";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, X } from "lucide-react";
@@ -52,7 +53,7 @@ export default function InvoicesPageWrapper() {
 }
 
 function InvoicesPage() {
-    const { invoices, clients, societe, refreshData, logAction, confirm } = useData();
+    const { invoices, clients, societe, refreshData, logAction, confirm, removeInvoice, updateInvoiceInList } = useData();
     const router = useRouter();
     const searchParams = useSearchParams();
     const [searchTerm, setSearchTerm] = useState("");
@@ -108,6 +109,10 @@ function InvoicesPage() {
             logAction('read', 'facture', `Facture ${facture.numero} téléchargée`, facture.id);
 
             if (facture.statut === "Brouillon") {
+                const updatedInvoice = { ...facture, statut: "Téléchargée" as StatusFacture };
+                // Optimistic
+                updateInvoiceInList(updatedInvoice);
+
                 markInvoiceAsDownloaded(facture.id).then((res) => {
                     if (res.success) {
                         logAction('update', 'facture', `Statut Facture ${facture.numero} changé pour Téléchargée (Download)`, facture.id);
@@ -209,14 +214,25 @@ function InvoicesPage() {
             message: "Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.",
             onConfirm: async () => {
                 const invoiceToDelete = invoices.find(i => i.id === id);
-                await deleteRecord('Factures', id);
-                dataService.deleteInvoice(id);
-                if (invoiceToDelete) {
-                    const clientName = clients.find(c => c.id === invoiceToDelete.clientId)?.nom || "Client inconnu";
-                    logAction('delete', 'facture', `A mis à la corbeille la facture ${invoiceToDelete.numero} pour ${clientName}`, id);
-                }
-                refreshData();
+
+                // Optimistic Update
+                removeInvoice(id);
                 toast.success("Facture mise à la corbeille");
+
+                // Async Background
+                try {
+                    await deleteRecord('Factures', id);
+                    dataService.deleteInvoice(id);
+                    if (invoiceToDelete) {
+                        const clientName = clients.find(c => c.id === invoiceToDelete.clientId)?.nom || "Client inconnu";
+                        logAction('delete', 'facture', `A mis à la corbeille la facture ${invoiceToDelete.numero} pour ${clientName}`, id);
+                    }
+                    refreshData(); // Sync exact state eventually
+                } catch (e) {
+                    console.error(e);
+                    toast.error("Erreur lors de la suppression (restauration recommandée)");
+                    refreshData(); // Revert on error
+                }
             }
         });
     };
@@ -237,15 +253,25 @@ function InvoicesPage() {
             datePaiement: newStatus === "Payée" ? paymentDate : undefined
         };
 
-        await updateInvoice(updatedInvoice);
-        dataService.saveInvoice(updatedInvoice);
-
-        const clientName = clients.find(c => c.id === selectedInvoice.clientId)?.nom || "Client inconnu";
-        logAction('update', 'facture', `Statut Facture ${selectedInvoice.numero} changé pour ${newStatus} (Client: ${clientName})`, selectedInvoice.id);
-
-        refreshData();
-        setStatusModalOpen(false);
+        // Optimistic
+        updateInvoiceInList(updatedInvoice);
+        setStatusModalOpen(false); // Close immediately
         setSelectedInvoice(null);
+
+        // Async Background
+        try {
+            await updateInvoice(updatedInvoice);
+            dataService.saveInvoice(updatedInvoice);
+
+            const clientName = clients.find(c => c.id === selectedInvoice.clientId)?.nom || "Client inconnu";
+            logAction('update', 'facture', `Statut Facture ${selectedInvoice.numero} changé pour ${newStatus} (Client: ${clientName})`, selectedInvoice.id);
+
+            refreshData(); // Sync Eventually
+        } catch (e) {
+            console.error(e);
+            toast.error("Erreur lors de la mise à jour du statut");
+            refreshData(); // Revert
+        }
     };
 
     const parseFrenchNumber = (str: string) => {

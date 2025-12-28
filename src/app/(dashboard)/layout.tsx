@@ -1,8 +1,7 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { FaviconUpdater } from "@/components/features/FaviconUpdater";
-import { MobileNav } from "@/components/layout/MobileNav";
-import { MobileHeader } from "@/components/layout/MobileHeader";
+import { MobileNav, MobileHeader } from "@/components/layout/MobileLazyLoaders";
 import { Metadata } from "next";
 import { getCurrentUser } from "@/app/actions";
 import { redirect } from "next/navigation";

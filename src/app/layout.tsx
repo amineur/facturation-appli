@@ -4,8 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DataProvider } from "@/components/data-provider";
 import { Toaster } from "sonner";
-import { FaviconUpdater } from "@/components/features/FaviconUpdater";
-import { DebugLogger } from "@/components/features/DebugLogger";
+import { FaviconUpdater, DebugLogger } from "@/components/features/GlobalLazyLoaders";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
