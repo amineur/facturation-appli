@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
       'lucide-react',
       'date-fns'
     ],
+    // Optimize CSS delivery
+    optimizeCss: true,
   },
   // Compiler options for production optimization
   compiler: {

@@ -83,8 +83,14 @@ async function fetchQuotesLegacy(societeId: string): Promise<{ success: boolean,
             let items = [];
             let emails = [];
             try {
-                if (q.itemsJSON) items = JSON.parse(q.itemsJSON);
-                if (q.emailsJSON) emails = JSON.parse(q.emailsJSON);
+                if (q.itemsJSON) {
+                    const parsed = JSON.parse(q.itemsJSON);
+                    items = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                }
+                if (q.emailsJSON) {
+                    const parsed = JSON.parse(q.emailsJSON);
+                    emails = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                }
             } catch (e) {
                 console.error("Error parsing JSON fields", e);
             }
@@ -105,7 +111,13 @@ async function fetchQuotesLegacy(societeId: string): Promise<{ success: boolean,
                 createdAt: q.createdAt ? q.createdAt.toISOString() : undefined,
                 updatedAt: q.updatedAt ? q.updatedAt.toISOString() : undefined,
                 isLocked: q.isLocked,
-                config: q.config ? JSON.parse(q.config) : {}
+                config: (() => {
+                    if (!q.config) return {};
+                    try {
+                        const parsed = JSON.parse(q.config);
+                        return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                    } catch { return {}; }
+                })()
             };
         });
         return { success: true, data: mapped };
@@ -134,9 +146,15 @@ export async function fetchQuoteDetails(id: string): Promise<{ success: boolean,
         let emails = [];
         try {
             // @ts-ignore
-            if (q.itemsJSON) items = JSON.parse(q.itemsJSON);
+            if (q.itemsJSON) {
+                const parsed = JSON.parse(q.itemsJSON);
+                items = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+            }
             // @ts-ignore
-            if (q.emailsJSON) emails = JSON.parse(q.emailsJSON);
+            if (q.emailsJSON) {
+                const parsed = JSON.parse(q.emailsJSON);
+                emails = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+            }
         } catch (e) {
             console.error("Error parsing JSON fields", e);
         }
@@ -158,7 +176,13 @@ export async function fetchQuoteDetails(id: string): Promise<{ success: boolean,
             updatedAt: q.updatedAt.toISOString(),
             isLocked: q.isLocked,
             // @ts-ignore
-            config: q.config ? JSON.parse(q.config) : {}
+            config: (() => {
+                if (!q.config) return {};
+                try {
+                    const parsed = JSON.parse(q.config);
+                    return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                } catch { return {}; }
+            })()
         };
         return { success: true, data: mapped };
     } catch (error: any) {
@@ -335,6 +359,7 @@ export async function convertQuoteToInvoice(quoteId: string) {
                 itemsJSON: itemsJson,
                 totalHT: quote.totalHT,
                 totalTTC: quote.totalTTC,
+                config: quote.config || JSON.stringify({}), // Preserve quote config
             }
         });
 

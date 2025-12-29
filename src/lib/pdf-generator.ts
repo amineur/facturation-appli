@@ -1,17 +1,10 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Facture, Devis, Societe, Client, PdfTemplate } from "@/types";
+import { Facture, Devis, Societe, Client } from "@/types";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { dataService } from "./data-service";
 
-// Helper: Hex to RGB
-const hexToRgb = (hex: string): [number, number, number] => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result
-        ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
-        : [0, 0, 0];
-};
+
 
 export const generateInvoicePDF = (
     document: Facture | Devis,
@@ -20,13 +13,29 @@ export const generateInvoicePDF = (
     options?: {
         returnBlob?: boolean;
         returnBase64?: boolean;
-        templateOverride?: PdfTemplate;
     }
 ) => {
     try {
-        // Load Defaults but mostly override with User Request logic
-        // We still respect colors from Template if provided, otherwise default to Reference style.
-        const template: PdfTemplate = options?.templateOverride || dataService.getPdfTemplate();
+        // Input validation
+        if (!document || !societe || !client) {
+            console.error("[PDF] Missing required data:", { document: !!document, societe: !!societe, client: !!client });
+            throw new Error("Données manquantes pour générer le PDF");
+        }
+        if (!document.numero) {
+            console.error("[PDF] Missing document number");
+            throw new Error("Numéro de document manquant");
+        }
+        // Ensure config is an object
+        if (document.config && typeof document.config === 'string') {
+            try {
+                document.config = JSON.parse(document.config);
+            } catch {
+                document.config = {};
+            }
+        }
+        if (!document.config || typeof document.config !== 'object') {
+            document.config = {};
+        }
 
         // --- HARDCODED REFERENCE STYLE ---
         // User requested to "Reproduce the layout", implying strict adherence to the new design.

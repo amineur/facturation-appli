@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, Suspense } from "react";
+import { useState, useRef, useEffect, Suspense, useMemo } from "react";
 import Link from "next/link";
 import { Plus, Search, Filter, ArrowUpRight, ArrowDownLeft, Clock, AlertCircle, FileText, MoreHorizontal, Download, Send, Trash2, Eye, CheckCircle, Pencil } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -193,42 +193,51 @@ function InvoicesPage() {
         }
     };
 
-    const filteredInvoices = invoices.filter(facture => {
-        const client = clients.find(c => c.id === facture.clientId);
-        const searchLower = searchTerm.toLowerCase();
+    const { filteredInvoices, invoicesByMonth, sortedMonthKeys, totalFilteredTTC } = useMemo(() => {
+        const filtered = invoices.filter(facture => {
+            const client = clients.find(c => c.id === facture.clientId);
+            const searchLower = searchTerm.toLowerCase();
 
-        const matchesSearch =
-            facture.numero.toLowerCase().includes(searchLower) ||
-            (client?.nom || "").toLowerCase().includes(searchLower) ||
-            facture.totalTTC.toString().includes(searchLower) ||
-            facture.totalTTC.toLocaleString("fr-FR", { minimumFractionDigits: 2 }).includes(searchLower);
+            const matchesSearch =
+                facture.numero.toLowerCase().includes(searchLower) ||
+                (client?.nom || "").toLowerCase().includes(searchLower) ||
+                facture.totalTTC.toString().includes(searchLower) ||
+                facture.totalTTC.toLocaleString("fr-FR", { minimumFractionDigits: 2 }).includes(searchLower);
 
-        const matchesStatus = statusFilter === "ALL" || facture.statut === statusFilter;
+            const matchesStatus = statusFilter === "ALL" || facture.statut === statusFilter;
 
-        return matchesSearch && matchesStatus;
-    });
+            return matchesSearch && matchesStatus;
+        });
 
-    // Group invoices by month
-    const invoicesByMonth = filteredInvoices.reduce((groups, invoice) => {
-        const date = new Date(invoice.dateEmission);
-        const monthKey = isNaN(date.getTime()) ? "Dates Invalides" : format(date, "MMMM yyyy", { locale: fr });
+        // Group invoices by month
+        const byMonth = filtered.reduce((groups, invoice) => {
+            const date = new Date(invoice.dateEmission);
+            const monthKey = isNaN(date.getTime()) ? "Dates Invalides" : format(date, "MMMM yyyy", { locale: fr });
 
-        if (!groups[monthKey]) {
-            groups[monthKey] = [];
-        }
-        groups[monthKey].push(invoice);
-        return groups;
-    }, {} as Record<string, typeof invoices>);
+            if (!groups[monthKey]) {
+                groups[monthKey] = [];
+            }
+            groups[monthKey].push(invoice);
+            return groups;
+        }, {} as Record<string, typeof invoices>);
 
-    const sortedMonthKeys = Object.keys(invoicesByMonth).sort((a, b) => {
-        if (a === "Dates Invalides") return 1;
-        if (b === "Dates Invalides") return -1;
-        const dateA = new Date(invoicesByMonth[a][0].dateEmission);
-        const dateB = new Date(invoicesByMonth[b][0].dateEmission);
-        return dateB.getTime() - dateA.getTime();
-    });
+        const sortedKeys = Object.keys(byMonth).sort((a, b) => {
+            if (a === "Dates Invalides") return 1;
+            if (b === "Dates Invalides") return -1;
+            const dateA = new Date(byMonth[a][0].dateEmission);
+            const dateB = new Date(byMonth[b][0].dateEmission);
+            return dateB.getTime() - dateA.getTime();
+        });
 
-    const totalFilteredTTC = filteredInvoices.reduce((sum, invoice) => sum + invoice.totalTTC, 0);
+        const totalTTC = filtered.reduce((sum, invoice) => sum + invoice.totalTTC, 0);
+
+        return {
+            filteredInvoices: filtered,
+            invoicesByMonth: byMonth,
+            sortedMonthKeys: sortedKeys,
+            totalFilteredTTC: totalTTC
+        };
+    }, [invoices, clients, searchTerm, statusFilter]);
 
     const handleDelete = (id: string) => {
         confirm({
@@ -534,7 +543,7 @@ function InvoicesPage() {
 
                                             return (
                                                 <tr
-                                                    key={facture.id}
+                                                    key={`desktop-${month}-${facture.id}`}
                                                     onClick={() => handlePreview(facture)}
                                                     className="hover:bg-muted/50 dark:hover:bg-white/5 transition-colors group cursor-pointer"
                                                 >
@@ -605,7 +614,7 @@ function InvoicesPage() {
                                     const client = clients.find(c => c.id === facture.clientId);
                                     return (
                                         <div
-                                            key={facture.id}
+                                            key={`mobile-${month}-${facture.id}`}
                                             onClick={() => handlePreview(facture)}
                                             className="glass-card p-4 rounded-xl active:scale-[0.98] transition-all"
                                         >

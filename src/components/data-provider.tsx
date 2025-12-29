@@ -64,7 +64,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const fetchData = async (silent: boolean = false) => {
         // MUTEX GUARD
         if (fetchingRef.current) {
-            if (process.env.NODE_ENV === 'development') console.log('[DATA_provider] 🛑 Fetch already in progress, skipping.');
+
             return;
         }
         fetchingRef.current = true;
@@ -79,9 +79,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             let userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
             const TARGET_EMAIL = "amine@euromedmultimedia.com";
 
-            if (process.env.NODE_ENV === 'development') {
-                console.log('[DATA_SCOPE] Starting data fetch, userId from localStorage:', userId);
-            }
+
 
             // 1. Parallelize Initial Independent Fetches
             // Run independent tasks concurrently
@@ -89,36 +87,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
             updateOverdueInvoices().catch(e => { if (process.env.NODE_ENV === 'development') console.error("Overdue error (bg)", e); });
 
             // PERF: Measure fetch times
-            console.time('[PERF] fetchSocietes');
+
             const [societesRes] = await Promise.all([
                 fetchSocietes().catch(e => { console.error("Societes fetch error", e); return { success: false, data: [] }; })
             ]);
-            console.timeEnd('[PERF] fetchSocietes');
+
 
             // Explicitly handle user fetch with logs
             let userResResult = null;
             if (userId) {
-                if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🔍 Resolving user with id=${userId} (method: fetchUserById)`);
+
                 const t0 = performance.now();
                 userResResult = await fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; });
                 const t1 = performance.now();
-                console.log(`⏱️ [PERF] fetchUserById: ${(t1 - t0).toFixed(0)}ms`);
-                if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] fetchUserById result:`, userResResult);
+
+
             } else {
-                if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] No userId in localStorage, skipping fetchUserById`);
+
             }
 
             // 2. Process User - AUTH SYNC (Cookie -> Client)
             let finalUser = null;
 
-            if (process.env.NODE_ENV === 'development') console.log('[AUTH] Starting user resolution, storageUserId:', userId);
+
 
             // Try to load user from DB using ID from storage
             let userResFromStorage = userId ? userResResult : null;
 
             // If no local userID, check SERVER SESSION (HttpOnly Cookie) via getCurrentUser action
             if (!userId) {
-                if (process.env.NODE_ENV === 'development') console.log('[AUTH] No localStorage ID, checking Server Session (Cookie)...');
+
                 // We use getCurrentUser which checks cookie
                 const sessionRes = await import("@/app/actions").then(mod => mod.getCurrentUser());
                 if (sessionRes && sessionRes.success) {
@@ -127,7 +125,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                     const sessionUser = sessionRes.data || sessionRes.user;
 
                     if (sessionUser) {
-                        if (process.env.NODE_ENV === 'development') console.log('[AUTH] Found Server Session User:', sessionUser.id);
+
                         userResFromStorage = { success: true, data: sessionUser };
                         userId = sessionUser.id;
                         // Sync to localStorage for future consistency
@@ -138,28 +136,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
             // If STILL no user, attempt auto-repair (Dev Fallback)
             if (!userId || !userResFromStorage || !userResFromStorage.success || !userResFromStorage.data) {
-                if (process.env.NODE_ENV === 'development') console.log('[AUTH] User not found or missing, attempting auto-repair...');
+
 
                 // FALLBACK 1: By Email (Primary recovery)
-                if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🚨 Fallback: attempting to resolve user with email=${TARGET_EMAIL} (method: fetchAllUsers + find)`);
+
                 const allUsersRes = await fetchAllUsers();
                 const foundByEmail = allUsersRes.success && allUsersRes.data
                     ? allUsersRes.data.find((u: any) => u.email === TARGET_EMAIL)
                     : null;
 
-                if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] Fallback by email result:`, foundByEmail ? `Found ID: ${foundByEmail.id}` : 'Not Found');
+
 
                 if (foundByEmail) {
                     finalUser = foundByEmail;
-                    if (process.env.NODE_ENV === 'development') console.log('[AUTH] ✅ User resolved by EMAIL fallback.');
+
                 } else {
                     // FALLBACK 2: Default/First User (Last resort)
-                    if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🚨 Fallback 2: fetchDefaultUser (last resort)`);
+
                     const defaultUserRes = await import('@/app/actions').then(m => m.getDefaultUser());
 
                     if (defaultUserRes.success && defaultUserRes.data) {
                         finalUser = defaultUserRes.data;
-                        if (process.env.NODE_ENV === 'development') console.log('[AUTH] ✅ User resolved by DEFAULT fallback.');
+
                     }
                 }
 
@@ -174,7 +172,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 }
 
                 // AUTO-REPAIR: Update localStorage with found user
-                if (process.env.NODE_ENV === 'development') console.log('[AUTH] Auto-repair: setting userId to', finalUser.id);
+
                 if (typeof window !== 'undefined') {
                     localStorage.setItem('glassy_current_user_id', finalUser.id);
                 }
@@ -183,12 +181,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 finalUser = userResFromStorage.data;
             }
 
-            if (process.env.NODE_ENV === 'development') {
-                console.log('[AUTH_DEBUG] User resolved:', {
-                    id: finalUser.id,
-                    email: finalUser.email,
-                });
-            }
+
 
             setUser(finalUser);
             setAuthChecked(true); // MARK AUTH AS CHECKED
@@ -221,7 +214,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             // --- SCOPE RESOLUTION LOGIC ---
             if (validSocietes.length === 0) {
                 // Case 0: No societies
-                if (process.env.NODE_ENV === 'development') console.log('[DATA_SCOPE] No societies found. Marking for onboarding.');
+
                 shouldRedirectToOnboarding = true;
                 setSociete(null);
 
@@ -240,13 +233,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
                     if (validSocietes.length === 1) {
                         // Auto-fix: Only one choice
                         activeSociete = validSocietes[0];
-                        if (process.env.NODE_ENV === 'development') console.log('[DATA_SCOPE] Auto-selecting single society:', activeSociete.nom);
+
                         dataService.switchSociete(activeSociete.id); // Valid switch (persists)
                     } else {
                         // Multiple choices but invalid ID -> Default to first (Soft fallback)
                         // (Ideally redirect to /societe/select, but for now fallback to first is smoother)
                         activeSociete = validSocietes[0];
-                        if (process.env.NODE_ENV === 'development') console.log('[DATA_SCOPE] ID invalid, defaulting to first society:', activeSociete.nom);
+
                         dataService.switchSociete(activeSociete.id);
                     }
                 }
@@ -273,11 +266,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 }
 
                 // DIAGNOSTIC: Log query params
-                if (process.env.NODE_ENV === 'development') console.log(`[DATA_SCOPE] 🚀 FETCHING DATA for Societe: [${currentSocieteId}] "${activeSociete.nom}"`);
 
                 // OPTIMIZED: Single DB call instead of 4 parallel calls
                 const t0 = performance.now();
-                console.log('[PERF] fetchDashboardData START');
+
 
                 const [clientsRes, productsRes, dashboardRes] = await Promise.all([
                     fetchClients(currentSocieteId),
@@ -286,21 +278,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 ]);
 
                 const t1 = performance.now();
-                console.log(`[PERF] fetchDashboardData TOTAL: ${(t1 - t0).toFixed(0)}ms`);
 
-                if (process.env.NODE_ENV === 'development') {
-                    console.log('[DATA_SCOPE] ✅ QUERY RESULTS:', {
-                        dashboard: dashboardRes.success,
-                        invoices: dashboardRes.data?.invoices.length,
-                        quotes: dashboardRes.data?.quotes.length,
-                        clients: clientsRes.success ? clientsRes.data?.length : 'ERROR',
-                        products: productsRes.success ? productsRes.data?.length : 'ERROR'
-                    });
-                }
+
+
 
                 // Log details if empty
                 if (dashboardRes.data?.invoices.length === 0) {
-                    if (process.env.NODE_ENV === 'development') console.warn('[DATA_SCOPE] ⚠️ Zero invoices returned.');
+
                 }
 
                 // Update state with dashboard data
@@ -313,14 +297,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 if (productsRes.success && productsRes.data) setProducts(productsRes.data);
             } else {
                 // Should be unreachable due to onboarding check, but guard anyway
-                console.warn("[DATA_SCOPE] No active society resolved, skipping data fetch.");
+
             }
 
             if (!silent) setIsLoading(false);
-            if (process.env.NODE_ENV !== "production") {
-                const duration = (performance.now() - startTime).toFixed(2);
-                console.log(`[TotalLoadTime] Finished in ${duration}ms`);
-            }
+
 
             // Lazy load history (15 items) to not block UI
             // Explicitly pass the resolved currentSocieteId to ensure we are fetching for the right scope
@@ -338,7 +319,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         // ONLY REDIRECT IF AUTH HAS BEEN CHECKED AND NO USER
         if (authChecked && !user && pathname !== "/login") {
-            if (process.env.NODE_ENV === 'development') console.log("[AUTH_FLOW] Auth checked, no user found, Redirecting to /login");
+
             // Double check local storage one last time? No, rely on state.
             router.push("/login");
             setIsLoading(false);
@@ -503,7 +484,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             history,
             logAction: async (action: any, entityType: any, description: string, entityId?: string) => {
                 const currentUser = user || dataService.getCurrentUser();
-                console.log(`[DataProvider] logAction called: ${action} ${entityType} - User:`, currentUser);
+
                 if (currentUser) {
                     await dataService.logAction(currentUser, action, entityType, description, entityId);
                     // OPTIMIZATION: Do NOT trigger full app refresh here. 

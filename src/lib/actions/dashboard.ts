@@ -13,7 +13,7 @@ interface DashboardData {
 export async function fetchDashboardData(userId: string, societeId: string): Promise<{ success: boolean, data?: DashboardData, error?: string }> {
     try {
         const startTotal = Date.now();
-        console.log('[PERF] fetchDashboardData START');
+
 
         // Single Prisma transaction with all queries
         const [user, societes, invoices, quotes] = await prisma.$transaction([
@@ -53,7 +53,8 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                     client: {
                         select: { nom: true }
                     },
-                    itemsJSON: true
+                    itemsJSON: true,
+                    config: true
                 },
                 orderBy: [
                     { dateEmission: 'desc' },
@@ -80,7 +81,8 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                     client: {
                         select: { nom: true }
                     },
-                    itemsJSON: true
+                    itemsJSON: true,
+                    config: true
                 },
                 orderBy: [
                     { dateEmission: 'desc' },
@@ -91,8 +93,7 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
         ]);
 
         const totalTime = Date.now() - startTotal;
-        console.log('[PERF] fetchDashboardData TOTAL:', totalTime, 'ms');
-        console.log('[PERF] Counts - Invoices:', invoices.length, '| Quotes:', quotes.length);
+
 
         // Map user
         const mappedUser = user ? {
@@ -117,7 +118,10 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
         const mappedInvoices = invoices.map((inv: any) => {
             let items: any[] = [];
             try {
-                if (inv.itemsJSON) items = JSON.parse(inv.itemsJSON);
+                if (inv.itemsJSON) {
+                    const parsed = JSON.parse(inv.itemsJSON);
+                    items = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                }
             } catch (e) {
                 console.error("Error parsing itemsJSON for invoice:", inv.id);
             }
@@ -137,9 +141,17 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                     description: item.nom || item.description || "Article",
                     quantite: Number(item.quantite) || 0,
                     prixUnitaire: Number(item.prixUnitaire) || 0,
-                    totalLigne: Number(item.montantHT || item.totalLigne) || 0
+                    totalLigne: Number(item.montantHT || item.totalLigne) || 0,
+                    date: item.date // Map date for validation
                 })),
-                emails: []
+                emails: [],
+                config: (() => {
+                    if (!inv.config) return {};
+                    try {
+                        const parsed = JSON.parse(inv.config);
+                        return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                    } catch { return {}; }
+                })()
             };
         });
 
@@ -147,7 +159,10 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
         const mappedQuotes = quotes.map((q: any) => {
             let items: any[] = [];
             try {
-                if (q.itemsJSON) items = JSON.parse(q.itemsJSON);
+                if (q.itemsJSON) {
+                    const parsed = JSON.parse(q.itemsJSON);
+                    items = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                }
             } catch (e) {
                 console.error("Error parsing itemsJSON for quote:", q.id);
             }
@@ -163,12 +178,28 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                 totalTTC: q.totalTTC,
                 type: "Devis" as const,
                 items: items.map((item: any) => ({
+                    id: item.id,
+                    nom: item.nom || item.description || "Article",
                     description: item.nom || item.description || "Article",
                     quantite: Number(item.quantite) || 0,
                     prixUnitaire: Number(item.prixUnitaire) || 0,
-                    totalLigne: Number(item.montantHT || item.totalLigne) || 0
+                    tva: Number(item.tva) || 20,
+                    remise: Number(item.remise) || 0,
+                    remiseType: item.remiseType || 'pourcentage',
+                    totalLigne: Number(item.montantHT || item.totalLigne) || 0,
+                    montantHT: Number(item.montantHT || item.totalLigne) || 0,
+                    date: item.date || "",
+                    produitId: item.produitId || "",
+                    type: item.type || 'produit'
                 })),
-                emails: []
+                emails: [],
+                config: (() => {
+                    if (!q.config) return {};
+                    try {
+                        const parsed = JSON.parse(q.config);
+                        return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                    } catch { return {}; }
+                })()
             };
         });
 

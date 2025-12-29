@@ -131,6 +131,9 @@ async function fetchInvoicesLegacy(societeId: string): Promise<{ success: boolea
                 if (inv.emailsJSON) emails = JSON.parse(inv.emailsJSON);
             } catch (e) {
                 console.error("Error parsing JSON fields", e);
+                // Fallback to empty arrays on error
+                items = [];
+                emails = [];
             }
 
             return {
@@ -176,10 +179,13 @@ export async function fetchInvoiceDetails(id: string): Promise<{ success: boolea
         let items = [];
         let emails = [];
         try {
+
             if (inv.itemsJSON) items = JSON.parse(inv.itemsJSON);
             if (inv.emailsJSON) emails = JSON.parse(inv.emailsJSON);
         } catch (e) {
             console.error("Error parsing JSON fields", e);
+            items = [];
+            emails = [];
         }
 
         const mapped: Facture = {
@@ -200,7 +206,15 @@ export async function fetchInvoiceDetails(id: string): Promise<{ success: boolea
             updatedAt: inv.updatedAt ? inv.updatedAt.toISOString() : undefined,
             isLocked: inv.isLocked,
             archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
-            config: inv.config ? JSON.parse(inv.config) : {}
+            config: (() => {
+                if (!inv.config) return {};
+                try {
+                    const parsed = JSON.parse(inv.config);
+                    return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                } catch {
+                    return {};
+                }
+            })()
         };
         return { success: true, data: mapped };
     } catch (error: any) {
@@ -209,7 +223,6 @@ export async function fetchInvoiceDetails(id: string): Promise<{ success: boolea
 }
 
 export async function createInvoice(invoice: Facture) {
-    console.log("[SAVE] start (create)", Date.now());
     try {
         // 🔒 SECURITY: Verify access
         const userRes = await getDefaultUser();
@@ -219,7 +232,7 @@ export async function createInvoice(invoice: Facture) {
         if (!targetSocieteId) return { success: false, error: "Société non spécifiée" };
         if (!invoice.clientId) return { success: false, error: "Client requis" };
 
-        console.log("[SAVE] before transaction", Date.now());
+
 
         // OPTIMIZED: Single transaction for security check + product creation + invoice creation
         const result = await prisma.$transaction(async (tx) => {
@@ -247,6 +260,7 @@ export async function createInvoice(invoice: Facture) {
                     emailsJSON: JSON.stringify(invoice.emails || []),
                     societeId: targetSocieteId,
                     clientId: invoice.clientId,
+
                     config: JSON.stringify(invoice.config || {}),
                     items: {
                         create: processedItems.map((item: any) => ({
@@ -266,40 +280,43 @@ export async function createInvoice(invoice: Facture) {
             return res;
         });
 
-        console.log("[SAVE] after transaction", Date.now());
+
 
         // OPTIMIZATION: Targeted revalidation
         revalidatePath('/factures', 'page');
 
-        console.log("[SAVE] end", Date.now());
+
         return { success: true, id: result.id };
     } catch (error: any) {
-        console.error("[SAVE] ERROR", Date.now(), error);
+        console.error("[SAVE] ERROR", error);
         return handleActionError(error);
     }
 }
 
 export async function updateInvoice(invoice: Facture) {
-    console.log("[SAVE] start (update)", Date.now());
-
     if (!invoice.id) return { success: false, error: "ID manquant" };
     try {
         // Guard: Check Mutability & Strict Rules
-        console.log("[SAVE] before checkInvoiceMutability", Date.now());
+
         const mutabilityCheck = await checkInvoiceMutability(invoice.id);
-        console.log("[SAVE] after checkInvoiceMutability", Date.now());
+
 
         if (!mutabilityCheck.success) return mutabilityCheck;
 
         // Fetch current status to enforce rules
-        console.log("[SAVE] before prisma findUnique (current)", Date.now());
+
         const currentInvoice = await prisma.facture.findUnique({
             where: { id: invoice.id },
-            select: { statut: true, archivedAt: true, societeId: true }
+            select: { statut: true, archivedAt: true, societeId: true, numero: true }
         });
-        console.log("[SAVE] after prisma findUnique (current)", Date.now());
+
 
         if (!currentInvoice) return { success: false, error: "Facture introuvable" };
+
+        // Guard: Immutable Number
+        if (currentInvoice.numero && invoice.numero && currentInvoice.numero !== invoice.numero) {
+            return { success: false, error: "Le numéro de facture ne peut pas être modifié." };
+        }
 
         // ... Guards logic (same as before) ...
         // Guard: Cancelled is Terminal
@@ -311,9 +328,9 @@ export async function updateInvoice(invoice: Facture) {
         // Prepare Data
         let societeId = invoice.societeId || currentInvoice.societeId || "Euromedmultimedia";
 
-        console.log("[SAVE] before ensureProductsExist", Date.now());
+
         const processedItems = await ensureProductsExist(invoice.items || [], societeId);
-        console.log("[SAVE] after ensureProductsExist", Date.now());
+
 
         const itemsJson = JSON.stringify(processedItems);
 
@@ -327,7 +344,7 @@ export async function updateInvoice(invoice: Facture) {
             dateEcheance: invoice.echeance ? new Date(invoice.echeance) : null,
             datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : null,
             itemsJSON: itemsJson,
-            config: JSON.stringify(invoice.config || {})
+            config: JSON.stringify(invoice.config || {}),
         };
 
         // ... Strict Status Rule logic (same) ...
@@ -346,7 +363,7 @@ export async function updateInvoice(invoice: Facture) {
             if (currentInvoice.statut === "Payée" && invoice.statut !== "Payée") updateData.datePaiement = null;
         }
 
-        console.log("[SAVE] before prisma update", Date.now());
+
         const updatedInvoice = await prisma.facture.update({
             where: { id: invoice.id },
             data: {
@@ -373,17 +390,17 @@ export async function updateInvoice(invoice: Facture) {
                 }
             }
         });
-        console.log("[SAVE] after prisma update", Date.now());
 
-        console.log("[SAVE] before revalidate", Date.now());
+
+
         revalidatePath(`/factures/${invoice.id}`, 'page');
         revalidatePath('/factures', 'page');
-        console.log("[SAVE] after revalidate", Date.now());
 
-        console.log("[SAVE] end", Date.now());
+
+
         return { success: true, data: updatedInvoice };
     } catch (error: any) {
-        console.error("[SAVE] ERROR", Date.now(), error);
+        console.error("[SAVE] ERROR", error);
         return handleActionError(error);
     }
 }

@@ -41,7 +41,7 @@ interface InvoiceFormValues {
 }
 
 export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
-    const { clients, products, refreshData, societe, invoices, quotes, logAction } = useData();
+    const { clients, products, refreshData, societe, invoices, quotes, logAction, addInvoice, updateInvoiceInList } = useData();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -760,8 +760,18 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
             await logAction(actionType, entityType, description, savedId);
 
-            // OPTIMIZATION: Restore refreshData to ensure list is updated
-            await refreshData();
+            // OPTIMIZATION: Use optimistic update instead of full refresh
+            if (type === 'Facture') {
+                if (actionType === 'create') {
+                    addInvoice(documentData as Facture);
+                } else {
+                    updateInvoiceInList(documentData as Facture);
+                }
+            }
+            // For quotes, we still need refreshData as we don't have addQuote/updateQuote helpers yet
+            if (type === 'Devis') {
+                await refreshData();
+            }
 
             // Simulate a brief delay to show the loading state
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -800,7 +810,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const handleGeneratePDF = async () => {
         // Guard: Block download if invoice is not saved
         if (!initialData?.id) {
-            toast.error("La facture doit être enregistrée avant de pouvoir être téléchargée. Téléchargement interdit", {
+            toast.error(`Le document (${type}) doit être enregistré avant de pouvoir être téléchargé. Téléchargement interdit`, {
                 duration: 5000,
                 style: {
                     background: '#EF4444',
@@ -878,7 +888,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const handlePreview = () => {
         // Guard: Block preview if invoice is not saved (same as download)
         if (!initialData?.id) {
-            toast.error("La facture doit être enregistrée avant de pouvoir générer un aperçu.", {
+            toast.error(`Le document (${type}) doit être enregistré avant de pouvoir générer un aperçu.`, {
                 duration: 5000,
                 style: {
                     background: '#EF4444',
@@ -1438,7 +1448,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <div className="grid grid-cols-3 gap-4 items-end">
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">Numéro</label>
-                                <input {...register("numero")} readOnly={isReadOnly} disabled={false} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")} />
+                                <input {...register("numero")} readOnly={isReadOnly || isEditMode} disabled={isReadOnly || isEditMode} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", (isReadOnly || isEditMode) && "opacity-60 pointer-events-none")} />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">
@@ -2093,8 +2103,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-background dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl border border-border dark:border-white/10 p-6 animate-in zoom-in-95 duration-200">
                         <ClientEditor
-                            onSuccess={(newClientId) => {
+                            onSuccess={async (newClientId) => {
                                 setIsClientModalOpen(false);
+                                // Force refresh to sync client list
+                                await refreshData();
                                 setValue("clientId", newClientId); // Auto select new client
                             }}
                             onCancel={() => setIsClientModalOpen(false)}

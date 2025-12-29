@@ -1,0 +1,8 @@
+# Modern browsers only (reduces JavaScript polyfills)
+> 0.5%
+last 2 versions
+not dead
+chrome >= 90
+firefox >= 88
+safari >= 14
+edge >= 90

@@ -150,13 +150,14 @@ export function MobileNav() {
                             <button
                                 key={item.name}
                                 onClick={() => handleNavigation(item.href)}
+                                aria-label={item.name}
                                 className={cn(
                                     "flex flex-col items-center justify-center gap-1 w-16 h-full transition-all duration-200 active:scale-90",
                                     isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                                 )}
                             >
                                 <div className={cn("p-1.5 rounded-xl transition-all duration-300", isActive && "bg-white/10 shadow-[0_0_15px_rgba(255,255,255,0.1)]")}>
-                                    <item.icon className={cn("h-5 w-5", isActive && "fill-current")} strokeWidth={isActive ? 2.5 : 2} />
+                                    <item.icon className={cn("h-5 w-5", isActive && "fill-current")} strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
                                 </div>
                                 <span className={cn("text-[9px] font-medium tracking-wide transition-all", isActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 hidden")}>
                                     {item.name}
@@ -167,13 +168,15 @@ export function MobileNav() {
 
                     <button
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
+                        aria-label={isMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+                        aria-expanded={isMenuOpen}
                         className={cn(
                             "flex flex-col items-center justify-center gap-1 w-16 h-full transition-all duration-200 active:scale-90",
                             isMenuOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                         )}
                     >
                         <div className={cn("p-1.5 rounded-xl transition-all duration-300", isMenuOpen && "bg-white/10 shadow-[0_0_15px_rgba(255,255,255,0.1)]")}>
-                            {isMenuOpen ? <X className="h-5 w-5" strokeWidth={2.5} /> : <Menu className="h-5 w-5" strokeWidth={2} />}
+                            {isMenuOpen ? <X className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" /> : <Menu className="h-5 w-5" strokeWidth={2} aria-hidden="true" />}
                         </div>
                         <span className={cn("text-[9px] font-medium tracking-wide transition-all", isMenuOpen ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 hidden")}>
                             Menu

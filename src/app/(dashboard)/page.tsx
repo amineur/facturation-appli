@@ -275,7 +275,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Alerts Column */}
-                <div className="space-y-6">
+                <div className="space-y-6 min-h-[250px]">
                     {isLoadingMetrics ? <Skeleton className="h-[200px] w-full rounded-2xl" /> :
                         (metrics.overdueCount > 0 || metrics.dueSoonCount > 0) ? (
                             <div className="space-y-4">
@@ -331,7 +331,7 @@ export default function DashboardPage() {
             {/* --- Recent Activity --- */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                 {/* Recent Invoices */}
-                <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="glass-card rounded-2xl overflow-hidden min-h-[300px]">
                     <div className="p-4 px-6 border-b border-white/5 flex items-center justify-between">
                         <h3 className="text-base font-semibold text-foreground">Factures Récentes</h3>
                         <Link href="/factures" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Voir tout</Link>
@@ -362,7 +362,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Recent Quotes */}
-                <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="glass-card rounded-2xl overflow-hidden min-h-[300px]">
                     <div className="p-4 px-6 border-b border-white/5 flex items-center justify-between">
                         <h3 className="text-base font-semibold text-foreground">Devis Récents</h3>
                         <Link href="/devis" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Voir tout</Link>

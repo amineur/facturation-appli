@@ -16,6 +16,7 @@ async function main() {
                 id: true,
                 numero: true,
                 itemsJSON: true,
+                dateEmission: true,
                 items: {
                     select: {
                         description: true,
@@ -34,8 +35,6 @@ async function main() {
             if (inv.itemsJSON) {
                 try { items = JSON.parse(inv.itemsJSON); } catch (e) { }
             }
-            // Fallback to relational if JSON is empty/invalid but relational exists?
-            // Actually, my recent fix enforces JSON usage, but let's see.
             if (!items.length && inv.items && inv.items.length) {
                 items = inv.items.map(i => ({ ...i, nom: i.description }));
             }
@@ -47,14 +46,13 @@ async function main() {
                 if (!rawName) continue;
 
                 const key = rawName.trim().toLowerCase();
-                // Handle various quantity formats
                 let qty = 0;
                 if (typeof item.quantite === 'number') qty = item.quantite;
                 else qty = parseFloat(String(item.quantite)) || 0;
 
                 const current = stats.get(key) || { count: 0, name: rawName, invoices: [] };
                 current.count += qty;
-                current.invoices.push(`${inv.numero} (qt=${qty})`);
+                current.invoices.push(`${inv.numero} (qt=${qty}, date=${inv.dateEmission.toISOString().split('T')[0]})`);
                 stats.set(key, current);
             }
         }

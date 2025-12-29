@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
@@ -202,9 +202,18 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         <p className="text-muted-foreground mt-1">Saisissez les informations du client.</p>
                     </div>
                 </div>
-                <button type="submit" className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20">
-                    <Save className="h-4 w-4" />
-                    Enregistrer
+                <button type="submit" disabled={isSaving} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {isSaving ? (
+                        <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Enregistrement...
+                        </>
+                    ) : (
+                        <>
+                            <Save className="h-4 w-4" />
+                            Enregistrer
+                        </>
+                    )}
                 </button>
             </div>
 

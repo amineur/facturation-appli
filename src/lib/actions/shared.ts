@@ -20,6 +20,21 @@ export function handleActionError(error: any): ActionState {
         };
     }
 
+    // Prisma Foreign Key Constraint Error
+    if (error.code === 'P2003') {
+        const field = error.meta?.field_name || 'référence';
+        if (field.includes('client')) {
+            return {
+                success: false,
+                error: "Le client sélectionné n'existe plus. Veuillez rafraîchir la page (F5) et sélectionner un client valide."
+            };
+        }
+        return {
+            success: false,
+            error: `Référence invalide (${field}). Veuillez rafraîchir la page et réessayer.`
+        };
+    }
+
     // Generic fallback - DEBUG MODE: Return actual error
     return {
         success: false,
