@@ -80,88 +80,65 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
 
 
-            let userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
-            const TARGET_EMAIL = "amine@euromedmultimedia.com";
-
 
 
             // 1. Parallelize Initial Independent Fetches
             // Run independent tasks concurrently
-            // OPTIMIZATION: Fire-and-forget background updates (don't block UI)
             updateOverdueInvoices().catch(e => { if (process.env.NODE_ENV === 'development') console.error("Overdue error (bg)", e); });
-
-            // PERF: Measure fetch times
 
             const [societesRes] = await Promise.all([
                 fetchSocietes().catch(e => { console.error("Societes fetch error", e); return { success: false, data: [] }; })
             ]);
 
-
-            // Explicitly handle user fetch with logs
-            let userResResult = null;
-            if (userId) {
-
-                const t0 = performance.now();
-                userResResult = await fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; });
-                const t1 = performance.now();
-
-
-            } else {
-
-            }
-
             // 2. Process User - AUTH SYNC (Cookie -> Client)
             let finalUser = null;
+            let userId = typeof window !== 'undefined' ? localStorage.getItem("glassy_current_user_id") : null;
 
+            // Always verify against server session to prevent stale localStorage on account switch
+            const sessionRes = await import("@/app/actions").then(mod => mod.getCurrentUser());
 
-
-            // Try to load user from DB using ID from storage
-            let userResFromStorage = userId ? userResResult : null;
-
-            // If no local userID, check SERVER SESSION (HttpOnly Cookie) via getCurrentUser action
-            if (!userId) {
-
-                // We use getCurrentUser which checks cookie
-                const sessionRes = await import("@/app/actions").then(mod => mod.getCurrentUser());
-                if (sessionRes && sessionRes.success) {
-                    // Handle mixed return types from actions (some use 'data', some use 'user')
-                    // @ts-ignore
-                    const sessionUser = sessionRes.data || sessionRes.user;
-
-                    if (sessionUser) {
-
-                        userResFromStorage = { success: true, data: sessionUser };
-                        userId = sessionUser.id;
-                        // Sync to localStorage for future consistency
-                        if (userId) localStorage.setItem("glassy_current_user_id", userId);
+            if (sessionRes && sessionRes.success) {
+                // @ts-ignore
+                const sessionUser = sessionRes.data || sessionRes.user;
+                if (sessionUser) {
+                    // SERVER AUTHORITY: If session user differs from local, session wins.
+                    if (userId && userId !== sessionUser.id) {
+                        console.warn("[AUTH] Local user mismatch. Syncing with server session.");
+                        if (typeof window !== 'undefined') {
+                            localStorage.setItem("glassy_current_user_id", sessionUser.id);
+                            // Clear stale society data as safety
+                            localStorage.removeItem("glassy_active_societe");
+                        }
                     }
+                    userId = sessionUser.id;
+                    finalUser = sessionUser;
                 }
             }
 
-            // If STILL no user, attempt auto-repair (Dev Fallback)
-            if (!userId || !userResFromStorage || !userResFromStorage.success || !userResFromStorage.data) {
+            // Fallback: If no session (e.g. cookie expired), try local only if strictly necessary
+            if (!finalUser && userId) {
+                // Try fetching by ID from storage (Legacy/Dev path)
+                const userResResult = await fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; });
+                if (userResResult && userResResult.success) {
+                    finalUser = userResResult.data;
+                }
+            }
 
-
-                // FALLBACK 1: By Email (Primary recovery)
-
+            // If STILL no user, attempt auto-repair (Dev Fallback) or redirect
+            if (!finalUser) {
+                // FALLBACK 1: By Email ...
+                const TARGET_EMAIL = "amine@euromedmultimedia.com";
                 const allUsersRes = await fetchAllUsers();
                 const foundByEmail = allUsersRes.success && allUsersRes.data
                     ? allUsersRes.data.find((u: any) => u.email === TARGET_EMAIL)
                     : null;
 
-
-
                 if (foundByEmail) {
                     finalUser = foundByEmail;
-
                 } else {
-                    // FALLBACK 2: Default/First User (Last resort)
-
                     const defaultUserRes = await import('@/app/actions').then(m => m.getDefaultUser());
-
                     if (defaultUserRes.success && defaultUserRes.data) {
                         finalUser = defaultUserRes.data;
-
                     }
                 }
 
@@ -169,23 +146,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
                     if (pathname !== '/login') {
                         console.warn('[AUTH] ⚠️ No active user session found. Redirecting to login...');
                     }
-                    // Do NOT redirect here immediately, let the flow finish or redirect after state update
-                    if (pathname !== '/login') {
-                        // router.push('/login'); // DELAY THIS
-                    }
                     if (!silent) setIsLoading(false);
-                    return; // Early return is fine IF we handle redirect elsewhere or trigger it via effect
+                    return;
                 }
 
-                // AUTO-REPAIR: Update localStorage with found user
-
+                // Repair storage
                 if (typeof window !== 'undefined') {
                     localStorage.setItem('glassy_current_user_id', finalUser.id);
                 }
-            } else {
-                // User loaded successfully from storage
-                finalUser = userResFromStorage.data;
             }
+
+
 
 
 

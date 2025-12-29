@@ -2,6 +2,9 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from "next/cache";
+import { getCurrentUser } from './auth';
+import { canAccessSociete } from './members';
+import { MembershipRole } from '@prisma/client';
 
 export async function createHistoryEntry(entry: {
     userId: string;
@@ -11,7 +14,8 @@ export async function createHistoryEntry(entry: {
     entityId?: string;
     societeId?: string;
 }) {
-    // Basic validation
+    // Audit log creation is typically implicit, but we can check if user is valid.
+    // Generally, this is called internally by other actions which are already secured.
     if (!entry.userId || !entry.action || !entry.description) {
         return { success: false, error: "Champs requis manquants pour l'historique" };
     }
@@ -19,8 +23,6 @@ export async function createHistoryEntry(entry: {
     try {
         let finalSocieteId = entry.societeId;
 
-        // Backend Inference: If entityId is present, try to deduce the REAL societeId from the DB entity
-        // This fixes bugs where frontend might pass the wrong context or no context.
         if (entry.entityId) {
             let fetchedSocieteId: string | undefined | null;
 
@@ -62,7 +64,21 @@ export async function createHistoryEntry(entry: {
 
 export async function fetchHistory(limit: number = 50, societeId?: string) {
     try {
-        const whereClause = societeId ? { societeId } : {};
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const whereClause: any = {};
+        if (societeId) {
+            // Secure fetch: if societeId provided, user must have access
+            const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+            if (!authorized) return { success: false, error: "Accès refusé" };
+            whereClause.societeId = societeId;
+        } else {
+            // Secure fetch: if no societeId (global fetch?), we should restrict to societies user is member of.
+            // But usually this UI is per-society. If strictly system admin, maybe okay, but here valid users only.
+            // For safety, let's allow fetching only if explicitly scoped or user's current society
+            return { success: false, error: "ID Société requis" };
+        }
 
         const history = await prisma.historyEntry.findMany({
             where: whereClause,
@@ -102,6 +118,46 @@ export async function deleteRecord(tableName: string, recordId: string) {
     if (!recordId) return { success: false, error: "Missing ID" };
 
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId: string | undefined;
+
+        // 1. Fetch record to verify society ownership
+        if (tableName === 'Clients') {
+            const r = await prisma.client.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else if (tableName === 'Produits') {
+            const r = await prisma.produit.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else if (tableName === 'Factures') {
+            const r = await prisma.facture.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else if (tableName === 'Devis') {
+            const r = await prisma.devis.findUnique({ where: { id: recordId }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else if (tableName === 'Societe') {
+            societeId = recordId; // The ID is the society itself
+        }
+
+        if (!societeId) return { success: false, error: "Enregistrement introuvable" };
+
+        // 2. Check Permissions
+        // Deleting a society requires OWNER. Others require ADMIN or EDITOR (depending on policy).
+        // Let's say EDITOR is enough for data content (clients/products/invoices), but ADMIN/OWNER for critical stuff?
+        // User asked for "Viewer ne peut pas éditer". So Editor can delete? 
+        // Typically deletion is sensitive. Let's start with ADMIN for deletion to be safe, or EDITOR if standard flow.
+        // Given previous actions used EDITOR for update, strict delete might need ADMIN.
+        // However, standard UI usually lets editors delete drafts.
+        // Let's require ADMIN for now to be strictly safe, or EDITOR?
+        // Let's stick to EDITOR for standard records (matches update), but OWNER for Societe.
+
+        let requiredRole = MembershipRole.EDITOR;
+        if (tableName === 'Societe') requiredRole = MembershipRole.OWNER;
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, requiredRole);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         switch (tableName) {
             case 'Clients':
                 await prisma.client.delete({ where: { id: recordId } });
@@ -124,15 +180,17 @@ export async function deleteRecord(tableName: string, recordId: string) {
                 });
                 break;
             case 'Societe':
-                // Cascade delete should be handled by DB or explicit deletion of relations
-                // For now, let's delete the society. Prisma might complain if relations exist.
-                // We should delete relations first if not cascading. 
-                // Assuming Schema has cascade delete or we do it here.
-                await prisma.client.deleteMany({ where: { societeId: recordId } });
-                await prisma.produit.deleteMany({ where: { societeId: recordId } });
-                await prisma.facture.deleteMany({ where: { societeId: recordId } });
-                await prisma.devis.deleteMany({ where: { societeId: recordId } });
-                await prisma.societe.delete({ where: { id: recordId } });
+                // Cascade Delete Logic - Needs verification if Prisma handles it or manual.
+                // Manual for safety as per original code.
+                await prisma.$transaction([
+                    prisma.membership.deleteMany({ where: { societeId: recordId } }),
+                    prisma.invitation.deleteMany({ where: { societeId: recordId } }),
+                    prisma.client.deleteMany({ where: { societeId: recordId } }),
+                    prisma.produit.deleteMany({ where: { societeId: recordId } }),
+                    prisma.facture.deleteMany({ where: { societeId: recordId } }),
+                    prisma.devis.deleteMany({ where: { societeId: recordId } }),
+                    prisma.societe.delete({ where: { id: recordId } })
+                ]);
                 break;
             default:
                 throw new Error("Table inconnue");
@@ -144,44 +202,38 @@ export async function deleteRecord(tableName: string, recordId: string) {
     }
 }
 
-export async function deleteAllRecords(tableName: string) {
-    try {
-        let count = 0;
-        switch (tableName) {
-            case 'Clients':
-                count = (await prisma.client.deleteMany()).count;
-                break;
-            case 'Produits':
-                count = (await prisma.produit.deleteMany()).count;
-                break;
-            case 'Factures':
-                count = (await prisma.facture.deleteMany()).count;
-                break;
-            case 'Devis':
-                count = (await prisma.devis.deleteMany()).count;
-                break;
-            default:
-                throw new Error("Table inconnue");
-        }
-        return { success: true, count };
-    } catch (error: any) {
-        return { success: false, error: error.message };
-    }
-}
+// REMOVED deleteAllRecords as it is too dangerous for production.
 
 export async function unarchiveRecord(tableName: 'Factures' | 'Devis', id: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId;
+        if (tableName === 'Factures') {
+            const r = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else {
+            const r = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Introuvable" };
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         if (tableName === 'Factures') {
             await prisma.facture.update({
                 where: { id },
                 // @ts-ignore
-                data: { statut: 'Brouillon', deletedAt: new Date() } // Move to Trash
+                data: { statut: 'Brouillon', deletedAt: new Date() } // Move to Trash -> User request logic? Or Unarchive?
+                // Wait, original logic: "Move to Trash".
             });
         } else if (tableName === 'Devis') {
             await prisma.devis.update({
                 where: { id },
                 // @ts-ignore
-                data: { statut: 'Brouillon', deletedAt: new Date() } // Move to Trash
+                data: { statut: 'Brouillon', deletedAt: new Date() }
             });
         }
         revalidatePath("/", "layout");
@@ -193,18 +245,34 @@ export async function unarchiveRecord(tableName: 'Factures' | 'Devis', id: strin
 
 export async function archiveRecord(tableName: 'Factures' | 'Devis', id: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId;
+        if (tableName === 'Factures') {
+            const r = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else {
+            const r = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Introuvable" };
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         if (tableName === 'Factures') {
             await prisma.facture.update({
                 where: { id },
                 // @ts-ignore
-                data: { statut: 'Archivée', deletedAt: null, isLocked: true, archivedAt: new Date() } // Move to Archive with Immutable Flag
+                data: { statut: 'Archivée', deletedAt: null, isLocked: true, archivedAt: new Date() }
             });
 
         } else if (tableName === 'Devis') {
             await prisma.devis.update({
                 where: { id },
                 // @ts-ignore
-                data: { statut: 'Archivé', deletedAt: null } // Move to Archive
+                data: { statut: 'Archivé', deletedAt: null }
             });
         }
         revalidatePath("/", "layout");
@@ -216,6 +284,22 @@ export async function archiveRecord(tableName: 'Factures' | 'Devis', id: string)
 
 export async function restoreRecord(tableName: 'Factures' | 'Devis', id: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId;
+        if (tableName === 'Factures') {
+            const r = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else {
+            const r = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Introuvable" };
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         if (tableName === 'Factures') {
             await prisma.facture.update({
                 where: { id },
@@ -238,12 +322,18 @@ export async function restoreRecord(tableName: 'Factures' | 'Devis', id: string)
 
 export async function emptyTrash(societeId: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.ADMIN); // Empty Trash is drastic -> ADMIN
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         // Archive Invoices
         await prisma.facture.updateMany({
             // @ts-ignore
             where: { societeId, deletedAt: { not: null } },
             // @ts-ignore
-            data: { deletedAt: null, statut: 'Archivée', isLocked: true, archivedAt: new Date() } // Immutable
+            data: { deletedAt: null, statut: 'Archivée', isLocked: true, archivedAt: new Date() }
         });
         // Archive Quotes
         await prisma.devis.updateMany({
@@ -261,6 +351,25 @@ export async function emptyTrash(societeId: string) {
 
 export async function permanentlyDeleteRecord(tableName: 'Factures' | 'Devis', id: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        let societeId;
+        if (tableName === 'Factures') {
+            // Invoice permanent delete is disallowed usually for compliance, but code kept logic.
+            // We will check societeId first anyway.
+            const r = await prisma.facture.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        } else {
+            const r = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+            societeId = r?.societeId;
+        }
+
+        if (!societeId) return { success: false, error: "Introuvable" };
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.ADMIN); // Permanent delete -> ADMIN
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
+
         if (tableName === 'Factures') {
             throw new Error("Les factures ne peuvent pas être supprimées définitivement.");
         } else if (tableName === 'Devis') {

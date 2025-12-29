@@ -11,6 +11,13 @@ datasource db {
   directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
+enum MembershipRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
 model Societe {
   id              String  @id @default(cuid()) // "Euromedmultimedia", "soc_2", etc.
   nom             String
@@ -62,6 +69,8 @@ model Societe {
   factures Facture[]
   devis    Devis[]
   members  User[]         @relation("SocieteMembers")
+  memberships Membership[]
+  invitations Invitation[]
   history  HistoryEntry[]
 
   @@index([email])
@@ -80,6 +89,8 @@ model User {
 
   // Relations
   societes         Societe[] @relation("SocieteMembers")
+  memberships      Membership[]
+  invitationsSent  Invitation[] @relation("InvitedBy")
   currentSocieteId String?
 
   createdAt DateTime @default(now())
@@ -293,4 +304,39 @@ model DevisItem {
 
   @@index([devisId])
   @@index([produitId])
+}
+
+model Membership {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  societeId String
+  societe   Societe        @relation(fields: [societeId], references: [id], onDelete: Cascade)
+  role      MembershipRole @default(VIEWER)
+  status    String         @default("active") // active, invited
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, societeId])
+  @@index([userId])
+  @@index([societeId])
+}
+
+model Invitation {
+  id        String         @id @default(cuid())
+  email     String
+  role      MembershipRole
+  societeId String
+  societe   Societe        @relation(fields: [societeId], references: [id], onDelete: Cascade)
+  invitedBy String
+  inviter   User           @relation("InvitedBy", fields: [invitedBy], references: [id])
+  token     String         @unique
+  status    String         @default("pending") // pending, accepted, expired
+  expiresAt DateTime
+  createdAt DateTime       @default(now())
+
+  @@unique([email, societeId])
+  @@index([token])
+  @@index([societeId])
 }

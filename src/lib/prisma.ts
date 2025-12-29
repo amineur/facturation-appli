@@ -18,8 +18,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Cleanup automatique des connexions (pour éviter les zombies)
-if (typeof window === 'undefined') {
-    process.on('beforeExit', async () => {
-        await prisma.$disconnect();
-    });
-}
+
+// Cleanup logic removed to prevent MaxListenersExceededWarning in dev
+

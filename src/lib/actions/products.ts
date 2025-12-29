@@ -4,8 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { Produit } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { getCurrentUser } from './auth';
+import { canAccessSociete } from './members';
+import { MembershipRole } from '@prisma/client';
 
-// Helper to Auto-Create Products (Used by Invoices and Quotes)
 // Helper to Auto-Create Products (Used by Invoices and Quotes)
 export async function ensureProductsExist(items: any[], societeId: string, tx?: any) {
     if (!items || !Array.isArray(items)) return [];
@@ -42,7 +43,7 @@ export async function ensureProductsExist(items: any[], societeId: string, tx?: 
 
         // 3. Create missing products
         for (const name of names) {
-            const existing = existingProducts.find(p => p.nom === name);
+            const existing = existingProducts.find((p: any) => p.nom === name);
             let finalProductId = existing?.id;
 
             if (!existing) {
@@ -106,6 +107,12 @@ export async function ensureProductsExist(items: any[], societeId: string, tx?: 
 
 export async function fetchProducts(societeId: string): Promise<{ success: boolean, data?: Produit[], error?: string }> {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         const products = await prisma.produit.findMany({
             where: { societeId }
         });
@@ -126,17 +133,14 @@ export async function fetchProducts(societeId: string): Promise<{ success: boole
 
 export async function createProduct(product: Produit) {
     try {
-        // 🔒 SECURITY: Verify access
         const userRes = await getCurrentUser();
         if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
 
         const targetSocieteId = product.societeId || userRes.data.currentSocieteId;
         if (!targetSocieteId) return { success: false, error: "Société non spécifiée" };
 
-        const hasAccess = await prisma.societe.findFirst({
-            where: { id: targetSocieteId, members: { some: { id: userRes.data.id } } }
-        });
-        if (!hasAccess) return { success: false, error: "Accès refusé" };
+        const authorized = await canAccessSociete(userRes.data.id, targetSocieteId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Accès refusé" };
 
         const res = await prisma.produit.create({
             data: {
@@ -156,6 +160,15 @@ export async function createProduct(product: Produit) {
 export async function updateProduct(product: Produit) {
     if (!product.id) return { success: false, error: "ID manquant" };
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.produit.findUnique({ where: { id: product.id }, select: { societeId: true } });
+        if (!existing) return { success: false, error: "Produit introuvable" };
+
+        const authorized = await canAccessSociete(userRes.data.id, existing.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         await prisma.produit.update({
             where: { id: product.id },
             data: {

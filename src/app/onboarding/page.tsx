@@ -1,19 +1,25 @@
 'use client';
 
-import { Building2, ArrowRight, Loader2, Search, MapPin, CreditCard, Image as ImageIcon, ChevronLeft, Upload, X } from 'lucide-react';
+import { Building2, ArrowRight, Loader2, Search, MapPin, CreditCard, Image as ImageIcon, ChevronLeft, Upload, X, Users, Mail, ArrowRightCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useData } from '@/components/data-provider';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { getMyPendingInvitations, acceptInvitation } from '@/lib/actions/members';
 
 export default function OnboardingPage() {
     const router = useRouter();
-    const { createSociete, isLoading: isGlobalLoading, societes } = useData();
+    const { createSociete, isLoading: isGlobalLoading, societes, refreshData } = useData();
 
     // --- STATE ---
-    const [step, setStep] = useState(1);
+    const [step, setStep] = useState(0); // 0 = Choice, 1 = Identity, 2 = Banking, 3 = Branding
     const [isLoading, setIsLoading] = useState(false); // Local loading state for API calls
+
+    // Invites
+    const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+    const [inviteCode, setInviteCode] = useState("");
+    const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
 
     // Form Data
     const [formData, setFormData] = useState({
@@ -52,6 +58,18 @@ export default function OnboardingPage() {
     const searchRef = useRef<HTMLDivElement>(null);
 
     // --- EFFECTS ---
+
+    useEffect(() => {
+        // Fetch invites on load
+        fetchInvites();
+    }, []);
+
+    const fetchInvites = async () => {
+        const res = await getMyPendingInvitations();
+        if (res.success && res.data) {
+            setPendingInvites(res.data);
+        }
+    };
 
     // Debounced Company Search
     useEffect(() => {
@@ -120,6 +138,19 @@ export default function OnboardingPage() {
 
     // --- HANDLERS ---
 
+    const handleAcceptInvite = async (token: string) => {
+        setIsAcceptingInvite(true);
+        const res = await acceptInvitation(token);
+        if (res.success) {
+            toast.success(res.message);
+            await refreshData();
+            router.push('/');
+        } else {
+            toast.error(res.error || "Erreur lors de l'acceptation");
+            setIsAcceptingInvite(false);
+        }
+    };
+
     const handleSelectCompany = (company: any) => {
         setSelectedCompany(company);
         setSearchTerm(company.nom || "");
@@ -184,6 +215,88 @@ export default function OnboardingPage() {
     };
 
     // --- RENDER STEPS ---
+
+    const renderStep0_Choice = () => (
+        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300 w-full max-w-2xl">
+            <div className="text-center space-y-2 mb-8">
+                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">Bienvenue</h1>
+                <p className="text-muted-foreground">Rejoignez une équipe existante ou créez votre propre structure.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Option 1: Join */}
+                <div className="glass-card p-6 rounded-2xl border border-white/10 hover:border-purple-500/50 transition-all group flex flex-col h-full">
+                    <div className="h-12 w-12 bg-purple-500/10 rounded-xl flex items-center justify-center border border-purple-500/20 mb-4 group-hover:scale-110 transition-transform">
+                        <Users className="h-6 w-6 text-purple-400" />
+                    </div>
+                    <h3 className="text-lg font-bold mb-2">Rejoindre une équipe</h3>
+                    <p className="text-sm text-muted-foreground mb-6 flex-1">
+                        Vous avez reçu une invitation ? Entrez le code ou acceptez une invitation en attente.
+                    </p>
+
+                    {/* Manual Code Input */}
+                    <div className="space-y-3">
+                        <input
+                            placeholder="Code d'invitation (optionnel)"
+                            className="w-full glass-input px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10"
+                            value={inviteCode}
+                            onChange={(e) => setInviteCode(e.target.value)}
+                        />
+                        <button
+                            onClick={() => inviteCode ? handleAcceptInvite(inviteCode) : toast.info("Demandez un code à votre admin ou vérifiez vos emails.")}
+                            disabled={!inviteCode && pendingInvites.length === 0}
+                            className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {inviteCode ? "Rejoindre via Code" : "Voir invitations ci-dessous"}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Option 2: Create */}
+                <button
+                    onClick={() => setStep(1)}
+                    className="glass-card p-6 rounded-2xl border border-white/10 hover:border-blue-500/50 transition-all group flex flex-col h-full text-left"
+                >
+                    <div className="h-12 w-12 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 mb-4 group-hover:scale-110 transition-transform">
+                        <Building2 className="h-6 w-6 text-blue-400" />
+                    </div>
+                    <h3 className="text-lg font-bold mb-2">Créer une société</h3>
+                    <p className="text-sm text-muted-foreground mb-6 flex-1">
+                        Commencez de zéro. Créez votre organisation, configurez vos factures et invitez vos collaborateurs.
+                    </p>
+                    <div className="mt-auto flex items-center text-blue-400 text-sm font-medium group-hover:gap-2 transition-all">
+                        Commencer <ArrowRight className="h-4 w-4 ml-1" />
+                    </div>
+                </button>
+            </div>
+
+            {/* Pending Invites List */}
+            {pendingInvites.length > 0 && (
+                <div className="mt-8 pt-8 border-t border-white/10">
+                    <h3 className="text-sm font-semibold uppercase text-muted-foreground tracking-wider mb-4">Invitations en attente</h3>
+                    <div className="space-y-3">
+                        {pendingInvites.map((invite) => (
+                            <div key={invite.id} className="glass-card p-4 rounded-xl flex items-center justify-between border-l-4 border-l-purple-500">
+                                <div>
+                                    <div className="font-bold text-lg">{invite.societe.nom}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                        Invité par <span className="text-white">{invite.inviter.fullName}</span> • <span className="text-purple-400 font-mono text-xs uppercase">{invite.role}</span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handleAcceptInvite(invite.token)}
+                                    disabled={isAcceptingInvite}
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                >
+                                    {isAcceptingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : "Accepter"}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 
     const renderStep1_Identity = () => (
         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -385,6 +498,15 @@ export default function OnboardingPage() {
         </div>
     );
 
+    if (step === 0) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,60,255,0.1),rgba(0,0,0,0))]" />
+                {renderStep0_Choice()}
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,60,255,0.1),rgba(0,0,0,0))]" />
@@ -422,26 +544,12 @@ export default function OnboardingPage() {
 
                 {/* Footer Actions */}
                 <div className="flex items-center gap-3 mt-8 pt-6 border-t border-white/10">
-                    {step > 1 ? (
-                        <button
-                            onClick={handleBack}
-                            className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-                        >
-                            <ChevronLeft className="h-5 w-5" />
-                        </button>
-                    ) : (
-                        <button
-                            onClick={() => {
-                                fetch('/api/auth/logout', { method: 'POST' }).then(() => {
-                                    window.localStorage.clear();
-                                    router.push('/login');
-                                });
-                            }}
-                            className="text-xs text-muted-foreground hover:text-white underline mr-auto px-2"
-                        >
-                            Annuler
-                        </button>
-                    )}
+                    <button
+                        onClick={handleBack} // step 1 goes back to 0 (Choice)
+                        className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                    >
+                        <ChevronLeft className="h-5 w-5" />
+                    </button>
 
                     <button
                         onClick={step === 3 ? handleFinalCreate : handleNext}
@@ -465,3 +573,4 @@ export default function OnboardingPage() {
         </div>
     );
 }
+

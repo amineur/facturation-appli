@@ -28,6 +28,9 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
         }
     });
 
+
+    const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
+
     useEffect(() => {
         if (user) {
             reset({
@@ -35,8 +38,33 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                 email: user.email,
                 newPassword: ""
             });
+            fetchInvitations();
         }
     }, [user, reset]);
+
+    const fetchInvitations = async () => {
+        const { getMyPendingInvitations } = await import('@/lib/actions/members');
+        const res = await getMyPendingInvitations();
+        if (res.success && res.data) {
+            setPendingInvitations(res.data);
+        }
+    };
+
+    const handleAcceptInvite = async (token: string) => {
+        const { acceptInvitation } = await import('@/lib/actions/members');
+        const toastId = toast.loading("Acceptation en cours...");
+        const res = await acceptInvitation(token);
+        toast.dismiss(toastId);
+
+        if (res.success) {
+            toast.success(res.message);
+            await refreshData();
+            fetchInvitations();
+            // Optional: Redirect if it switches current company, but refreshData handles context
+        } else {
+            toast.error(res.error || "Erreur lors de l'acceptation");
+        }
+    };
 
     const onSubmit = async (data: ProfileFormData) => {
         if (!user) return;
@@ -89,6 +117,7 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
             setIsSaving(false);
         }
     };
+
 
     if (!user) return <div>Chargement...</div>;
 
@@ -204,7 +233,43 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                         </div>
                     </div>
 
+
+                    <div className="pt-4 border-t border-white/5">
+                        <h4 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
+                            <Mail className="h-4 w-4 text-purple-400" />
+                            Invitations en attente
+                        </h4>
+
+                        {pendingInvitations.length === 0 ? (
+                            <p className="text-sm text-muted-foreground italic">Aucune invitation en attente.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {pendingInvitations.map((invite) => (
+                                    <div key={invite.id} className="glass-card p-3 rounded-lg flex items-center justify-between border border-purple-500/20 bg-purple-500/5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded bg-purple-500/20 flex items-center justify-center text-purple-300 font-bold uppercase text-xs">
+                                                {invite.societe.nom.substring(0, 2)}
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-medium text-foreground">{invite.societe.nom}</div>
+                                                <div className="text-xs text-muted-foreground">Invité par {invite.inviter.fullName}</div>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAcceptInvite(invite.token)}
+                                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-medium transition-colors shadow shadow-purple-500/20"
+                                        >
+                                            Accepter
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     <div className="pt-4 flex justify-end">
+
                         <button
                             type="submit"
                             disabled={isSaving}

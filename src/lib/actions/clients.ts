@@ -2,15 +2,23 @@
 
 import { prisma } from '@/lib/prisma';
 import { Client } from '@/types';
+import { getCurrentUser } from './auth';
+import { canAccessSociete } from './members';
+import { MembershipRole } from '@prisma/client';
 
 export async function fetchClients(societeId: string): Promise<{ success: boolean, data?: Client[], error?: string }> {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         const clients = await prisma.client.findMany({
             where: { societeId },
             orderBy: { nom: 'asc' }
         });
 
-        // Map to ensure type safety
         const mapped: Client[] = clients.map((c: any) => ({
             id: c.id,
             societeId: c.societeId,
@@ -33,9 +41,18 @@ export async function fetchClients(societeId: string): Promise<{ success: boolea
 
 export async function createClientAction(client: Client) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const targetSocieteId = client.societeId || userRes.data.currentSocieteId;
+        if (!targetSocieteId) return { success: false, error: "Société non spécifiée" };
+
+        const authorized = await canAccessSociete(userRes.data.id, targetSocieteId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         const res = await prisma.client.create({
             data: {
-                societeId: client.societeId || "Euromedmultimedia",
+                societeId: targetSocieteId,
                 nom: client.nom,
                 email: client.email,
                 telephone: client.telephone,
@@ -56,6 +73,15 @@ export async function createClientAction(client: Client) {
 export async function updateClient(client: Client) {
     if (!client.id) return { success: false, error: "ID manquant" };
     try {
+        const existing = await prisma.client.findUnique({ where: { id: client.id }, select: { societeId: true } });
+        if (!existing) return { success: false, error: "Client introuvable" };
+
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, existing.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         await prisma.client.update({
             where: { id: client.id },
             data: {

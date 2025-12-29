@@ -6,11 +6,19 @@ import { revalidatePath } from "next/cache";
 import { ensureProductsExist } from './products';
 import { getCurrentUser } from './auth';
 import { handleActionError } from './shared';
+import { canAccessSociete } from './members';
+import { MembershipRole } from '@prisma/client';
 
 // Fetch Actions
 
 export async function fetchQuotesLite(societeId: string): Promise<{ success: boolean, data?: Partial<Devis>[], error?: string }> {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         const quotes = await prisma.devis.findMany({
             // @ts-ignore
             where: { societeId, deletedAt: null, statut: { not: 'Archivé' } },
@@ -49,7 +57,6 @@ export async function fetchQuotesLite(societeId: string): Promise<{ success: boo
             type: "Devis" as const,
             items: [], // Empty for lite version
             emails: [],
-            // clientName: q.client?.nom
         }));
         return { success: true, data: mapped };
     } catch (error: any) {
@@ -58,12 +65,17 @@ export async function fetchQuotesLite(societeId: string): Promise<{ success: boo
 }
 
 export async function fetchQuotes(societeId: string): Promise<{ success: boolean, data?: Devis[], error?: string }> {
-    // Legacy full fetcher
     return fetchQuotesLegacy(societeId);
 }
 
 async function fetchQuotesLegacy(societeId: string): Promise<{ success: boolean, data?: Devis[], error?: string }> {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         const quotes = await prisma.devis.findMany({
             // @ts-ignore
             where: { societeId, deletedAt: null, statut: { not: 'Archivé' } },
@@ -76,7 +88,7 @@ async function fetchQuotesLegacy(societeId: string): Promise<{ success: boolean,
                 { dateEmission: 'desc' },
                 { numero: 'desc' }
             ],
-            take: 100  // Pagination: limit to 100 most recent quotes
+            take: 100
         });
 
         const mapped: Devis[] = quotes.map((q: any) => {
@@ -124,8 +136,6 @@ async function fetchQuotesLegacy(societeId: string): Promise<{ success: boolean,
     } catch (error: any) {
         return { success: false, error: error.message };
     }
-
-
 }
 
 export async function fetchQuoteDetails(id: string): Promise<{ success: boolean, data?: Devis, error?: string }> {
@@ -141,6 +151,12 @@ export async function fetchQuoteDetails(id: string): Promise<{ success: boolean,
         });
 
         if (!q) return { success: false, error: "Devis introuvable" };
+
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, q.societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
 
         let items = [];
         let emails = [];
@@ -192,17 +208,15 @@ export async function fetchQuoteDetails(id: string): Promise<{ success: boolean,
 
 export async function createQuote(quote: Devis) {
     try {
-        // 🔒 SECURITY: Verify access
         const userRes = await getCurrentUser();
         if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
 
         const targetSocieteId = quote.societeId || userRes.data.currentSocieteId;
         if (!targetSocieteId) return { success: false, error: "Société non spécifiée" };
 
-        const hasAccess = await prisma.societe.findFirst({
-            where: { id: targetSocieteId, members: { some: { id: userRes.data.id } } }
-        });
-        if (!hasAccess) return { success: false, error: "Accès refusé" };
+        // Strict Check: EDITOR+
+        const authorized = await canAccessSociete(userRes.data.id, targetSocieteId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Access refusé" };
 
         if (!quote.clientId) throw new Error("Client requis");
 
@@ -238,7 +252,6 @@ export async function createQuote(quote: Devis) {
                 }
             }
         });
-        // OPTIMIZATION: Targeted revalidation for Quote List
         revalidatePath('/devis', 'page');
         return { success: true, id: res.id };
     } catch (error: any) {
@@ -255,6 +268,13 @@ export async function updateQuote(quote: Devis) {
             societeId = existing?.societeId || "Euromedmultimedia";
         }
 
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        // Strict Check: EDITOR+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         const processedItems = await ensureProductsExist(quote.items || [], societeId);
         const itemsJson = JSON.stringify(processedItems);
 
@@ -267,9 +287,7 @@ export async function updateQuote(quote: Devis) {
                 totalHT: quote.totalHT,
                 totalTTC: quote.totalTTC,
                 dateValidite: quote.dateValidite ? new Date(quote.dateValidite) : null,
-
                 itemsJSON: itemsJson,
-                // emailsJSON: preserved (not from form data)
                 clientId: quote.clientId,
                 isLocked: quote.isLocked,
                 config: JSON.stringify(quote.config || {}),
@@ -289,7 +307,6 @@ export async function updateQuote(quote: Devis) {
                 }
             }
         });
-        // OPTIMIZATION: Targeted revalidation for Quote
         revalidatePath(`/devis/${quote.id}`, 'page');
         revalidatePath('/devis', 'page');
         return { success: true };
@@ -301,6 +318,16 @@ export async function updateQuote(quote: Devis) {
 export async function toggleQuoteLock(quoteId: string, isLocked: boolean) {
     if (!quoteId) return { success: false, error: "ID manquant" };
     try {
+        const quote = await prisma.devis.findUnique({ where: { id: quoteId }, select: { societeId: true } });
+        if (!quote) return { success: false, error: "Devis introuvable" };
+
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        // Strict Check: EDITOR+
+        const authorized = await canAccessSociete(userRes.data.id, quote.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         await prisma.devis.update({
             where: { id: quoteId },
             data: { isLocked }
@@ -319,6 +346,13 @@ export async function convertQuoteToInvoice(quoteId: string) {
         const quote = await prisma.devis.findUnique({ where: { id: quoteId } });
         if (!quote) return { success: false, error: "Devis introuvable" };
 
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        // Strict Check: EDITOR+
+        const authorized = await canAccessSociete(userRes.data.id, quote.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         // 2. Fetch all invoices to determine next number correctly
         // We need all numbers to find the Max.
         const invoices = await prisma.facture.findMany({
@@ -326,10 +360,8 @@ export async function convertQuoteToInvoice(quoteId: string) {
             select: { numero: true }
         });
 
-        // Logic from generateNextInvoiceNumber: find max 8-digit number and increment
-        // Or if empty, start with reasonable default (e.g., current year + 010001)
-        const currentYearPrefix = new Date().getFullYear().toString().substring(2); // "25"
-        let nextNumber = `${currentYearPrefix}010001`; // Default start: 25010001
+        const currentYearPrefix = new Date().getFullYear().toString().substring(2);
+        let nextNumber = `${currentYearPrefix}010001`;
 
         const numericInvoices = invoices
             .map((inv: { numero: string }) => inv.numero)
@@ -339,9 +371,6 @@ export async function convertQuoteToInvoice(quoteId: string) {
 
         if (numericInvoices.length > 0) {
             const maxNumber = Math.max(...numericInvoices);
-            // Ensure we are not jumping years weirdly if maxNumber is old, 
-            // but user request implies continuity.
-            // If max is 25010001, next is 25010002.
             nextNumber = (maxNumber + 1).toString();
         }
 
@@ -354,12 +383,12 @@ export async function convertQuoteToInvoice(quoteId: string) {
                 societeId: quote.societeId,
                 clientId: quote.clientId,
                 dateEmission: new Date(),
-                dateEcheance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 days
+                dateEcheance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
                 statut: "Brouillon",
                 itemsJSON: itemsJson,
                 totalHT: quote.totalHT,
                 totalTTC: quote.totalTTC,
-                config: quote.config || JSON.stringify({}), // Preserve quote config
+                config: quote.config || JSON.stringify({}),
             }
         });
 
@@ -383,6 +412,16 @@ export async function importQuote(quote: Devis, clientName: string) {
 
 export async function updateQuoteStatus(id: string, statut: string) {
     try {
+        const quote = await prisma.devis.findUnique({ where: { id }, select: { societeId: true } });
+        if (!quote) return { success: false, error: "Devis introuvable" };
+
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        // Strict Check: EDITOR+
+        const authorized = await canAccessSociete(userRes.data.id, quote.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
         await prisma.devis.update({
             where: { id },
             // @ts-ignore
@@ -397,6 +436,12 @@ export async function updateQuoteStatus(id: string, statut: string) {
 
 export async function fetchDeletedQuotes(societeId: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         const quotes = await prisma.devis.findMany({
             // @ts-ignore
             where: { societeId, deletedAt: { not: null } },
@@ -412,7 +457,7 @@ export async function fetchDeletedQuotes(societeId: string) {
             id: q.id,
             numero: q.numero,
             clientId: q.clientId,
-            client: q.client, // Pass client name if needed on frontend
+            client: q.client,
             societeId: q.societeId,
             dateEmission: q.dateEmission.toISOString(),
             dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
@@ -433,6 +478,12 @@ export async function fetchDeletedQuotes(societeId: string) {
 
 export async function fetchArchivedQuotes(societeId: string) {
     try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.VIEWER);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
         const quotes = await prisma.devis.findMany({
             // @ts-ignore
             where: { societeId, statut: 'Archivé', deletedAt: null },
