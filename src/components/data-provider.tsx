@@ -88,15 +88,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
             // OPTIMIZATION: Fire-and-forget background updates (don't block UI)
             updateOverdueInvoices().catch(e => { if (process.env.NODE_ENV === 'development') console.error("Overdue error (bg)", e); });
 
+            // PERF: Measure fetch times
+            console.time('[PERF] fetchSocietes');
             const [societesRes] = await Promise.all([
                 fetchSocietes().catch(e => { console.error("Societes fetch error", e); return { success: false, data: [] }; })
             ]);
+            console.timeEnd('[PERF] fetchSocietes');
 
             // Explicitly handle user fetch with logs
             let userResResult = null;
             if (userId) {
                 if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] 🔍 Resolving user with id=${userId} (method: fetchUserById)`);
+                const t0 = performance.now();
                 userResResult = await fetchUserById(userId).catch(e => { console.error("User fetch error", e); return { success: false, data: null }; });
+                const t1 = performance.now();
+                console.log(`⏱️ [PERF] fetchUserById: ${(t1 - t0).toFixed(0)}ms`);
                 if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] fetchUserById result:`, userResResult);
             } else {
                 if (process.env.NODE_ENV === 'development') console.log(`[AUTH_DEBUG] No userId in localStorage, skipping fetchUserById`);
@@ -269,32 +275,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 // DIAGNOSTIC: Log query params
                 if (process.env.NODE_ENV === 'development') console.log(`[DATA_SCOPE] 🚀 FETCHING DATA for Societe: [${currentSocieteId}] "${activeSociete.nom}"`);
 
-                // Parallelize Entity Fetches with LITE Accessors
-                const [clientsRes, productsRes, invoicesRes, quotesRes] = await Promise.all([
+                // OPTIMIZED: Single DB call instead of 4 parallel calls
+                const t0 = performance.now();
+                console.log('[PERF] fetchDashboardData START');
+
+                const [clientsRes, productsRes, dashboardRes] = await Promise.all([
                     fetchClients(currentSocieteId),
                     fetchProducts(currentSocieteId),
-                    import("@/app/actions").then(mod => mod.fetchInvoicesLite(currentSocieteId)),
-                    import("@/app/actions").then(mod => mod.fetchQuotesLite(currentSocieteId))
+                    import("@/lib/actions/dashboard").then(mod => mod.fetchDashboardData(userId!, currentSocieteId))
                 ]);
+
+                const t1 = performance.now();
+                console.log(`[PERF] fetchDashboardData TOTAL: ${(t1 - t0).toFixed(0)}ms`);
 
                 if (process.env.NODE_ENV === 'development') {
                     console.log('[DATA_SCOPE] ✅ QUERY RESULTS:', {
-                        invoices: invoicesRes.success ? invoicesRes.data?.length : 'ERROR',
-                        quotes: quotesRes.success ? quotesRes.data?.length : 'ERROR',
+                        dashboard: dashboardRes.success,
+                        invoices: dashboardRes.data?.invoices.length,
+                        quotes: dashboardRes.data?.quotes.length,
                         clients: clientsRes.success ? clientsRes.data?.length : 'ERROR',
                         products: productsRes.success ? productsRes.data?.length : 'ERROR'
                     });
                 }
 
                 // Log details if empty
-                if (invoicesRes.data?.length === 0) {
+                if (dashboardRes.data?.invoices.length === 0) {
                     if (process.env.NODE_ENV === 'development') console.warn('[DATA_SCOPE] ⚠️ Zero invoices returned.');
+                }
+
+                // Update state with dashboard data
+                if (dashboardRes.success && dashboardRes.data) {
+                    setInvoices(dashboardRes.data.invoices as Facture[]);
+                    setQuotes(dashboardRes.data.quotes as Devis[]);
                 }
 
                 if (clientsRes.success && clientsRes.data) setClients(clientsRes.data);
                 if (productsRes.success && productsRes.data) setProducts(productsRes.data);
-                if (invoicesRes.success && invoicesRes.data) setInvoices(invoicesRes.data as Facture[]);
-                if (quotesRes.success && quotesRes.data) setQuotes(quotesRes.data as Devis[]);
             } else {
                 // Should be unreachable due to onboarding check, but guard anyway
                 console.warn("[DATA_SCOPE] No active society resolved, skipping data fetch.");

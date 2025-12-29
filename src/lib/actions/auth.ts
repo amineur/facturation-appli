@@ -38,7 +38,15 @@ export async function registerUser(data: any) {
                     connect: data.societes?.map((id: string) => ({ id })) || []
                 }
             },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
         });
 
         return { success: true, data: mapUser(user) };
@@ -51,7 +59,15 @@ export async function loginUser(email: string, password: string) {
     try {
         const user = await prisma.user.findUnique({
             where: { email },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
         });
 
         if (!user || user.password !== password) { // In PROD: Use bcrypt.compare
@@ -69,13 +85,29 @@ export async function getDefaultUser() {
         // Try to get usr_1 first (standard default)
         let user = await prisma.user.findUnique({
             where: { id: 'usr_1' },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
         });
 
         // If not found, get first user in DB (dev fallback)
         if (!user) {
             user = await prisma.user.findFirst({
-                include: { societes: true }
+                include: {
+                    societes: {
+                        select: {
+                            id: true,
+                            nom: true,
+                            logoUrl: true
+                        }
+                    }
+                }
             });
         }
 
@@ -124,7 +156,15 @@ export async function updateUser(userData: any) {
                 avatarUrl: userData.avatarUrl
                 // Societes update logic requires disconnect/connect, skipping for simple update
             },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
         });
         return { success: true, data: mapUser(user) };
     } catch (error: any) {
@@ -158,7 +198,15 @@ export async function upsertUser(userData: any) {
                     connect: userData.societes?.map((id: string) => ({ id })) || []
                 }
             },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
         });
 
         // Ensure we always return the fresh DB state
@@ -171,7 +219,17 @@ export async function upsertUser(userData: any) {
 
 export async function fetchAllUsers() {
     try {
-        const users = await prisma.user.findMany({ include: { societes: true } });
+        const users = await prisma.user.findMany({
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
+        });
         return { success: true, data: users.map(mapUser) };
     } catch (error: any) {
         return { success: false, error: error.message };
@@ -182,7 +240,15 @@ export async function fetchUserById(userId: string) {
     try {
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: {
+                        id: true,
+                        nom: true,
+                        logoUrl: true
+                    }
+                }
+            }
         });
         if (!user) return { success: false, error: "Utilisateur introuvable" };
         return { success: true, data: mapUser(user) };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useData } from "@/components/data-provider";
 import { ChevronDown, Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,8 +27,7 @@ export function MobileHeader() {
 
                 {societe?.logoUrl && (
                     <div className="h-8 w-8 rounded-md bg-white/5 backdrop-blur-sm flex items-center justify-center p-1">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={societe.logoUrl} alt={societe.nom} className="w-full h-full object-contain" />
+                        <Image src={societe.logoUrl} alt={societe.nom} width={28} height={28} className="object-contain" priority />
                     </div>
                 )}
             </div>

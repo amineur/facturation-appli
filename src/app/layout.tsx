@@ -24,30 +24,35 @@ export async function generateMetadata(): Promise<Metadata> {
     apple: '/favicon.ico',
   };
 
-  try {
-    const result = await fetchSocietes();
-    if (result.success && result.data && result.data.length > 0) {
-      const societe = result.data[0];
-      if (societe.logoUrl) {
-        // Use the logo directly. 
-        // Note: For Data URIs, this works fine in metadata.
-        // For server-side rendering, we can't easily "cache bust" with a timestamp 
-        // unless we want to invalidate caching frequently, but for initial load it's fine.
-        icons = {
-          icon: societe.logoUrl,
-          apple: societe.logoUrl,
-          shortcut: societe.logoUrl,
-        };
+  // Skip DB call during build to avoid Prisma quota errors
+  const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
 
-        // Add specific support for SVG if detected
-        if (societe.logoUrl.endsWith('.svg') || societe.logoUrl.startsWith('data:image/svg')) {
-          // Metadata types for specific icons are a bit complex, strictly typing 'any' above helps
-          // but ideally we'd construct the object carefully.
+  if (!isBuildPhase) {
+    try {
+      const result = await fetchSocietes();
+      if (result.success && result.data && result.data.length > 0) {
+        const societe = result.data[0];
+        if (societe.logoUrl) {
+          // Use the logo directly. 
+          // Note: For Data URIs, this works fine in metadata.
+          // For server-side rendering, we can't easily "cache bust" with a timestamp 
+          // unless we want to invalidate caching frequently, but for initial load it's fine.
+          icons = {
+            icon: societe.logoUrl,
+            apple: societe.logoUrl,
+            shortcut: societe.logoUrl,
+          };
+
+          // Add specific support for SVG if detected
+          if (societe.logoUrl.endsWith('.svg') || societe.logoUrl.startsWith('data:image/svg')) {
+            // Metadata types for specific icons are a bit complex, strictly typing 'any' above helps
+            // but ideally we'd construct the object carefully.
+          }
         }
       }
+    } catch (error) {
+      console.error("Failed to fetch metadata icons", error);
     }
-  } catch (error) {
-    console.error("Failed to fetch metadata icons", error);
   }
 
   return {

@@ -15,10 +15,18 @@ export async function POST(request: Request) {
         }
 
         // Find user by email
+        // TIMING: Start
+        const startQuery = Date.now();
         const user = await prisma.user.findUnique({
             where: { email },
-            include: { societes: true }
+            include: {
+                societes: {
+                    select: { id: true, nom: true }
+                }
+            }
         });
+        console.log(`[PERF] Login Query: ${Date.now() - startQuery}ms`);
+        // TIMING: End
 
         if (!user) {
             console.log('[AUTH_LOGIN] Account not found:', email);
@@ -82,7 +90,11 @@ export async function POST(request: Request) {
     } catch (error: any) {
         console.error('[AUTH API] Login error:', error);
         return NextResponse.json(
-            { success: false, error: 'Erreur serveur' },
+            {
+                success: false,
+                error: `Erreur serveur: ${error.message || 'Inconnue'}`,
+                details: error.stack
+            },
             { status: 500 }
         );
     }

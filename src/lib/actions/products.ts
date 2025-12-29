@@ -7,8 +7,10 @@ import { getDefaultUser } from './auth';
 
 // Helper to Auto-Create Products (Used by Invoices and Quotes)
 // Helper to Auto-Create Products (Used by Invoices and Quotes)
-export async function ensureProductsExist(items: any[], societeId: string) {
+export async function ensureProductsExist(items: any[], societeId: string, tx?: any) {
     if (!items || !Array.isArray(items)) return [];
+
+    const db = tx || prisma; // Use transaction if provided, otherwise use global prisma
 
     console.log("[DEBUG_SERVER] ensureProductsExist input:", items.length, "items", "SocieteId:", societeId);
 
@@ -31,7 +33,7 @@ export async function ensureProductsExist(items: any[], societeId: string) {
     // 2. Batch check existing products
     if (productsToProcess.size > 0) {
         const names = Array.from(productsToProcess.keys());
-        const existingProducts = await prisma.produit.findMany({
+        const existingProducts = await db.produit.findMany({
             where: {
                 societeId: societeId,
                 nom: { in: names }
@@ -48,7 +50,7 @@ export async function ensureProductsExist(items: any[], societeId: string) {
                 try {
                     const templateItem = productsToProcess.get(name)!;
                     console.log(`[AUTO-CREATE] Creating new product: "${name}"`);
-                    const newProduct = await prisma.produit.create({
+                    const newProduct = await db.produit.create({
                         data: {
                             societeId: societeId,
                             nom: name,

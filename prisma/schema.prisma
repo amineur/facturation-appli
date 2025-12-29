@@ -177,10 +177,10 @@ model Facture {
   archivedAt DateTime?
   config     String    @default("{}") // JSON content for UI settings (date col, discounts...)
 
-  @@index([societeId])
+  @@index([societeId, dateEmission])
   @@index([clientId])
-  @@index([dateEmission])
   @@index([statut])
+  @@index([deletedAt])
 }
 
 model Devis {
@@ -213,9 +213,8 @@ model Devis {
 
   items     DevisItem[]
 
-  @@index([societeId])
+  @@index([societeId, dateEmission])
   @@index([clientId])
-  @@index([dateEmission])
   @@index([statut])
 }
 
@@ -250,7 +249,7 @@ model HistoryEntry {
   timestamp DateTime @default(now())
 
   @@index([userId])
-  @@index([societeId])
+  @@index([societeId, timestamp])
   @@index([entityId])
 }
 

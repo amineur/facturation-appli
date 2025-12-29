@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
     LayoutDashboard,
@@ -106,8 +107,7 @@ export function Sidebar() {
                         <div className="flex items-center gap-3 overflow-hidden">
                             <div className="h-9 w-9 min-w-[36px] rounded-md bg-white/5 backdrop-blur-sm flex items-center justify-center overflow-hidden p-1">
                                 {societe?.logoUrl ? (
-                                    /* eslint-disable-next-line @next/next/no-img-element */
-                                    <img src={societe.logoUrl} alt={societe.nom} className="w-full h-full object-contain" />
+                                    <Image src={societe.logoUrl} alt={societe.nom} width={32} height={32} className="object-contain" priority />
                                 ) : (
                                     <Building2 className="h-5 w-5 text-[var(--icon-nav)]" />
                                 )}

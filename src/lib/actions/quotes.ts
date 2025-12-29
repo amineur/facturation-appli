@@ -67,11 +67,16 @@ async function fetchQuotesLegacy(societeId: string): Promise<{ success: boolean,
         const quotes = await prisma.devis.findMany({
             // @ts-ignore
             where: { societeId, deletedAt: null, statut: { not: 'Archivé' } },
-            include: { client: true },
+            include: {
+                client: {
+                    select: { id: true, nom: true }
+                }
+            },
             orderBy: [
                 { dateEmission: 'desc' },
                 { numero: 'desc' }
-            ]
+            ],
+            take: 100  // Pagination: limit to 100 most recent quotes
         });
 
         const mapped: Devis[] = quotes.map((q: any) => {
@@ -116,7 +121,11 @@ export async function fetchQuoteDetails(id: string): Promise<{ success: boolean,
         const q = await prisma.devis.findUnique({
             where: { id },
             // @ts-ignore
-            include: { client: true }
+            include: {
+                client: {
+                    select: { id: true, nom: true }
+                }
+            }
         });
 
         if (!q) return { success: false, error: "Devis introuvable" };
@@ -368,7 +377,11 @@ export async function fetchDeletedQuotes(societeId: string) {
             where: { societeId, deletedAt: { not: null } },
             // @ts-ignore
             orderBy: { deletedAt: 'desc' },
-            include: { client: true }
+            include: {
+                client: {
+                    select: { id: true, nom: true }
+                }
+            }
         });
         const mapped = quotes.map((q: any) => ({
             id: q.id,
@@ -399,7 +412,11 @@ export async function fetchArchivedQuotes(societeId: string) {
             // @ts-ignore
             where: { societeId, statut: 'Archivé', deletedAt: null },
             orderBy: { dateEmission: 'desc' },
-            include: { client: true }
+            include: {
+                client: {
+                    select: { id: true, nom: true }
+                }
+            }
         });
         const mapped = quotes.map((q: any) => ({
             id: q.id,
