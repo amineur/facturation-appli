@@ -152,8 +152,8 @@ export async function deleteRecord(tableName: string, recordId: string) {
         // Let's require ADMIN for now to be strictly safe, or EDITOR?
         // Let's stick to EDITOR for standard records (matches update), but OWNER for Societe.
 
-        let requiredRole = MembershipRole.EDITOR;
-        if (tableName === 'Societe') requiredRole = MembershipRole.OWNER;
+
+        const requiredRole = (tableName === 'Societe') ? MembershipRole.OWNER : MembershipRole.EDITOR;
 
         const authorized = await canAccessSociete(userRes.data.id, societeId, requiredRole);
         if (!authorized) return { success: false, error: "Droit insuffisant" };
@@ -378,6 +378,50 @@ export async function permanentlyDeleteRecord(tableName: 'Factures' | 'Devis', i
         revalidatePath("/", "layout");
         return { success: true };
     } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function deleteAllRecords(tableName: string, societeId?: string) {
+    try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        if (!societeId) {
+            const memberships = await prisma.membership.findMany({
+                where: { userId: userRes.data.id, status: 'active' }
+            });
+            if (memberships.length === 1) {
+                societeId = memberships[0].societeId;
+            } else {
+                return { success: false, error: "ID Société requis (plusieurs sociétés trouvées)" };
+            }
+        }
+
+        const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.OWNER);
+        if (!authorized) return { success: false, error: "Droit insuffisant (Propriétaire requis)" };
+
+        switch (tableName) {
+            case 'Factures':
+                await prisma.facture.deleteMany({ where: { societeId } });
+                break;
+            case 'Devis':
+                await prisma.devis.deleteMany({ where: { societeId } });
+                break;
+            case 'Clients':
+                await prisma.client.deleteMany({ where: { societeId } });
+                break;
+            case 'Produits':
+                await prisma.produit.deleteMany({ where: { societeId } });
+                break;
+            default:
+                return { success: false, error: "Type de données inconnu" };
+        }
+
+        revalidatePath("/", "layout");
+        return { success: true };
+    } catch (error: any) {
+        console.error("Delete All Error:", error);
         return { success: false, error: error.message };
     }
 }
