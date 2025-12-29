@@ -1435,19 +1435,19 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             )}
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-3 gap-4 items-end">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Numéro</label>
+                                <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">Numéro</label>
                                 <input {...register("numero")} readOnly={isReadOnly} disabled={false} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")} />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">
+                                <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">
                                     {type === "Facture" ? "Date d'émission" : "Date de création"}
                                 </label>
                                 <input type="date" {...register("dateEmission", { required: true })} readOnly={isReadOnly} disabled={false} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", isReadOnly && "opacity-60 pointer-events-none")} />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">
+                                <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">
                                     {type === "Facture" ? "Échéance" : "Date de validité"}
                                 </label>
                                 <input

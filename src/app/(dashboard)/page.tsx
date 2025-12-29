@@ -277,7 +277,7 @@ export default function DashboardPage() {
                 {/* Alerts Column */}
                 <div className="space-y-6">
                     {isLoadingMetrics ? <Skeleton className="h-[200px] w-full rounded-2xl" /> :
-                        (metrics.overdueCountGlobal > 0 || metrics.dueSoonCount > 0) ? (
+                        (metrics.overdueCount > 0 || metrics.dueSoonCount > 0) ? (
                             <div className="space-y-4">
                                 {metrics.overdueCount > 0 && (
                                     <div className="glass-card rounded-2xl p-5 border-l-4 border-red-500">
