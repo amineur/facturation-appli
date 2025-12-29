@@ -47,8 +47,9 @@ export default function LoginPage() {
                 localStorage.removeItem('active_societe_id');
                 localStorage.setItem("glassy_current_user_id", result.userId);
 
-                refreshData();
-                router.push("/");
+                // refreshData(); // Redundant with hard reload below
+                // Hard reload to ensure cookie is picked up by server actions immediately
+                window.location.href = "/";
 
             } else {
                 // LOGIN LOGIC (via API for Cookie)
@@ -73,8 +74,9 @@ export default function LoginPage() {
                     localStorage.removeItem('active_societe_id');
                     localStorage.setItem("glassy_current_user_id", user.id);
 
-                    refreshData();
-                    router.push("/");
+                    // refreshData(); // Redundant with hard reload below
+                    // Hard reload to ensure cookie is picked up by server actions immediately
+                    window.location.href = "/";
                 }
             }
         } catch (error: any) {

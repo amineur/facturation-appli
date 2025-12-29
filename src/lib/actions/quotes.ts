@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { Devis } from '@/types';
 import { revalidatePath } from "next/cache";
 import { ensureProductsExist } from './products';
-import { getDefaultUser } from './auth';
+import { getCurrentUser } from './auth';
 import { handleActionError } from './shared';
 
 // Fetch Actions
@@ -193,7 +193,7 @@ export async function fetchQuoteDetails(id: string): Promise<{ success: boolean,
 export async function createQuote(quote: Devis) {
     try {
         // 🔒 SECURITY: Verify access
-        const userRes = await getDefaultUser();
+        const userRes = await getCurrentUser();
         if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
 
         const targetSocieteId = quote.societeId || userRes.data.currentSocieteId;

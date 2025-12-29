@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { Facture } from '@/types';
 import { revalidatePath } from "next/cache";
 import { ensureProductsExist } from './products';
-import { getDefaultUser } from './auth';
+import { getCurrentUser } from './auth';
 import { handleActionError } from './shared';
 
 // Guards
@@ -225,7 +225,7 @@ export async function fetchInvoiceDetails(id: string): Promise<{ success: boolea
 export async function createInvoice(invoice: Facture) {
     try {
         // 🔒 SECURITY: Verify access
-        const userRes = await getDefaultUser();
+        const userRes = await getCurrentUser();
         if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
 
         const targetSocieteId = invoice.societeId || userRes.data.currentSocieteId;
@@ -241,7 +241,10 @@ export async function createInvoice(invoice: Facture) {
                 where: { id: targetSocieteId, members: { some: { id: userRes.data!.id } } }
             });
 
-            if (!hasAccess) throw new Error("Accès refusé");
+            if (!hasAccess) {
+                console.error(`[SECURITY] Access Denied. User ${userRes.data!.id} (${userRes.data!.email}) is NOT a member of Societe ${targetSocieteId}`);
+                throw new Error(`Accès refusé. Debug: User ${userRes.data!.email} n'est pas membre de la société ${targetSocieteId}`);
+            }
 
             // Process products (optimized to avoid N+1)
             const processedItems = await ensureProductsExist(invoice.items || [], targetSocieteId, tx);

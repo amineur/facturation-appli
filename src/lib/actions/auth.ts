@@ -49,6 +49,16 @@ export async function registerUser(data: any) {
             }
         });
 
+        const cookieStore = await cookies();
+        cookieStore.set("session_userid", user.id, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            path: "/"
+        });
+
+
+
         return { success: true, data: mapUser(user) };
     } catch (error: any) {
         return { success: false, error: error.message };
@@ -74,6 +84,14 @@ export async function loginUser(email: string, password: string) {
             return { success: false, error: "Email ou mot de passe incorrect" };
         }
 
+        const cookieStore = await cookies();
+        cookieStore.set("session_userid", user.id, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            path: "/"
+        });
+
         return { success: true, data: mapUser(user) };
     } catch (error: any) {
         return { success: false, error: error.message };
@@ -97,18 +115,9 @@ export async function getDefaultUser() {
         });
 
         // If not found, get first user in DB (dev fallback)
+        // If not found, DO NOT fall back to first user (Security Risk)
         if (!user) {
-            user = await prisma.user.findFirst({
-                include: {
-                    societes: {
-                        select: {
-                            id: true,
-                            nom: true,
-                            logoUrl: true
-                        }
-                    }
-                }
-            });
+            return { success: false, error: "Utilisateur par défaut introuvable" };
         }
 
         if (!user) {
@@ -124,7 +133,7 @@ export async function getDefaultUser() {
 export async function getCurrentUser() {
     try {
         const cookieStore = await cookies();
-        const token = cookieStore.get("auth_token")?.value;
+        const token = cookieStore.get("session_userid")?.value;
 
         if (token) {
             // If token looks like a raw ID
@@ -138,9 +147,9 @@ export async function getCurrentUser() {
             } catch (e) { }
         }
 
-        return getDefaultUser();
+        return { success: false, error: "Non authentifié" };
     } catch (e) {
-        return getDefaultUser();
+        return { success: false, error: "Erreur authentification" };
     }
 }
 

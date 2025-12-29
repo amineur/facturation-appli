@@ -4,11 +4,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
 import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Check, Loader2 } from "lucide-react";
 import { Produit } from "@/types";
 import { createProduct, updateProduct, deleteRecord } from "@/app/actions";
 
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export default function ProductEditPage() {
     const params = useParams();
@@ -91,7 +92,11 @@ export default function ProductEditPage() {
             await refreshData();
             setIsDirty(false); // Reset dirty state before navigation
             toast.success("Produit enregistré !");
-            router.push("/produits");
+
+            if (isNew) {
+                router.push("/produits");
+            }
+            // If Update, stay on page for feedback
         } catch (error: any) {
             console.error(error);
             toast.error("Erreur: " + error.message);
@@ -215,10 +220,33 @@ export default function ProductEditPage() {
                     </button>
                     <button
                         type="submit"
-                        className="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors"
+                        disabled={isSaving || (!!originalProduct && !isFormDirty)}
+                        className={cn(
+                            "flex items-center gap-2 rounded-lg px-6 py-2 text-sm font-medium transition-all duration-200 border",
+                            // Default Active
+                            (!isSaving && !(!!originalProduct && !isFormDirty)) && "bg-emerald-600 text-white hover:bg-emerald-500 hover:shadow-md border-transparent",
+                            // Loading
+                            isSaving && "bg-emerald-600 text-white opacity-80 cursor-wait border-transparent",
+                            // Saved
+                            (!!originalProduct && !isFormDirty && !isSaving) && "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 shadow-none translate-y-[1px]"
+                        )}
                     >
-                        <Save className="h-4 w-4" />
-                        Enregistrer
+                        {isSaving ? (
+                            <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Enregistrement...
+                            </>
+                        ) : (!!originalProduct && !isFormDirty) ? (
+                            <>
+                                <Check className="h-4 w-4" />
+                                Enregistré
+                            </>
+                        ) : (
+                            <>
+                                <Save className="h-4 w-4" />
+                                Enregistrer
+                            </>
+                        )}
                     </button>
                 </div>
             </form>

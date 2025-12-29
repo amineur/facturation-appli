@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { dataService } from "@/lib/data-service";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
     LayoutDashboard,
@@ -16,6 +17,7 @@ import {
     Archive,
     ChevronDown,
     Building2,
+    Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useData } from "@/components/data-provider";
@@ -181,7 +183,10 @@ export function Sidebar() {
                         <Settings className="h-5 w-5" />
                         Paramètres & Admin
                     </button>
-                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-white/10 hover:text-red-500 transition-colors">
+                    <button
+                        onClick={() => dataService.logout()}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-white/10 hover:text-red-500 transition-colors"
+                    >
                         <LogOut className="h-5 w-5" />
                         Déconnexion
                     </button>

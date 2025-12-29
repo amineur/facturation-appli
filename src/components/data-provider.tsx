@@ -22,7 +22,7 @@ interface DataContextType {
     societes: Societe[];
     user: any;
     switchSociete: (id: string) => void;
-    createSociete: (nom: string) => Promise<any>;
+    createSociete: (nom: string, details?: any) => Promise<any>;
     updateSociete: (societe: Societe) => Promise<any>;
     refreshData: (silent?: boolean) => Promise<void>;
     isLoading: boolean;
@@ -64,7 +64,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const fetchData = async (silent: boolean = false) => {
         // MUTEX GUARD
         if (fetchingRef.current) {
-
+            return;
+        }
+        // SKIP on Guest Routes to prevent "Server Action Not Found" errors during login flow
+        if (pathname?.startsWith('/login') || pathname?.startsWith('/signup')) {
+            setIsLoading(false);
             return;
         }
         fetchingRef.current = true;
@@ -162,7 +166,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 }
 
                 if (!finalUser) {
-                    console.error('[AUTH] ❌ No users found in DB (ID, Email, or Default). AuthChecked set to TRUE, redirection will happen if needed.');
+                    if (pathname !== '/login') {
+                        console.warn('[AUTH] ⚠️ No active user session found. Redirecting to login...');
+                    }
                     // Do NOT redirect here immediately, let the flow finish or redirect after state update
                     if (pathname !== '/login') {
                         // router.push('/login'); // DELAY THIS
@@ -390,9 +396,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         handleRefresh();
     };
 
-    const handleCreateSociete = async (nom: string) => {
+    const handleCreateSociete = async (nom: string, details?: any) => {
         setIsLoading(true);
-        const res = await createSocieteAction(nom);
+        const res = await createSocieteAction(nom, details);
         if (res.success && res.data) {
             const newId = (res.data as any).id;
             dataService.switchSociete(newId);

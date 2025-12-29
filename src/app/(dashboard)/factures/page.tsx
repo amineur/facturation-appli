@@ -105,7 +105,8 @@ function InvoicesPage() {
         const result = await fetchInvoiceDetails(facture.id);
 
         if (!result.success || !result.data) {
-            toast.error("Erreur lors du chargement des détails de la facture.");
+            console.error("[PREVIEW_DEBUG] Toast Error:", result.error);
+            toast.error(`Erreur DL: ${result.error || "Inconnu"}`);
             return;
         }
 
@@ -162,7 +163,8 @@ function InvoicesPage() {
             const result = await fetchInvoiceDetails(facture.id);
 
             if (!result.success || !result.data) {
-                alert("Erreur lors du chargement des détails de la facture.");
+                console.error("[PREVIEW_DEBUG] Alert Error:", result.error);
+                alert(`Erreur PREVIEW: ${result.error || "Données manquantes"}`);
                 return;
             }
 
@@ -464,8 +466,8 @@ function InvoicesPage() {
                 </div>
             </div>
 
-            <div className="glass-card rounded-xl p-4">
-                <div className="flex flex-col md:flex-row gap-4 mb-6">
+            <div className="glass-card rounded-xl p-4 mb-6">
+                <div className="flex flex-col md:flex-row gap-4">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <input

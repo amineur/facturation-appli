@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
                 return {
                     nom: company.nom_complet,
-                    siret: company.siret,
+                    siret: siege?.siret || company.siret,
                     adresse: siege ? [
                         siege.numero_voie,
                         siege.type_voie,
@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
                     codePostal: siege?.code_postal || company.code_postal,
                     ville: siege?.libelle_commune || company.libelle_commune,
                     formeJuridique: mapLegalForm(company.nature_juridique),
-                    tvaIntra: tvaIntra
+                    tvaIntra: tvaIntra,
+                    siren: siren
                 };
             });
 

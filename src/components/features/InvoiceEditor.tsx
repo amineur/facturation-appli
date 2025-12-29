@@ -41,7 +41,13 @@ interface InvoiceFormValues {
 }
 
 export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
-    const { clients, products, refreshData, societe, invoices, quotes, logAction, addInvoice, updateInvoiceInList } = useData();
+    const { clients: globalClients, products, refreshData, societe, invoices, quotes, logAction, addInvoice, updateInvoiceInList } = useData();
+    const [optimisticClients, setOptimisticClients] = useState<Client[]>([]);
+
+    const clients = [
+        ...optimisticClients,
+        ...globalClients.filter(c => !optimisticClients.some(oc => oc.id === c.id))
+    ];
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -761,11 +767,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             await logAction(actionType, entityType, description, savedId);
 
             // OPTIMIZATION: Use optimistic update instead of full refresh
+            const finalDocument = { ...documentData, id: savedId };
+
             if (type === 'Facture') {
                 if (actionType === 'create') {
-                    addInvoice(documentData as Facture);
+                    addInvoice(finalDocument as Facture);
                 } else {
-                    updateInvoiceInList(documentData as Facture);
+                    updateInvoiceInList(finalDocument as Facture);
                 }
             }
             // For quotes, we still need refreshData as we don't have addQuote/updateQuote helpers yet
@@ -774,8 +782,19 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             }
 
             // Simulate a brief delay to show the loading state
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 300));
             toast.success(`${type} enregistré${type === "Facture" ? "e" : ""} avec succès!`);
+
+            // RESET FORM STATE TO PRISTINE WITH NEW ID
+            // This fixes the "unsaved changes" warning when navigating back
+            const newFormValues = {
+                ...data,
+                numero: documentData.numero, // Ensure number is synced if generated
+            };
+
+            // Critical: reset with the NEW ID so RHF knows we are now editing an existing doc
+            const newDefaults = buildFormDefaults({ ...finalDocument, ...newFormValues });
+            reset(newDefaults, { keepValues: true, keepDirty: false, keepTouched: false }); // Force clean state
 
 
 
@@ -1330,13 +1349,28 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
                         <button
                             type="submit"
-                            disabled={isSaving || isReadOnly}
-                            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-emerald-600"
+                            disabled={isSaving || isReadOnly || (!!initialData?.id && !isDirty)}
+                            className={cn(
+                                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 border",
+                                // Default Active State
+                                (!isSaving && !isReadOnly && !(!!initialData?.id && !isDirty)) && "bg-emerald-600 text-white hover:bg-emerald-500 hover:shadow-md border-transparent shadow-sm",
+                                // Loading State
+                                isSaving && "bg-emerald-600 text-white opacity-80 cursor-wait border-transparent",
+                                // Saved State ("Enfoncé"/Feedback)
+                                (!!initialData?.id && !isDirty && !isSaving) && "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 shadow-none translate-y-[1px]",
+                                // ReadOnly
+                                isReadOnly && "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-70"
+                            )}
                         >
                             {isSaving ? (
                                 <>
                                     <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                     Enregistrement...
+                                </>
+                            ) : (!!initialData?.id && !isDirty) ? (
+                                <>
+                                    <Check className="h-4 w-4" />
+                                    Enregistré
                                 </>
                             ) : (
                                 <>
@@ -2101,13 +2135,14 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             {/* Client Creation Modal */}
             {isClientModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-background dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl border border-border dark:border-white/10 p-6 animate-in zoom-in-95 duration-200">
+                    <div className="bg-background dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl border border-border dark:border-white/10 p-4 md:p-6 animate-in zoom-in-95 duration-200">
                         <ClientEditor
-                            onSuccess={async (newClientId) => {
+                            onSuccess={async (newClient) => {
                                 setIsClientModalOpen(false);
-                                // Force refresh to sync client list
+                                setOptimisticClients(prev => [...prev, newClient]);
+                                setValue("clientId", newClient.id); // Auto select new client
+                                // Sync backgroun
                                 await refreshData();
-                                setValue("clientId", newClientId); // Auto select new client
                             }}
                             onCancel={() => setIsClientModalOpen(false)}
                         />

@@ -379,7 +379,7 @@ function SettingsPage() {
                             icon={Plus}
                             label="Ajouter une société"
                             color="bg-orange-500"
-                            onClick={() => setActiveView("CREATE_SOCIETE")}
+                            onClick={() => router.push("/onboarding")}
                         />
                     </SettingsSection>
                 </div>

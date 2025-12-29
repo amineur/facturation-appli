@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
       'date-fns'
     ],
     // Optimize CSS delivery
-    optimizeCss: true,
+    optimizeCss: false,
   },
   // Compiler options for production optimization
   compiler: {

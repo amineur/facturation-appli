@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { Produit } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { getDefaultUser } from './auth';
+import { getCurrentUser } from './auth';
 
 // Helper to Auto-Create Products (Used by Invoices and Quotes)
 // Helper to Auto-Create Products (Used by Invoices and Quotes)
@@ -127,7 +127,7 @@ export async function fetchProducts(societeId: string): Promise<{ success: boole
 export async function createProduct(product: Produit) {
     try {
         // 🔒 SECURITY: Verify access
-        const userRes = await getDefaultUser();
+        const userRes = await getCurrentUser();
         if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
 
         const targetSocieteId = product.societeId || userRes.data.currentSocieteId;

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2, Check, AlertTriangle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
@@ -21,7 +21,6 @@ interface ClientFormValues {
     telephone: string;
     mobile: string;
     adresse: string;
-    // adresse2 removed
     codePostal: string;
     ville: string;
     pays: string;
@@ -29,8 +28,8 @@ interface ClientFormValues {
     nomContact: string;
 }
 
-export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData?: Client, onSuccess?: (clientId: string) => void, onCancel?: () => void }) {
-    const { refreshData, societe, setIsDirty, confirm, logAction } = useData();
+export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData?: Client, onSuccess?: (client: Client) => void, onCancel?: () => void }) {
+    const { refreshData, societe, setIsDirty, confirm, logAction, clients } = useData();
     const router = useRouter();
     const searchParams = useSearchParams();
     const returnUrl = searchParams.get("returnUrl");
@@ -39,7 +38,7 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
     const [countrySearch, setCountrySearch] = useState(initialData?.pays || "France");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const { register, handleSubmit, setValue, watch, formState: { errors, isDirty } } = useForm<ClientFormValues>({
+    const { register, handleSubmit, setValue, watch, reset, formState: { errors, isDirty } } = useForm<ClientFormValues>({
         defaultValues: {
             nom: initialData?.nom || "",
             siret: initialData?.siret || "",
@@ -48,7 +47,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
             telephone: initialData?.telephone || "",
             mobile: initialData?.mobile || "",
             adresse: initialData?.adresse || "",
-            // adresse2 removed
             codePostal: initialData?.codePostal || "",
             ville: initialData?.ville || "",
             pays: initialData?.pays || "France",
@@ -59,6 +57,13 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
 
     // Auto-fill City based on Zip Code (France only)
     const watchedZip = watch("codePostal");
+    const watchedName = watch("nom");
+
+    // Check for duplicates
+    const duplicateClient = clients.find(c =>
+        c.nom.trim().toLowerCase() === watchedName?.trim().toLowerCase() &&
+        c.id !== initialData?.id
+    );
 
     useEffect(() => {
         const fetchCity = async () => {
@@ -68,7 +73,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                     if (response.ok) {
                         const data = await response.json();
                         if (data && data.length > 0) {
-                            // Automatically set the first matching city and Country to France
                             setValue("ville", data[0].nom);
                             setValue("pays", "France");
                             setCountrySearch("France");
@@ -80,14 +84,14 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
             }
         };
 
-        const timeoutId = setTimeout(fetchCity, 300); // 300ms debounce
+        const timeoutId = setTimeout(fetchCity, 300);
         return () => clearTimeout(timeoutId);
     }, [watchedZip, setValue]);
 
     // Sync isDirty with global state
     useEffect(() => {
         setIsDirty(isDirty);
-        return () => setIsDirty(false); // Cleanup
+        return () => setIsDirty(false);
     }, [isDirty, setIsDirty]);
 
     // Close dropdown when clicking outside
@@ -101,7 +105,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Filter countries
     const filteredCountries = COUNTRIES.filter(c =>
         c.toLowerCase().includes(countrySearch.toLowerCase())
     );
@@ -113,49 +116,45 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
         try {
             const isNew = !initialData?.id;
 
-            // Prepare Client Data
             const clientData: Client = {
-                id: initialData?.id || "temp", // Temp ID until server response
+                id: initialData?.id || "temp",
                 societeId: societe?.id || "",
                 ...data,
-                adresse2: "", // Clear or keep empty
-                pays: countrySearch // Ensure we take the state value if manually typed
+                adresse2: "",
+                pays: countrySearch
             };
 
             if (isNew) {
-                // CREATE
                 const res = await createClientAction(clientData);
-                if (!res.success || !res.id) {
-                    throw new Error(res.error || "Erreur lors de la création");
-                }
-                // Update local with real ID
+                if (!res.success || !res.id) throw new Error(res.error || "Erreur lors de la création");
                 clientData.id = res.id;
                 logAction('create', 'client', `Nouveau client ${clientData.nom} créé`, clientData.id);
             } else {
-                // UPDATE
                 const res = await updateClient(clientData);
-                if (!res.success) {
-                    throw new Error(res.error || "Erreur lors de la modification");
-                }
+                if (!res.success) throw new Error(res.error || "Erreur lors de la modification");
                 logAction('update', 'client', `Client ${clientData.nom} modifié`, clientData.id);
             }
 
             await refreshData();
             toast.success("Client enregistré avec succès !");
+            reset(data);
 
             if (onSuccess) {
-                onSuccess(clientData.id);
+                onSuccess(clientData);
                 return;
             }
 
-            setTimeout(() => {
-                if (returnUrl) {
-                    const separator = returnUrl.includes('?') ? '&' : '?';
-                    router.push(`${returnUrl}${separator}clientId=${clientData.id}`);
-                } else {
-                    router.push("/clients");
-                }
-            }, 500);
+            if (isNew) {
+                setTimeout(() => {
+                    if (returnUrl) {
+                        const separator = returnUrl.includes('?') ? '&' : '?';
+                        router.push(`${returnUrl}${separator}clientId=${clientData.id}`);
+                    } else {
+                        router.push("/clients");
+                    }
+                }, 500);
+            }
+
         } catch (error: any) {
             console.error(error);
             toast.error("Erreur: " + error.message);
@@ -164,18 +163,12 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
         }
     };
 
-    // ... (handleBack logic used if not in modal)
-
     return (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     {onCancel ? (
-                        <button
-                            type="button"
-                            onClick={onCancel}
-                            className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                        >
+                        <button type="button" onClick={onCancel} className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground">
                             <ArrowLeft className="h-5 w-5" />
                         </button>
                     ) : (
@@ -202,11 +195,25 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         <p className="text-muted-foreground mt-1">Saisissez les informations du client.</p>
                     </div>
                 </div>
-                <button type="submit" disabled={isSaving} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                <button
+                    type="submit"
+                    disabled={isSaving || (!!initialData?.id && !isDirty)}
+                    className={cn(
+                        "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 border",
+                        (!isSaving && !(!!initialData?.id && !isDirty)) && "bg-emerald-600 text-white hover:bg-emerald-500 hover:shadow-md border-transparent shadow-sm",
+                        isSaving && "bg-emerald-600 text-white opacity-80 cursor-wait border-transparent",
+                        (!!initialData?.id && !isDirty && !isSaving) && "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 shadow-none translate-y-[1px]"
+                    )}
+                >
                     {isSaving ? (
                         <>
                             <Loader2 className="h-4 w-4 animate-spin" />
                             Enregistrement...
+                        </>
+                    ) : (!!initialData?.id && !isDirty) ? (
+                        <>
+                            <Check className="h-4 w-4" />
+                            Enregistré
                         </>
                     ) : (
                         <>
@@ -217,20 +224,30 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                 </button>
             </div>
 
-            <div className="glass-card rounded-xl p-8 space-y-8">
+            <div className="glass-card rounded-xl p-4 md:p-8 space-y-6 md:space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Identity */}
                     <div className="space-y-4 md:col-span-2">
                         <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
                             <User className="h-4 w-4 text-blue-500" /> Identité
                         </h3>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-muted-foreground">Nom / Raison Sociale</label>
-                            <input
-                                {...register("nom", { required: "Le nom est requis" })}
-                                className="w-full h-11 rounded-lg glass-input px-4 text-foreground focus:ring-2 focus:ring-blue-500/50 transition-all"
-                                placeholder="Ex: Acme Corp"
-                            />
+                            <div className="space-y-1">
+                                <input
+                                    {...register("nom", { required: "Le nom est requis" })}
+                                    className={cn(
+                                        "w-full h-11 rounded-lg glass-input px-4 text-foreground focus:ring-2 focus:ring-blue-500/50 transition-all",
+                                        duplicateClient && "border-amber-500/50 focus:ring-amber-500/50"
+                                    )}
+                                    placeholder="Ex: Acme Corp"
+                                />
+                                {duplicateClient && (
+                                    <div className="flex items-center gap-2 text-amber-500 text-xs animate-in slide-in-from-top-1">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        <span>Attention : Un client existe déjà avec ce nom</span>
+                                    </div>
+                                )}
+                            </div>
                             {errors.nom && <span className="text-xs text-red-400">{errors.nom.message}</span>}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -245,7 +262,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         </div>
                     </div>
 
-                    {/* Contact */}
                     <div className="space-y-4">
                         <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
                             <Mail className="h-4 w-4 text-purple-500" /> Contact
@@ -283,7 +299,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         </div>
                     </div>
 
-                    {/* Address */}
                     <div className="space-y-4">
                         <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
                             <MapPin className="h-4 w-4 text-orange-500" /> Adresse
@@ -293,7 +308,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                 <label className="block text-sm font-medium text-muted-foreground">Adresse complète (Ligne 1)</label>
                                 <input {...register("adresse")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="123 Rue..." />
                             </div>
-                            {/* Adresse 2 Removed */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-muted-foreground">Code Postal</label>
@@ -305,8 +319,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                 </div>
                             </div>
 
-
-                            {/* Custom Country Combobox */}
                             <div className="space-y-2 relative" ref={dropdownRef}>
                                 <label className="block text-sm font-medium text-muted-foreground">Pays</label>
                                 <div className="relative">

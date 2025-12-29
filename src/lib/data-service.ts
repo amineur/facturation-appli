@@ -1,7 +1,8 @@
 import { Client, Facture, Devis, Produit, Societe, User, PdfTemplate, DEFAULT_PDF_TEMPLATE, StatusFacture, HistoryEntry } from "@/types";
 import { MOCK_CLIENTS, MOCK_FACTURES, MOCK_PRODUITS, MOCK_DEVIS, MOCK_SOCIETES, MOCK_USERS } from "./mock-data";
 import { generateNextInvoiceNumber } from "@/lib/invoice-utils";
-import { loginUser, registerUser, updateUser, upsertUser, createHistoryEntry, fetchHistory } from '@/app/actions';
+import { loginUser, registerUser, updateUser, upsertUser } from '@/lib/actions/auth';
+import { createHistoryEntry, fetchHistory } from '@/lib/actions/history';
 
 const STORAGE_KEYS = {
     CLIENTS: "glassy_clients",

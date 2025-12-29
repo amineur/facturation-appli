@@ -18,6 +18,7 @@ const FRENCH_BANKS: Record<string, { name: string, bic: string }> = {
     "11406": { name: "CREDIT AGRICOLE", bic: "AGRIFRPP" },
     "11315": { name: "BANQUE POPULAIRE", bic: "CCBPFRPP" },
     "28233": { name: "REVOLUT", bic: "REVOFRPP" },
+    "10207": { name: "BANQUE POPULAIRE", bic: "CCBPFRPP" },
 };
 
 function getLocalBankDetails(iban: string) {
