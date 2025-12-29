@@ -331,13 +331,17 @@ export async function updateInvoice(invoice: Facture) {
         };
 
         // ... Strict Status Rule logic (same) ...
+        // FIX: When invoice is Envoyée/Payée, only allow status changes, but preserve items
         if (currentInvoice.statut === "Envoyée" || currentInvoice.statut === "Envoyé" || currentInvoice.statut === "Payée") {
             if (currentInvoice.statut === invoice.statut) return { success: false, error: "Contenu interdit..." };
             if ((currentInvoice.statut === "Envoyée" || currentInvoice.statut === "Envoyé") && !["Payée", "Annulée", "Retard"].includes(invoice.statut)) return { success: false, error: "Transition invalide..." };
 
+            // Only allow status and datePaiement changes, remove other fields
             updateData = {
                 statut: invoice.statut,
                 datePaiement: (invoice.statut === 'Payée' && invoice.datePaiement) ? new Date(invoice.datePaiement) : undefined,
+                // KEEP itemsJSON to preserve line items
+                itemsJSON: itemsJson,
             };
             if (currentInvoice.statut === "Payée" && invoice.statut !== "Payée") updateData.datePaiement = null;
         }

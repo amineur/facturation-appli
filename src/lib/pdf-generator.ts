@@ -335,14 +335,57 @@ export const generateInvoicePDF = (
         doc.setFontSize(8); // Body font size match
         doc.setTextColor(0, 0, 0);
 
-        // HT
-        doc.setFont(FONT, "normal");
-        doc.text("Total HT", xTotalsLabel, yTotals);
-        doc.text(`${document.totalHT.toFixed(2).replace('.', ',')} €`, xTotalsValue, yTotals, { align: "right" });
-        yTotals += 4; // Tighter
+        // Calculate total line discounts
+        let totalLineDiscounts = 0;
+        (Array.isArray(document.items) ? document.items : []).forEach(item => {
+            const pu = typeof item.prixUnitaire === 'number' ? item.prixUnitaire : 0;
+            const qty = typeof item.quantite === 'number' ? item.quantite : 1;
+            const remiseVal = item.remise || 0;
+            const remiseType = item.remiseType || 'pourcentage';
+
+            const montantBrut = pu * qty;
+            let discountAmount = 0;
+
+            if (remiseVal > 0) {
+                if (remiseType === 'montant') {
+                    discountAmount = remiseVal;
+                } else {
+                    discountAmount = montantBrut * (remiseVal / 100);
+                }
+            }
+
+            totalLineDiscounts += discountAmount;
+        });
+
+        // HT Brut (if there are discounts)
+        if (totalLineDiscounts > 0) {
+            const totalHTBrut = document.totalHT + totalLineDiscounts;
+            doc.setFont(FONT, "normal");
+            doc.text("Total HT brut", xTotalsLabel, yTotals);
+            doc.text(`${totalHTBrut.toFixed(2).replace('.', ',')} €`, xTotalsValue, yTotals, { align: "right" });
+            yTotals += 4;
+
+            // Total remises lignes
+            doc.text("Total remises", xTotalsLabel, yTotals);
+            doc.text(`- ${totalLineDiscounts.toFixed(2).replace('.', ',')} €`, xTotalsValue, yTotals, { align: "right" });
+            yTotals += 4;
+
+            // HT Net
+            doc.setFont(FONT, "bold");
+            doc.text("Total HT net", xTotalsLabel, yTotals);
+            doc.text(`${document.totalHT.toFixed(2).replace('.', ',')} €`, xTotalsValue, yTotals, { align: "right" });
+            yTotals += 4;
+        } else {
+            // HT (no discounts)
+            doc.setFont(FONT, "normal");
+            doc.text("Total HT", xTotalsLabel, yTotals);
+            doc.text(`${document.totalHT.toFixed(2).replace('.', ',')} €`, xTotalsValue, yTotals, { align: "right" });
+            yTotals += 4;
+        }
 
         // REMISE GLOBALE (if any)
         if (document.remiseGlobale && document.remiseGlobale > 0) {
+            doc.setFont(FONT, "normal");
             doc.text(`Dont remise globale`, xTotalsLabel, yTotals);
             const val = document.remiseGlobale;
             // Assumption: totalHT implies net, but here we just show the info "Dont" or subtract if needed.

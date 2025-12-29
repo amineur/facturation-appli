@@ -206,7 +206,7 @@ export const InvoiceLineItem = ({
                                     readOnly={isReadOnly}
                                     disabled={false}
                                     className={cn(
-                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 text-sm p-1",
+                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 text-sm pb-1",
                                         (errors?.items as any)?.[index]?.date && "border-red-500 focus:border-red-500",
                                         isReadOnly && "opacity-80 pointer-events-none"
                                     )}
@@ -228,7 +228,7 @@ export const InvoiceLineItem = ({
                                 readOnly={isReadOnly}
                                 disabled={false}
                                 className={cn(
-                                    "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                    "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pb-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                                     isReadOnly && "opacity-80 pointer-events-none"
                                 )}
                             />
@@ -246,7 +246,7 @@ export const InvoiceLineItem = ({
                                         inputRef={ref}
                                         disabled={isReadOnly}
                                         className={cn(
-                                            "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-5",
+                                            "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-5 pb-1",
                                             isReadOnly && "opacity-80 pointer-events-none"
                                         )}
                                     />
@@ -255,7 +255,7 @@ export const InvoiceLineItem = ({
                             <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">€</span>
                         </div>
 
-                        <div className="text-right font-medium text-foreground pt-2">
+                        <div className="text-right font-medium text-foreground border-b border-white/20 dark:border-white/10 pb-1 min-h-[28px] flex items-center justify-end whitespace-nowrap">
                             {(() => {
                                 const montantAvantRemise = (watch(`items.${index}.quantite`) || 0) * (watch(`items.${index}.prixUnitaire`) || 0);
                                 const remise = watch(`items.${index}.remise`) || 0;
@@ -290,7 +290,7 @@ export const InvoiceLineItem = ({
                         </div>
 
                         {showTTCColumn && (
-                            <div className="text-right text-sm text-foreground pt-2">
+                            <div className="text-right font-medium text-foreground border-b border-white/20 dark:border-white/10 pb-1 min-h-[28px] flex items-center justify-end whitespace-nowrap">
                                 {(() => {
                                     const prixU = watch(`items.${index}.prixUnitaire`) || 0;
                                     const tva = watch(`items.${index}.tva`) || 0;
@@ -327,7 +327,7 @@ export const InvoiceLineItem = ({
                                         setValue(`items.${index}.remiseType`, discountType);
                                     }}
                                     className={cn(
-                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-right text-foreground focus:border-blue-500 focus:ring-0 pr-4 pb-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                                         isReadOnly && "opacity-80 pointer-events-none"
                                     )}
                                 />

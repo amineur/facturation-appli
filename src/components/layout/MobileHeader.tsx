@@ -27,7 +27,7 @@ export function MobileHeader() {
 
                 {societe?.logoUrl && (
                     <div className="h-8 w-8 rounded-md bg-white/5 backdrop-blur-sm flex items-center justify-center p-1">
-                        <Image src={societe.logoUrl} alt={societe.nom} width={28} height={28} className="object-contain" priority />
+                        <Image src={societe.logoUrl} alt={societe.nom} width={28} height={28} className="object-contain" priority unoptimized />
                     </div>
                 )}
             </div>

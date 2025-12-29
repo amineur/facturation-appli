@@ -125,7 +125,7 @@ export function UserManagement({ onBack }: { onBack: () => void }) {
                                     return (
                                         <div key={socId} className="h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-white overflow-hidden" title={soc.nom}>
                                             {soc.logoUrl ? (
-                                                <Image src={soc.logoUrl} alt={soc.nom} width={24} height={24} className="object-cover" />
+                                                <Image src={soc.logoUrl} alt={soc.nom} width={24} height={24} className="object-cover" unoptimized />
                                             ) : (
                                                 soc.nom.charAt(0)
                                             )}
@@ -294,7 +294,7 @@ function UserEditor({ user, societes, onSave, onCancel }: { user: User | null, s
 
                                     <div className="h-6 w-6 rounded-md bg-white/10 flex items-center justify-center mr-3 overflow-hidden">
                                         {soc.logoUrl ? (
-                                            <Image src={soc.logoUrl} alt={soc.nom} width={24} height={24} className="object-cover" />
+                                            <Image src={soc.logoUrl} alt={soc.nom} width={24} height={24} className="object-cover" unoptimized />
                                         ) : (
                                             <Building2 className="h-3 w-3" />
                                         )}

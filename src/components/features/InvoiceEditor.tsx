@@ -158,7 +158,6 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     // Reset form when initialData loads or ID changes (Robust Reset)
     useEffect(() => {
         if (initialData?.id) {
-            console.log("[RESET_DEBUG] Resetting form with initialData", initialData.id);
             const defaults = buildFormDefaults(initialData);
             reset(defaults, { keepDirty: false, keepTouched: false });
         }
@@ -836,6 +835,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         const documentData = {
             id: initialData?.id || "temp",
             ...formData,
+            // FIX: Use initialData.items as fallback if formData.items is empty
+            items: (formData.items && formData.items.length > 0) ? formData.items : (initialData?.items || []),
             // Calculate totals freshly to be sure
             totalHT: totals.ht,
             totalTVA: totals.tva,
@@ -873,7 +874,22 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
 
 
+
     const handlePreview = () => {
+        // Guard: Block preview if invoice is not saved (same as download)
+        if (!initialData?.id) {
+            toast.error("La facture doit être enregistrée avant de pouvoir générer un aperçu.", {
+                duration: 5000,
+                style: {
+                    background: '#EF4444',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 500
+                }
+            });
+            return;
+        }
+
         const formData = watch();
         const client = clients.find(c => c.id === formData.clientId);
 
@@ -890,6 +906,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         const documentData = {
             id: initialData?.id || "temp",
             ...formData,
+            // FIX: Use initialData.items as fallback if formData.items is empty
+            items: (formData.items && formData.items.length > 0) ? formData.items : (initialData?.items || []),
             totalHT: totals.ht,
             totalTVA: totals.tva,
             totalTTC: totals.ttc,

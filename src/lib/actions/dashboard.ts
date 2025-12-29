@@ -159,3 +159,79 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
         return { success: false, error: error.message };
     }
 }
+
+export async function fetchDashboardMetrics(societeId: string, dateRange: { start: Date, end: Date }): Promise<{ success: boolean, data?: any, error?: string }> {
+    try {
+        const { start, end } = dateRange;
+
+        // Fetch invoices within date range
+        const invoices = await prisma.facture.findMany({
+            where: {
+                societeId,
+                deletedAt: null,
+                dateEmission: {
+                    gte: start,
+                    lte: end
+                }
+            },
+            select: {
+                statut: true,
+                totalTTC: true,
+                dateEcheance: true,
+                datePaiement: true
+            }
+        });
+
+        // Calculate metrics
+        const now = new Date();
+        const revenue = invoices
+            .filter(inv => inv.statut === 'Payée')
+            .reduce((sum, inv) => sum + (inv.totalTTC || 0), 0);
+
+        // Count by status
+        const counts: Record<string, number> = {};
+        invoices.forEach(inv => {
+            counts[inv.statut] = (counts[inv.statut] || 0) + 1;
+        });
+
+        // Overdue invoices
+        const overdueInvoices = invoices.filter(inv =>
+            inv.statut !== 'Payée' &&
+            inv.statut !== 'Annulée' &&
+            inv.dateEcheance &&
+            new Date(inv.dateEcheance) < now
+        );
+        const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + (inv.totalTTC || 0), 0);
+        const overdueCount = overdueInvoices.length;
+
+        // Due soon (next 7 days)
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+        const dueSoonInvoices = invoices.filter(inv =>
+            inv.statut !== 'Payée' &&
+            inv.statut !== 'Annulée' &&
+            inv.dateEcheance &&
+            new Date(inv.dateEcheance) >= now &&
+            new Date(inv.dateEcheance) <= sevenDaysFromNow
+        );
+        const dueSoonAmount = dueSoonInvoices.reduce((sum, inv) => sum + (inv.totalTTC || 0), 0);
+        const dueSoonCount = dueSoonInvoices.length;
+
+        return {
+            success: true,
+            data: {
+                revenue,
+                counts,
+                overdueAmount,
+                overdueCount,
+                dueSoonAmount,
+                dueSoonCount
+            }
+        };
+
+    } catch (error: any) {
+        console.error('[ERROR] fetchDashboardMetrics:', error);
+        return { success: false, error: error.message };
+    }
+}

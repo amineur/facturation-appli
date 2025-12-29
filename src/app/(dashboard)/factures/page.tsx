@@ -87,41 +87,53 @@ function InvoicesPage() {
         setDraftData(null);
     };
 
-    const handleDownload = (facture: Facture) => {
+    const handleDownload = async (facture: Facture) => {
         const client = clients.find(c => c.id === facture.clientId);
-
-        // Validation Date Column
-        if (facture.config?.showDateColumn) {
-            const missingDate = facture.items.some(item => !item.date);
-            if (missingDate) {
-                toast.error("La colonne Date est activée mais certaines lignes n’ont pas de date. Veuillez corriger le document avant de générer le PDF.");
-                return;
-            }
-        }
 
         if (!societe) {
             toast.error("Informations de la société manquantes.");
             return;
         }
 
-        if (client) {
-            generateInvoicePDF(facture, societe, client, {});
-            logAction('read', 'facture', `Facture ${facture.numero} téléchargée`, facture.id);
-
-            if (facture.statut === "Brouillon") {
-                const updatedInvoice = { ...facture, statut: "Téléchargée" as StatusFacture };
-                // Optimistic
-                updateInvoiceInList(updatedInvoice);
-
-                markInvoiceAsDownloaded(facture.id).then((res) => {
-                    if (res.success) {
-                        logAction('update', 'facture', `Statut Facture ${facture.numero} changé pour Téléchargée (Download)`, facture.id);
-                        refreshData();
-                    }
-                });
-            }
-        } else {
+        if (!client) {
             toast.error("Client introuvable pour cette facture.");
+            return;
+        }
+
+        // FIX: Fetch full invoice details (including items) from DB
+        const { fetchInvoiceDetails } = await import("@/app/actions");
+        const result = await fetchInvoiceDetails(facture.id);
+
+        if (!result.success || !result.data) {
+            toast.error("Erreur lors du chargement des détails de la facture.");
+            return;
+        }
+
+        const fullInvoice = result.data;
+
+        // Validation Date Column
+        if (fullInvoice.config?.showDateColumn) {
+            const missingDate = fullInvoice.items.some(item => !item.date);
+            if (missingDate) {
+                toast.error("La colonne Date est activée mais certaines lignes n'ont pas de date. Veuillez corriger le document avant de générer le PDF.");
+                return;
+            }
+        }
+
+        generateInvoicePDF(fullInvoice, societe, client, {});
+        logAction('read', 'facture', `Facture ${fullInvoice.numero} téléchargée`, fullInvoice.id);
+
+        if (fullInvoice.statut === "Brouillon") {
+            const updatedInvoice = { ...fullInvoice, statut: "Téléchargée" as StatusFacture };
+            // Optimistic
+            updateInvoiceInList(updatedInvoice);
+
+            markInvoiceAsDownloaded(fullInvoice.id).then((res) => {
+                if (res.success) {
+                    logAction('update', 'facture', `Statut Facture ${fullInvoice.numero} changé pour Téléchargée (Download)`, fullInvoice.id);
+                    refreshData();
+                }
+            });
         }
     };
 
@@ -133,7 +145,7 @@ function InvoicesPage() {
         }
     }, [searchParams]);
 
-    const handlePreview = (facture: Facture) => {
+    const handlePreview = async (facture: Facture) => {
         try {
             const client = clients.find(c => c.id === facture.clientId);
             if (!client) {
@@ -145,22 +157,32 @@ function InvoicesPage() {
                 return;
             }
 
+            // FIX: Fetch full invoice details (including items) from DB
+            const { fetchInvoiceDetails } = await import("@/app/actions");
+            const result = await fetchInvoiceDetails(facture.id);
+
+            if (!result.success || !result.data) {
+                alert("Erreur lors du chargement des détails de la facture.");
+                return;
+            }
+
+            const fullInvoice = result.data;
 
             // Validation Date Column
-            if (facture.config?.showDateColumn) {
-                const missingDate = facture.items.some(item => !item.date);
+            if (fullInvoice.config?.showDateColumn) {
+                const missingDate = fullInvoice.items.some(item => !item.date);
                 if (missingDate) {
-                    alert("La colonne Date est activée mais certaines lignes n’ont pas de date. Veuillez corriger le document avant de générer l'aperçu.");
+                    alert("La colonne Date est activée mais certaines lignes n'ont pas de date. Veuillez corriger le document avant de générer l'aperçu.");
                     return;
                 }
             }
 
-            const url = generateInvoicePDF(facture, societe, client, {
+            const url = generateInvoicePDF(fullInvoice, societe, client, {
                 returnBlob: true
             });
             if (url && typeof url === 'string') {
                 setPreviewUrl(url);
-                setPreviewInvoiceNum(facture.numero);
+                setPreviewInvoiceNum(fullInvoice.numero);
                 setIsPreviewOpen(true);
             } else {
                 alert("Erreur lors de la génération du PDF.");
