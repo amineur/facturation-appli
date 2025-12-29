@@ -142,14 +142,14 @@ export function QuoteStatusChart({ quotes, globalQuotes }: QuoteStatusChartProps
             </div>
 
             {/* Legend */}
-            <div className="space-y-4 w-full max-w-[300px]">
+            <div className="space-y-4 w-full max-w-[300px] min-w-0">
                 {data.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors cursor-default">
-                        <div className="flex items-center gap-3">
-                            <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: item.color }} />
-                            <span className="text-base font-medium text-foreground">{item.name}</span>
+                    <div key={item.name} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors cursor-default gap-3 min-w-0 min-h-[40px]">
+                        <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+                            <div className="w-4 h-4 rounded-full shadow-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
+                            <span className="text-base font-medium text-foreground truncate">{item.name}</span>
                         </div>
-                        <span className="text-base font-semibold text-muted-foreground font-mono pl-4">
+                        <span className="text-base font-semibold text-muted-foreground font-mono whitespace-nowrap flex-shrink-0">
                             {item.value.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
                         </span>
                     </div>

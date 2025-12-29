@@ -146,9 +146,9 @@ export default function DashboardPage() {
     const chartData = useMemo(() => {
         if (!serverMetrics) return [];
         return [
-            { name: "Payée", value: serverMetrics.counts["Payée"] || 0, color: "#10B981" },
-            { name: "Retard", value: serverMetrics.counts["Retard"] || 0, color: "#EF4444" },
-            { name: "Brouillon", value: serverMetrics.counts["Brouillon"] || 0, color: "#94A3B8" }
+            { name: "Payée", value: serverMetrics.counts["Payée"] || 0, amount: serverMetrics.amounts?.["Payée"] || 0, color: "#10B981" },
+            { name: "Retard", value: serverMetrics.counts["Retard"] || 0, amount: serverMetrics.amounts?.["Retard"] || 0, color: "#EF4444" },
+            { name: "Brouillon", value: serverMetrics.counts["Brouillon"] || 0, amount: serverMetrics.amounts?.["Brouillon"] || 0, color: "#94A3B8" }
         ].filter(d => d.value > 0);
     }, [serverMetrics]);
 
@@ -317,11 +317,11 @@ export default function DashboardPage() {
                     <div className="glass-card rounded-2xl p-6 space-y-4">
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Résumé Période</h3>
                         {isLoadingMetrics ? <Skeleton className="h-20 w-full" /> : (
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><p className="text-xs text-muted-foreground">Chiffre d'Affaires</p><p className="text-xl font-bold text-foreground">{metrics.revenue.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p></div>
-                                <div><p className="text-xs text-muted-foreground">Devis</p><p className="text-xl font-bold text-foreground">{quotes.length}</p></div>
-                                <div><p className="text-xs text-muted-foreground">Factures</p><p className="text-xl font-bold text-foreground">{Object.values(metrics.counts).reduce((a: any, b: any) => a + b, 0) as number}</p></div>
-                                <div><p className="text-xs text-muted-foreground">Clients</p><p className="text-xl font-bold text-foreground">{clients.length}</p></div>
+                            <div className="grid grid-cols-2 gap-4 items-start">
+                                <div><p className="text-xs text-muted-foreground min-h-[16px]">Chiffre d'Affaires</p><p className="text-xl font-bold text-foreground">{metrics.revenue.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p></div>
+                                <div><p className="text-xs text-muted-foreground min-h-[16px]">Devis</p><p className="text-xl font-bold text-foreground">{quotes.length}</p></div>
+                                <div><p className="text-xs text-muted-foreground min-h-[16px]">Factures</p><p className="text-xl font-bold text-foreground">{Object.values(metrics.counts).reduce((a: any, b: any) => a + b, 0) as number}</p></div>
+                                <div><p className="text-xs text-muted-foreground min-h-[16px]">Clients</p><p className="text-xl font-bold text-foreground">{clients.length}</p></div>
                             </div>
                         )}
                     </div>

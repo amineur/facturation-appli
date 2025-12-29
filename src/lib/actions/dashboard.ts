@@ -184,14 +184,17 @@ export async function fetchDashboardMetrics(societeId: string, dateRange: { star
 
         // Calculate metrics
         const now = new Date();
+        // CA = Toutes les factures sauf Brouillon et Annulée (CA engagé)
         const revenue = invoices
-            .filter(inv => inv.statut === 'Payée')
+            .filter(inv => inv.statut !== 'Brouillon' && inv.statut !== 'Annulée')
             .reduce((sum, inv) => sum + (inv.totalTTC || 0), 0);
 
-        // Count by status
+        // Count and amounts by status
         const counts: Record<string, number> = {};
+        const amounts: Record<string, number> = {};
         invoices.forEach(inv => {
             counts[inv.statut] = (counts[inv.statut] || 0) + 1;
+            amounts[inv.statut] = (amounts[inv.statut] || 0) + (inv.totalTTC || 0);
         });
 
         // Overdue invoices
@@ -223,6 +226,7 @@ export async function fetchDashboardMetrics(societeId: string, dateRange: { star
             data: {
                 revenue,
                 counts,
+                amounts,
                 overdueAmount,
                 overdueCount,
                 dueSoonAmount,
