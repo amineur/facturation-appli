@@ -146,7 +146,7 @@ export default function DashboardPage() {
     const chartData = useMemo(() => {
         if (!serverMetrics) return [];
         return [
-            { name: "Payée", value: serverMetrics.counts["Payée"] || 0, amount: serverMetrics.amounts?.["Payée"] || 0, color: "#10B981" },
+            { name: "Payées", value: serverMetrics.counts["Payée"] || 0, amount: serverMetrics.amounts?.["Payée"] || 0, color: "#10B981" },
             { name: "Retard", value: serverMetrics.counts["Retard"] || 0, amount: serverMetrics.amounts?.["Retard"] || 0, color: "#EF4444" },
             { name: "Brouillon", value: serverMetrics.counts["Brouillon"] || 0, amount: serverMetrics.amounts?.["Brouillon"] || 0, color: "#94A3B8" }
         ].filter(d => d.value > 0);

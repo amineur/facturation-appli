@@ -52,7 +52,8 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                     updatedAt: true,
                     client: {
                         select: { nom: true }
-                    }
+                    },
+                    itemsJSON: true
                 },
                 orderBy: [
                     { dateEmission: 'desc' },
@@ -78,7 +79,8 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                     updatedAt: true,
                     client: {
                         select: { nom: true }
-                    }
+                    },
+                    itemsJSON: true
                 },
                 orderBy: [
                     { dateEmission: 'desc' },
@@ -112,45 +114,71 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
         })) as Societe[];
 
         // Map invoices
-        const mappedInvoices = invoices.map((inv: any) => ({
-            id: inv.id,
-            numero: inv.numero,
-            clientId: inv.clientId,
-            societeId: inv.societeId,
-            dateEmission: inv.dateEmission.toISOString(),
-            echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
-            statut: inv.statut,
-            totalHT: inv.totalHT,
-            totalTTC: inv.totalTTC,
-            datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
-            type: "Facture" as const,
-            items: [],
-            emails: []
-        }));
+        const mappedInvoices = invoices.map((inv: any) => {
+            let items: any[] = [];
+            try {
+                if (inv.itemsJSON) items = JSON.parse(inv.itemsJSON);
+            } catch (e) {
+                console.error("Error parsing itemsJSON for invoice:", inv.id);
+            }
+            return {
+                id: inv.id,
+                numero: inv.numero,
+                clientId: inv.clientId,
+                societeId: inv.societeId,
+                dateEmission: inv.dateEmission.toISOString(),
+                echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
+                statut: inv.statut,
+                totalHT: inv.totalHT,
+                totalTTC: inv.totalTTC,
+                datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
+                type: "Facture" as const,
+                items: items.map((item: any) => ({
+                    description: item.nom || item.description || "Article",
+                    quantite: Number(item.quantite) || 0,
+                    prixUnitaire: Number(item.prixUnitaire) || 0,
+                    totalLigne: Number(item.montantHT || item.totalLigne) || 0
+                })),
+                emails: []
+            };
+        });
 
         // Map quotes
-        const mappedQuotes = quotes.map((q: any) => ({
-            id: q.id,
-            numero: q.numero,
-            clientId: q.clientId,
-            societeId: q.societeId,
-            dateEmission: q.dateEmission.toISOString(),
-            dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
-            statut: q.statut,
-            totalHT: q.totalHT,
-            totalTTC: q.totalTTC,
-            type: "Devis" as const,
-            items: [],
-            emails: []
-        }));
+        const mappedQuotes = quotes.map((q: any) => {
+            let items: any[] = [];
+            try {
+                if (q.itemsJSON) items = JSON.parse(q.itemsJSON);
+            } catch (e) {
+                console.error("Error parsing itemsJSON for quote:", q.id);
+            }
+            return {
+                id: q.id,
+                numero: q.numero,
+                clientId: q.clientId,
+                societeId: q.societeId,
+                dateEmission: q.dateEmission.toISOString(),
+                dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
+                statut: q.statut,
+                totalHT: q.totalHT,
+                totalTTC: q.totalTTC,
+                type: "Devis" as const,
+                items: items.map((item: any) => ({
+                    description: item.nom || item.description || "Article",
+                    quantite: Number(item.quantite) || 0,
+                    prixUnitaire: Number(item.prixUnitaire) || 0,
+                    totalLigne: Number(item.montantHT || item.totalLigne) || 0
+                })),
+                emails: []
+            };
+        });
 
         return {
             success: true,
             data: {
                 user: mappedUser,
                 societes: mappedSocietes,
-                invoices: mappedInvoices,
-                quotes: mappedQuotes
+                invoices: mappedInvoices as any,
+                quotes: mappedQuotes as any
             }
         };
 

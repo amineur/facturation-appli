@@ -145,6 +145,7 @@ export default function RapportsPage() {
             conversionRate,
             activeClientsCount: activeClientIds.size,
             totalInvoices: filteredInvoices.length,
+            totalPaidInvoices: paidInvoices.length,
             totalQuotes: filteredQuotes.length
         };
     }, [filteredData]);
@@ -176,36 +177,46 @@ export default function RapportsPage() {
 
     // 2. Top Products
     const topProducts = useMemo(() => {
-        const filteredInvoices = filteredData.invoices.filter(inv => inv.statut === "Payée");
-        const stats = new Map<string, { revenue: number; count: number }>();
+        // Include Billed invoices (Payée, Envoyée, Retard)
+        const filteredInvoices = filteredData.invoices.filter(inv => ["Payée", "Envoyée", "Retard"].includes(inv.statut));
+
+        // Map: NormalizedKey -> { revenue, count, displayName }
+        const stats = new Map<string, { revenue: number; count: number; name: string }>();
 
         filteredInvoices.forEach(inv => {
-            inv.items.forEach(item => {
-                const key = item.description; // Aggregate by name for now
-                const current = stats.get(key) || { revenue: 0, count: 0 };
+            inv.items?.forEach(item => { // Safe access
+                if (!item.description) return;
 
-                // Fallback calculation if totalLigne is missing or 0 (legacy data issue)
+                const rawName = item.description;
+                const key = rawName.trim().toLowerCase(); // Normalize to merge "Produit A " and "produit A"
+
+                const current = stats.get(key) || { revenue: 0, count: 0, name: rawName };
+
+                // Robust revenue calculation
                 let lineRevenue = item.totalLigne;
-                if (!lineRevenue) { // Checks for undefined, null, or 0
+                if (!lineRevenue && lineRevenue !== 0) {
                     const parseVal = (v: any) => {
                         if (typeof v === 'number') return v;
                         if (typeof v === 'string') return parseFloat(v.replace(',', '.')) || 0;
                         return 0;
                     };
-                    const qty = parseVal(item.quantite);
-                    const price = parseVal(item.prixUnitaire);
-                    lineRevenue = qty * price;
+                    const q = parseVal(item.quantite);
+                    const p = parseVal(item.prixUnitaire);
+                    lineRevenue = q * p;
                 }
 
+                // Robust quantity calculation
+                const qty = typeof item.quantite === 'number' ? item.quantite : parseFloat(String(item.quantite || 0));
+
                 stats.set(key, {
-                    revenue: current.revenue + (lineRevenue || 0),
-                    count: current.count + item.quantite
+                    revenue: current.revenue + (typeof lineRevenue === 'number' ? lineRevenue : 0),
+                    count: current.count + (isNaN(qty) ? 0 : qty),
+                    name: current.name // Keep first encountered display name
                 });
             });
         });
 
-        return Array.from(stats.entries())
-            .map(([name, stat]) => ({ name, ...stat }))
+        return Array.from(stats.values())
             .sort((a, b) => b.revenue - a.revenue)
             .slice(0, 10);
     }, [filteredData.invoices]);
@@ -347,7 +358,7 @@ export default function RapportsPage() {
                         {metrics.totalRevenue.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                     </div>
                     <div className="text-xs text-emerald-500 font-medium">
-                        {metrics.totalInvoices} factures payées
+                        {metrics.totalPaidInvoices} factures payées
                     </div>
                 </div>
 

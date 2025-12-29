@@ -88,9 +88,9 @@ export function QuoteStatusChart({ quotes, globalQuotes }: QuoteStatusChartProps
 
         // Mapping to Chart Data
         return [
-            { name: "Signé/Gagné", value: statusCounts.signe, color: "#10B981" }, // Emerald-500
+            { name: "Gagnées", value: statusCounts.signe, color: "#10B981" }, // Emerald-500
             { name: "En Attente", value: statusCounts.attente, color: "#3B82F6" }, // Blue-500
-            { name: "Refusé/Perdu", value: statusCounts.refuse, color: "#EF4444" }, // Red-500
+            { name: "Refusé", value: statusCounts.refuse, color: "#EF4444" }, // Red-500
             { name: "Brouillon", value: statusCounts.brouillon, color: "#94A3B8" }, // Slate-400
         ].filter(item => item.value > 0);
     }, [quotes]);
@@ -107,7 +107,7 @@ export function QuoteStatusChart({ quotes, globalQuotes }: QuoteStatusChartProps
 
     return (
         <div className="flex flex-col md:flex-row items-center justify-around gap-8 w-full px-4 md:px-12">
-            <div className="h-[260px] w-[260px] relative shrink-0">
+            <div className="h-[260px] w-[260px] relative shrink-0 [&_*]:outline-none [&_path]:outline-none">
                 <ChartGuard height="100%">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -126,15 +126,31 @@ export function QuoteStatusChart({ quotes, globalQuotes }: QuoteStatusChartProps
                                 ))}
                             </Pie>
                             <Tooltip
-                                formatter={(value: number) => value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
-                                contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                                cursor={{ fill: 'transparent' }}
+                                position={{ y: 235 }}
+                                wrapperStyle={{ outline: 'none' }}
+                                content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                        const data = payload[0].payload;
+                                        return (
+                                            <div className="bg-popover/95 backdrop-blur-sm border border-border p-2 rounded-lg shadow-lg text-xs flex items-center gap-2 transform -translate-x-1/2 left-1/2 relative">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: data.color }} />
+                                                <span className="font-medium text-popover-foreground">{data.name}:</span>
+                                                <span className="font-mono font-bold text-popover-foreground">
+                                                    {(data.value || 0).toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
+                                                </span>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
                             />
                         </PieChart>
                     </ResponsiveContainer>
                 </ChartGuard>
                 {/* Center Text displaying Signed Amount */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-sm text-muted-foreground font-medium uppercase tracking-wider mb-1">Signé</span>
+                    <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Signé</span>
                     <span className="text-3xl font-bold text-emerald-500">
                         {totalSigned.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
                     </span>
@@ -143,17 +159,20 @@ export function QuoteStatusChart({ quotes, globalQuotes }: QuoteStatusChartProps
 
             {/* Legend */}
             <div className="space-y-4 w-full max-w-[300px] min-w-0">
-                {data.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors cursor-default gap-3 min-w-0 min-h-[40px]">
-                        <div className="flex items-center gap-3 min-w-0 overflow-hidden">
-                            <div className="w-4 h-4 rounded-full shadow-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
-                            <span className="text-base font-medium text-foreground truncate">{item.name}</span>
+                {data.map((item) => {
+                    if (!["Gagnées", "Brouillon", "Refusé"].includes(item.name)) return null;
+                    return (
+                        <div key={item.name} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors cursor-default gap-3 min-w-0 min-h-[40px]">
+                            <div className="flex items-center gap-2 min-w-0 overflow-hidden flex-1">
+                                <div className="w-4 h-4 rounded-full shadow-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
+                                <span className="text-base font-medium text-foreground truncate">{item.name}</span>
+                            </div>
+                            <span className="text-base font-semibold text-muted-foreground font-mono whitespace-nowrap flex-shrink-0">
+                                {item.value.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
+                            </span>
                         </div>
-                        <span className="text-base font-semibold text-muted-foreground font-mono whitespace-nowrap flex-shrink-0">
-                            {item.value.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
-                        </span>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
