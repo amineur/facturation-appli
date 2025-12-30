@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, RefreshCw, CheckCircle, AlertCircle, Inbox } from "lucide-react";
 
-export default function PendingVerificationPage() {
+function PendingVerificationContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [email, setEmail] = useState("");
@@ -190,5 +190,17 @@ export default function PendingVerificationPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function PendingVerificationPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+                <div className="text-white">Chargement...</div>
+            </div>
+        }>
+            <PendingVerificationContent />
+        </Suspense>
     );
 }
