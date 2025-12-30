@@ -23,6 +23,7 @@ export default function LoginPage() {
     const [isSignup, setIsSignup] = useState(false);
 
     const onSubmit = async (data: any) => {
+        console.log('[FORM] onSubmit called', { isSignup, data });
         setIsLoading(true);
         try {
             if (isSignup) {
@@ -103,7 +104,16 @@ export default function LoginPage() {
 
 
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[FORM] Form submitted, calling handleSubmit');
+                try {
+                    await handleSubmit(onSubmit)(e);
+                } catch (error) {
+                    console.error('[FORM] Error in handleSubmit:', error);
+                }
+            }} className="space-y-4">
                 {/* Full Name Field (Signup Only) */}
                 {isSignup && (
                     <div className="space-y-2">

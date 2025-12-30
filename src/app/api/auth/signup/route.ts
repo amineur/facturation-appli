@@ -79,11 +79,25 @@ export async function POST(request: Request) {
             });
         }
 
-        // 7. Return success with email for redirect to pending-verification page
+        // 7. Auto-login (Safe Mode) - Bypass verification enforcement
+        const cookieStore = await cookies();
+        cookieStore.set('session_userid', user.id, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            path: '/',
+            maxAge: 60 * 60 * 24 * 7 // 7 days
+        });
+
         return NextResponse.json({
             success: true,
-            email: email, // Include email for redirect
-            message: "Inscription réussie ! Vérifie ton email pour activer ton compte.",
+            email: email,
+            userId: user.id,
+            user: {
+                id: user.id,
+                email: user.email,
+                fullName: user.fullName
+            },
+            message: "Inscription réussie ! Connexion automatique...",
             emailSent: emailResult.success
         });
 
