@@ -40,16 +40,15 @@ export default function LoginPage() {
 
                 if (!res.ok) throw new Error(result.error || "Erreur inscription");
 
-                toast.success("Compte créé avec succès !");
+                toast.success("Compte créé ! Vérifie ton email.");
 
-                // CLEAR SCOPE
-                localStorage.removeItem('glassy_active_societe');
-                localStorage.removeItem('active_societe_id');
-                localStorage.setItem("glassy_current_user_id", result.userId);
-
-                // refreshData(); // Redundant with hard reload below
-                // Hard reload to ensure cookie is picked up by server actions immediately
-                window.location.href = "/";
+                // Redirect to pending verification page with email
+                if (result.email) {
+                    router.push(`/pending-verification?email=${encodeURIComponent(result.email)}`);
+                } else {
+                    // Fallback if email not in response
+                    router.push(`/pending-verification?email=${encodeURIComponent(data.email)}`);
+                }
 
             } else {
                 // LOGIN LOGIC (via API for Cookie)
@@ -132,7 +131,7 @@ export default function LoginPage() {
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider ml-1">Mot de passe</label>
-                        {!isSignup && <a href="#" className="text-xs text-blue-400 hover:text-blue-300">Oublié ?</a>}
+                        {!isSignup && <a href="/forgot-password" className="text-xs text-blue-400 hover:text-blue-300">Oublié ?</a>}
                     </div>
                     <div className="relative group">
                         <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-white transition-colors" />

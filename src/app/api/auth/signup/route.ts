@@ -55,20 +55,36 @@ export async function POST(request: Request) {
 
         // 6. Send verification email
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const verificationUrl = `${baseUrl}/verify-email?token=${token}`;
+        const verificationUrl = `${baseUrl}/api/auth/verify-email?token=${token}`;
         const template = getEmailVerificationTemplate(verificationUrl);
 
-        await sendEmail({
+        const emailResult = await sendEmail({
             to: email,
             subject: template.subject,
             html: template.html,
             text: template.text,
         });
 
-        // 7. Do NOT auto-login - user must verify email first
+        // Log email result but don't fail signup if email fails
+        if (!emailResult.success) {
+            console.error('[SIGNUP] ⚠️ Email send failed but user created:', {
+                email,
+                error: emailResult.error
+            });
+        } else {
+            console.log('[SIGNUP] ✅ Verification email sent:', {
+                email,
+                messageId: emailResult.messageId,
+                previewUrl: emailResult.previewUrl
+            });
+        }
+
+        // 7. Return success with email for redirect to pending-verification page
         return NextResponse.json({
             success: true,
-            message: "Inscription réussie ! Vérifie ton email pour activer ton compte."
+            email: email, // Include email for redirect
+            message: "Inscription réussie ! Vérifie ton email pour activer ton compte.",
+            emailSent: emailResult.success
         });
 
     } catch (error: any) {

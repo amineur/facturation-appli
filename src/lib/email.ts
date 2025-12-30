@@ -100,11 +100,26 @@ export async function sendEmail(
             }))
         };
 
+        console.log('[EMAIL] Attempting to send:', {
+            to,
+            subject,
+            from,
+            hasAttachments: attachments.length > 0
+        });
+
         const info = await transporter.sendMail(mailOptions);
 
         const previewUrl = nodemailer.getTestMessageUrl(info);
+
+        console.log('[EMAIL] ✅ Sent successfully:', {
+            to,
+            subject,
+            messageId: info.messageId,
+            previewUrl: previewUrl || 'N/A'
+        });
+
         if (previewUrl) {
-            console.log("Preview URL:", previewUrl);
+            console.log("📧 Preview URL:", previewUrl);
         }
 
         return {
@@ -114,8 +129,19 @@ export async function sendEmail(
         };
 
     } catch (error: any) {
-        console.error("Email sending failed:", error);
-        return { success: false, error: error.message };
+        console.error('[EMAIL] ❌ Send failed:', {
+            to,
+            subject,
+            error: error.message,
+            code: error.code,
+            command: error.command
+        });
+
+        return {
+            success: false,
+            error: error.message,
+            code: error.code
+        };
     }
 }
 
