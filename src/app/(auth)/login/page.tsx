@@ -43,12 +43,13 @@ export default function LoginPage() {
                 toast.success("Compte créé ! Vérifie ton email.");
 
                 // Redirect to pending verification page with email
-                if (result.email) {
-                    router.push(`/pending-verification?email=${encodeURIComponent(result.email)}`);
-                } else {
-                    // Fallback if email not in response
-                    router.push(`/pending-verification?email=${encodeURIComponent(data.email)}`);
-                }
+                const email = result.email || data.email;
+                const redirectUrl = `/pending-verification?email=${encodeURIComponent(email)}`;
+
+                // Use window.location for more reliable redirect
+                setTimeout(() => {
+                    window.location.href = redirectUrl;
+                }, 500); // Small delay for toast to show
 
             } else {
                 // LOGIN LOGIC (via API for Cookie)
