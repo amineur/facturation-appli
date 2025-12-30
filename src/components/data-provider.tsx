@@ -191,8 +191,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
             // --- SCOPE RESOLUTION LOGIC ---
             if (validSocietes.length === 0) {
                 // Case 0: No societies
-
-                shouldRedirectToOnboarding = true;
+                // Do NOT force redirect here. Let the page handle the empty state.
+                // This allows "Waiting for invite" mode on Dashboard.
                 setSociete(null);
 
                 // Clean stale storage if any
@@ -224,13 +224,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
             // --- END RESOLUTION ---
 
-            if (shouldRedirectToOnboarding) {
-                if (pathname !== "/onboarding" && pathname !== "/login") {
-                    router.push("/onboarding");
-                }
-                if (!silent) setIsLoading(false);
-                return; // STOP HERE
-            }
+            // --- END RESOLUTION ---
+
+            // Removed forced onboarding redirect to allow "No Company" state logic in pages
+            // if (shouldRedirectToOnboarding) { ... }
 
             // Only fetch data if we have an active society
             if (activeSociete) {

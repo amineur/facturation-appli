@@ -43,9 +43,8 @@ export default function LoginPage() {
 
                 toast.success("Compte créé ! Vérifie ton email.");
 
-                // Redirect to pending verification page with email
-                const email = result.email || data.email;
-                const redirectUrl = `/pending-verification?email=${encodeURIComponent(email)}`;
+                // Redirect to home (Safe Mode) - Bypass verification UI
+                const redirectUrl = "/";
 
                 // Use window.location for more reliable redirect
                 setTimeout(() => {

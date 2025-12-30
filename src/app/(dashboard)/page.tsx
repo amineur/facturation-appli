@@ -153,6 +153,47 @@ export default function DashboardPage() {
     }, [serverMetrics]);
 
 
+    // --- EMPTY STATE: NO SOCIETY ---
+    if (!societe && !isLoadingMetrics) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 text-center animate-in fade-in zoom-in-95 duration-500">
+                <div className="h-24 w-24 bg-white/5 rounded-3xl flex items-center justify-center border border-white/10 shadow-2xl relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <FileText className="h-10 w-10 text-muted-foreground group-hover:text-white transition-colors" />
+                </div>
+
+                <div className="max-w-md space-y-2">
+                    <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+                        Bienvenue !
+                    </h2>
+                    <p className="text-muted-foreground">
+                        Vous n'êtes rattaché à aucune société pour le moment.
+                    </p>
+                </div>
+
+                <div className="glass-card p-6 rounded-xl border border-white/10 max-w-sm w-full">
+                    <h3 className="font-semibold mb-2">Que faire ?</h3>
+                    <ul className="text-sm text-left space-y-3 text-muted-foreground">
+                        <li className="flex items-start gap-2">
+                            <span className="bg-blue-500/10 text-blue-400 rounded-full h-5 w-5 flex items-center justify-center text-xs mt-0.5 shrink-0">1</span>
+                            Attendez qu'un administrateur vous invite. Vous recevrez un email.
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="bg-purple-500/10 text-purple-400 rounded-full h-5 w-5 flex items-center justify-center text-xs mt-0.5 shrink-0">2</span>
+                            Ou créez votre propre société si vous êtes indépendant.
+                        </li>
+                    </ul>
+                    <Link
+                        href="/onboarding"
+                        className="mt-6 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                        Créer ma société
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-8 pb-10">
             {/* --- Header & Controls --- */}

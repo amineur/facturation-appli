@@ -217,7 +217,7 @@ export default function OnboardingPage() {
     // --- RENDER STEPS ---
 
     const renderStep0_Choice = () => (
-        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300 w-full max-w-2xl">
+        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300 w-full max-w-4xl">
             <div className="text-center space-y-2 mb-8">
                 <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">Bienvenue</h1>
                 <p className="text-muted-foreground">Rejoignez une équipe existante ou créez votre propre structure.</p>
@@ -295,6 +295,18 @@ export default function OnboardingPage() {
                     </div>
                 </div>
             )}
+
+            {/* Option 3: Wait for invite (Skip) */}
+            <div className="mt-8 text-center">
+
+                <button
+                    onClick={() => router.push('/')}
+                    className="relative z-50 cursor-pointer text-sm font-medium text-white/70 hover:text-white transition-colors flex items-center gap-2 mx-auto group border-b border-transparent hover:border-white/30 pb-0.5"
+                >
+                    Continuer en mode découverte
+                    <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+                </button>
+            </div>
         </div>
     );
 
