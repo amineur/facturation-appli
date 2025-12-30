@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, Suspense, useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Plus, Search, Filter, ArrowUpRight, ArrowDownLeft, Clock, AlertCircle, FileText, MoreHorizontal, Download, Send, Trash2, Eye, CheckCircle, Pencil } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
@@ -12,14 +13,27 @@ import { dataService } from "@/lib/data-service";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { deleteRecord, updateInvoice, markInvoiceAsSent, createInvoice, markInvoiceAsDownloaded } from "@/app/actions";
 import { createClientAction as createClient } from "@/app/actions-clients";
-import { EmailComposer } from "@/components/features/EmailComposer";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, X } from "lucide-react";
 import { SidePanel } from "@/components/ui/SidePanel";
-import { CommunicationsPanel } from "@/components/features/CommunicationsPanel";
+
+// Lazy load heavy components
+const PDFPreviewModal = dynamic(() => import("@/components/ui/PDFPreviewModal").then(mod => ({ default: mod.PDFPreviewModal })), {
+    loading: () => null,
+    ssr: false
+});
+
+const EmailComposer = dynamic(() => import("@/components/features/EmailComposer").then(mod => ({ default: mod.EmailComposer })), {
+    loading: () => null,
+    ssr: false
+});
+
+const CommunicationsPanel = dynamic(() => import("@/components/features/CommunicationsPanel").then(mod => ({ default: mod.CommunicationsPanel })), {
+    loading: () => null,
+    ssr: false
+});
 
 
 const getStatusColor = (status: StatusFacture) => {

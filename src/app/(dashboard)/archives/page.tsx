@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Archive, RotateCcw, Search, Filter, Receipt, FileText } from "lucide-react";
+import { Archive, Eye, Search, Filter, Receipt, FileText } from "lucide-react";
 import { useData } from "@/components/data-provider";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Facture, Devis } from "@/types";
 import { cn } from "@/lib/utils";
-import { fetchArchivedInvoices, fetchArchivedQuotes, unarchiveRecord } from "@/app/actions";
+import { fetchArchivedInvoices, fetchArchivedQuotes } from "@/app/actions";
+import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 
 type ArchivedItem = (Facture & { itemType: "Facture" }) | (Devis & { itemType: "Devis" });
 
@@ -20,6 +21,11 @@ export default function ArchivesPage() {
     const [filter, setFilter] = useState<"ALL" | "FACTURE" | "DEVIS">("ALL");
     const [searchTerm, setSearchTerm] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+
+    // Preview State
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewInvoiceNum, setPreviewInvoiceNum] = useState("");
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
     // Load archived items
     const loadArchivedItems = async () => {
@@ -54,32 +60,43 @@ export default function ArchivesPage() {
         }
     }, [isDataLoading, societe?.id]);
 
-    const handleUnarchive = (item: ArchivedItem) => {
-        confirm({
-            title: "Désarchiver l'élément",
-            message: `Voulez-vous désarchiver ${item.itemType === "Facture" ? "cette facture" : "ce devis"} ? Il sera déplacé dans la corbeille.`,
-            onConfirm: async () => {
-                const table = item.itemType === "Facture" ? 'Factures' : 'Devis';
-                const res = await unarchiveRecord(table, item.id);
-
-                if (res.success) {
-                    // Log Action
-                    const clientName = (item as any).client?.nom || "Client inconnu";
-                    logAction(
-                        'update',
-                        item.itemType === "Facture" ? 'facture' : 'devis',
-                        `A désarchivé ${item.itemType === "Facture" ? "la facture" : "le devis"} ${item.numero} pour ${clientName}`,
-                        item.id
-                    );
-
-                    toast.success("Élément désarchivé avec succès");
-                    loadArchivedItems();
-                    refreshData();
-                } else {
-                    toast.error("Erreur lors du désarchivage: " + res.error);
-                }
+    const handlePreview = async (item: ArchivedItem) => {
+        try {
+            const client = clients.find(c => c.id === item.clientId);
+            if (!client || !societe) {
+                toast.error("Données manquantes pour l'aperçu");
+                return;
             }
-        });
+
+            // Fetch full details if needed, but Archives usually are static. 
+            // However, items might be JSON string in lite fetch.
+            // Let's assume lite fetch returns parsable items or we need full fetch.
+            // Check previous code: fetchArchivedInvoices calls findMany on Prisma without explicit select so it returns all fields including itemsJSON?
+            // Actually fetchArchivedInvoices in history.ts (it was imported from '@/app/actions' which exports history.ts actions?). No wait, history.ts has unarchiveRecord.
+            // fetchArchivedInvoices is likely in 'invoices.ts'. It usually returns mapped data.
+            // Keep it simple: use current item data. 
+
+            // Generate PDF
+            // We need to dynamic import or use existing import. import is missing in replacement content, I need to add it at top of file, but this tool replaces block.
+            // I will assume I can add imports via separate tool call or include them if I replace whole file.
+            // Since I am replacing the FUNCTION BODY primarily, I need to be careful about imports.
+            // I will use `import('@/lib/pdf-generator')` dynamically inside handlePreview to be safe or use what's available.
+            // But `generateInvoicePDF` is synchronous. 
+
+            const { generateInvoicePDF } = await import("@/lib/pdf-generator");
+
+            const url = generateInvoicePDF(item, societe, client, {
+                returnBlob: true
+            });
+            if (url && typeof url === 'string') {
+                setPreviewUrl(url);
+                setPreviewInvoiceNum(item.numero);
+                setIsPreviewOpen(true);
+            }
+        } catch (error) {
+            console.error("Preview error", error);
+            toast.error("Erreur lors de la génération de l'aperçu");
+        }
     };
 
     const filteredItems = archivedItems.filter(item => {
@@ -179,7 +196,11 @@ export default function ArchivesPage() {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {filteredItems.map((item) => (
-                                <tr key={`${item.itemType}-${item.id}`} className="hover:bg-white/5 transition-colors">
+                                <tr
+                                    key={`${item.itemType}-${item.id}`}
+                                    className="hover:bg-white/5 transition-colors cursor-pointer group"
+                                    onClick={() => handlePreview(item)}
+                                >
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-2">
                                             {item.itemType === "Facture" ? (
@@ -215,12 +236,12 @@ export default function ArchivesPage() {
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => handleUnarchive(item)}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-400 bg-blue-400/10 hover:bg-blue-400/20 border border-blue-400/20 rounded-md transition-colors"
-                                                title="Désarchiver le document"
+                                                onClick={(e) => { e.stopPropagation(); handlePreview(item); }}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors"
+                                                title="Aperçu"
                                             >
-                                                <RotateCcw className="h-3 w-3" />
-                                                Désarchiver
+                                                <Eye className="h-3 w-3" />
+                                                Aperçu
                                             </button>
                                         </div>
                                     </td>
@@ -230,6 +251,17 @@ export default function ArchivesPage() {
                     </table>
                 </div>
             )}
+
+            {/* Lazy load the modal if needed, or just import it at top. I'll dynamically import if not available, but usually safe to assume it's there? No, I need to add import at top or import dynamic. */}
+            {/* But I cannot edit top AND body easily same time without replace file. 
+                I'll handle Imports in next step. For now, just using <PDFPreviewModal /> which will error if not imported.
+            */}
+            <PDFPreviewModal
+                isOpen={isPreviewOpen}
+                onClose={() => setIsPreviewOpen(false)}
+                pdfUrl={previewUrl}
+                invoiceNumber={previewInvoiceNum}
+            />
         </div>
     );
 }
