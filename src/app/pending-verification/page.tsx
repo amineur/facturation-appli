@@ -71,29 +71,39 @@ export default function PendingVerificationPage() {
     const handleCheckVerification = async () => {
         if (!email) return;
 
+        setMessage("Vérification en cours...");
+        setMessageType("");
+
         try {
-            const res = await fetch('/api/auth/login', {
+            const res = await fetch('/api/auth/manual-verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email,
-                    password: '' // Will fail but we just want to check verification status
-                })
+                body: JSON.stringify({ email })
             });
 
             const data = await res.json();
 
-            // If error is NOT about email verification, it means email is verified
-            if (!data.error || !data.error.includes('Email non vérifié')) {
-                setMessage("Email vérifié ! Redirection vers la connexion...");
+            if (res.ok && data.success) {
+                setMessage("Email vérifié ! Redirection...");
                 setMessageType("success");
-                setTimeout(() => router.push('/login'), 2000);
+
+                // Store user info
+                if (data.user) {
+                    localStorage.removeItem('glassy_active_societe');
+                    localStorage.removeItem('active_societe_id');
+                    localStorage.setItem("glassy_current_user_id", data.user.id);
+                }
+
+                // Redirect to home
+                setTimeout(() => {
+                    window.location.href = "/";
+                }, 1500);
             } else {
-                setMessage("Email pas encore vérifié. Vérifie ta boîte mail.");
+                setMessage(data.error || "Erreur lors de la vérification");
                 setMessageType("error");
             }
         } catch (error) {
-            setMessage("Erreur lors de la vérification");
+            setMessage("Erreur réseau. Réessaye plus tard.");
             setMessageType("error");
         }
     };
@@ -133,8 +143,8 @@ export default function PendingVerificationPage() {
 
                     {message && (
                         <div className={`p-4 rounded-lg flex items-start gap-3 ${messageType === 'success'
-                                ? 'bg-emerald-500/10 border border-emerald-500/20'
-                                : 'bg-red-500/10 border border-red-500/20'
+                            ? 'bg-emerald-500/10 border border-emerald-500/20'
+                            : 'bg-red-500/10 border border-red-500/20'
                             }`}>
                             {messageType === 'success' ? (
                                 <CheckCircle className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
