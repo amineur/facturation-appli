@@ -89,13 +89,21 @@ export interface Societe {
     siteWeb: string | null;
     banque: string | null;
 
-    // SMTP
+    // SMTP / Email
+    emailProvider?: string; // "SMTP" | "GMAIL"
     smtpHost: string | null;
     smtpPort: number | null;
     smtpUser: string | null;
     smtpPass: string | null;
     smtpSecure: boolean;
     smtpFrom: string | null;
+
+    // OAuth
+    googleRefreshToken?: string | null;
+
+    // Templates
+    emailSignature?: string | null;
+    emailTemplates?: string | null;
 
     createdAt?: string;
     updatedAt?: string;
@@ -142,6 +150,9 @@ export interface EmailLog {
     attachments: { name: string; size?: number; type: string; content?: string }[];
     relatedEmailId?: string; // ID de l'email d'origine pour les relances
     scheduledAt?: string; // ISO date pour envoi différé
+    sentAt?: string;
+    messageId?: string;
+    error?: string;
 }
 
 export interface Acompte {

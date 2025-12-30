@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
+import { generateToken, hashToken } from '@/lib/tokens';
+import { sendEmail, getEmailVerificationTemplate } from '@/lib/email';
 
 export async function POST(request: Request) {
     try {
@@ -27,28 +29,47 @@ export async function POST(request: Request) {
         // 3. Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // 4. Create User
-        // Note: Ideally assign a default societe or create one. For now, we leave it null or try to find one?
-        // Let's create user first.
+        // 4. Create User with emailVerified = false
         const user = await prisma.user.create({
             data: {
                 email,
                 password: hashedPassword,
                 fullName,
                 role: 'user',
+                emailVerified: false, // Not verified yet
             }
         });
 
-        // 5. Set Cookie
-        const cookieStore = await cookies();
-        cookieStore.set('session_userid', user.id, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-            maxAge: 60 * 60 * 24 * 7 // 7 days
+        // 5. Generate verification token
+        const token = generateToken(); // 64 char hex string
+        const tokenHash = hashToken(token);
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await prisma.emailVerificationToken.create({
+            data: {
+                userId: user.id,
+                tokenHash,
+                expiresAt,
+            }
         });
 
-        return NextResponse.json({ success: true, userId: user.id });
+        // 6. Send verification email
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const verificationUrl = `${baseUrl}/verify-email?token=${token}`;
+        const template = getEmailVerificationTemplate(verificationUrl);
+
+        await sendEmail({
+            to: email,
+            subject: template.subject,
+            html: template.html,
+            text: template.text,
+        });
+
+        // 7. Do NOT auto-login - user must verify email first
+        return NextResponse.json({
+            success: true,
+            message: "Inscription réussie ! Vérifie ton email pour activer ton compte."
+        });
 
     } catch (error: any) {
         console.error("[SIGNUP_ERROR]", error);

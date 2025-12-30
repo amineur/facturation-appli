@@ -592,6 +592,20 @@ export const generateInvoicePDF = (
                 doc.text("FACTURE ANNULÉE", centerX, centerY, { align: 'center', angle: 45 });
                 doc.restoreGraphicsState();
             }
+        } else if (document.statut === "Archivée") {
+            const pageCountFinal = doc.getNumberOfPages();
+            for (let p = 1; p <= pageCountFinal; p++) {
+                doc.setPage(p);
+                const centerX = PAGE_WIDTH / 2;
+                const centerY = PAGE_HEIGHT / 2;
+                doc.saveGraphicsState();
+                doc.setTextColor(150, 150, 150); // Grey for Archive
+                doc.setGState(new (doc as any).GState({ opacity: 0.3 }));
+                doc.setFontSize(60);
+                doc.setFont(FONT, "bold");
+                doc.text("FACTURE ARCHIVÉE", centerX, centerY, { align: 'center', angle: 45 });
+                doc.restoreGraphicsState();
+            }
         }
 
         // ==========================================

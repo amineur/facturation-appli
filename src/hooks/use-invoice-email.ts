@@ -67,9 +67,16 @@ export function useInvoiceEmail() {
             // IMMEDIATE SEND (DELAYED)
             const executeSend = async () => {
                 try {
+
                     const response = await fetch('/api/send-email', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ to: emailData.to, subject: emailData.subject, message: emailData.message, attachments })
+                        body: JSON.stringify({
+                            to: emailData.to,
+                            subject: emailData.subject,
+                            message: emailData.message,
+                            attachments,
+                            societeId: societe.id
+                        })
                     });
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error);

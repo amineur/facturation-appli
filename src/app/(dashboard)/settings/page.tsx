@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { cn } from "@/lib/utils";
-import { ProEditor } from "@/components/features/ProEditor";
+
 import { DataManagement } from "@/components/features/DataManagement";
 import { UserProfileEditor } from "@/components/features/UserProfileEditor";
 import { UserManagement } from "@/components/features/UserManagement";
@@ -22,7 +22,7 @@ interface SettingsFormData extends Societe {
     globalConfig: any;
 }
 
-type SettingsView = "MAIN" | "IDENTITY" | "USERS" | "EMAIL" | "ADVANCED" | "PRO_EDITOR" | "DATA" | "CREATE_SOCIETE" | "PROFILE";
+type SettingsView = "MAIN" | "IDENTITY" | "USERS" | "EMAIL" | "ADVANCED" | "DATA" | "CREATE_SOCIETE" | "PROFILE";
 
 export default function SettingsPageWrapper() {
     return (
@@ -244,15 +244,7 @@ function SettingsPage() {
         </div>
     );
 
-    if (activeView === "PRO_EDITOR") {
-        return (
-            <div className="h-full flex flex-col p-4 animate-in fade-in zoom-in-95 duration-300">
-                <div className="flex-1 overflow-hidden">
-                    <ProEditor onBack={() => setActiveView("MAIN")} />
-                </div>
-            </div>
-        );
-    }
+
 
     if (activeView === "DATA") {
         return (
@@ -363,17 +355,12 @@ function SettingsPage() {
 
                     {/* SECTION: Fonctionnalités avancées */}
                     <SettingsSection title="Outils & Données">
+
                         <SettingsItem
                             icon={Database}
                             label="Import / Export"
                             color="bg-emerald-500"
                             onClick={() => setActiveView("DATA")}
-                        />
-                        <SettingsItem
-                            icon={PenTool}
-                            label="Models et Templates"
-                            color="bg-purple-500"
-                            onClick={() => setActiveView("PRO_EDITOR")}
                         />
                         <SettingsItem
                             icon={Plus}

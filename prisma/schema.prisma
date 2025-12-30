@@ -53,13 +53,24 @@ model Societe {
   siteWeb        String?
   banque         String?
 
-  // -- SMTP --
+
+  // -- SMTP / Email --
+  emailProvider    String  @default("SMTP") // "SMTP", "GMAIL"
+  
+  // SMTP Config (Legacy & Current)
   smtpHost   String?
   smtpPort   Int?
   smtpUser   String?
   smtpPass   String?
   smtpSecure Boolean @default(true)
   smtpFrom   String?
+
+  // Gmail / OAuth
+  googleRefreshToken String?
+
+  // Templates
+  emailSignature String?
+  emailTemplates String @default("{}") // JSON: { "invoice": { "subject": "...", "message": "..." }, "quote": ... }
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -86,6 +97,7 @@ model User {
   avatarBytes Bytes?
   avatarMime  String?
   hasAvatar   Boolean @default(false)
+  emailVerified Boolean @default(false)
 
   // Relations
   societes         Societe[] @relation("SocieteMembers")
@@ -99,6 +111,8 @@ model User {
   lastReadHistory DateTime @default(now())
 
   history HistoryEntry[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens      PasswordResetToken[]
 }
 
 model Client {
@@ -340,3 +354,29 @@ model Invitation {
   @@index([token])
   @@index([societeId])
 }
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+

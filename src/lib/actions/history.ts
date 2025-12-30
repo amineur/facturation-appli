@@ -222,6 +222,11 @@ export async function unarchiveRecord(tableName: 'Factures' | 'Devis', id: strin
         const authorized = await canAccessSociete(userRes.data.id, societeId, MembershipRole.EDITOR);
         if (!authorized) return { success: false, error: "Droit insuffisant" };
 
+        // STRICT POLICY: Unarchiving is disabled.
+        throw new Error("Action non autorisée : Les archives sont définitives.");
+
+        /* 
+        // Legacy Logic Disabled
         if (tableName === 'Factures') {
             await prisma.facture.update({
                 where: { id },
@@ -236,6 +241,7 @@ export async function unarchiveRecord(tableName: 'Factures' | 'Devis', id: strin
                 data: { statut: 'Brouillon', deletedAt: new Date() }
             });
         }
+        */
         revalidatePath("/", "layout");
         return { success: true };
     } catch (error: any) {

@@ -187,7 +187,10 @@ export function EmailComposer({
                             value={recipientInput}
                             onChange={(e) => { setRecipientInput(e.target.value); setShowSuggestions(true); }}
                             onKeyDown={handleKeyDown}
-                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                            onBlur={() => {
+                                if (recipientInput) addRecipient(recipientInput);
+                                setTimeout(() => setShowSuggestions(false), 200);
+                            }}
                             className="flex-1 min-w-[150px] bg-transparent border-none text-sm focus:ring-0 outline-none placeholder:text-muted-foreground/50"
                         />
                         {/* Suggestions */}

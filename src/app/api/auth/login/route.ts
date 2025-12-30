@@ -62,6 +62,14 @@ export async function POST(request: Request) {
             );
         }
 
+        // Check if email is verified
+        if (!user.emailVerified) {
+            return NextResponse.json(
+                { success: false, error: 'Email non vérifié. Vérifie ta boîte mail pour activer ton compte.' },
+                { status: 403 }
+            );
+        }
+
         // Set Cookie
         const cookieStore = await cookies(); // FIX: await cookies()
         cookieStore.set('session_userid', user.id, {

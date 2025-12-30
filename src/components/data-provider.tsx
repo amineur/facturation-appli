@@ -414,21 +414,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    /*
-    // CRON DISABLED - CONNECTION POOL FIX
+    // CRON POLL (Kept for Dev/Self-Hosting where external cron is unavailable)
     useEffect(() => {
         const checkScheduled = async () => {
             try {
-                await fetch('/api/cron/process-scheduled-emails');
+                // Low priority fetch
+                await fetch('/api/cron/process-scheduled-emails', { priority: 'low' });
             } catch (e) {
                 // Silent fail
             }
         };
+        // Run on mount
         checkScheduled();
+        // Run every minute (60000ms)
         const interval = setInterval(checkScheduled, 60000);
         return () => clearInterval(interval);
     }, []);
-    */
 
     const handleAddInvoice = (inv: Facture) => {
         setInvoices(prev => [inv, ...prev]);

@@ -52,6 +52,22 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
+    // Local state for immediate UI feedback (Status)
+    const [localStatus, setLocalStatus] = useState(initialData?.statut || (type === "Facture" ? "Brouillon" : "Brouillon"));
+
+    // Hydrate optimistic clients with initial client data to prevent "disappearing" on hard refresh
+    useEffect(() => {
+        if (initialData && (initialData as any).client) {
+            const client = (initialData as any).client;
+            if (client && client.id && client.nom) {
+                setOptimisticClients(prev => {
+                    if (prev.some(c => c.id === client.id)) return prev;
+                    return [...prev, client as Client];
+                });
+            }
+        }
+    }, [initialData]);
+
     // Generate next invoice/quote number
     const getNextNumber = () => {
         if (initialData?.numero) return initialData.numero; // Keep existing number when editing
@@ -193,8 +209,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
     // 1. Hard Lock (Business Rules - Irreversible via UI)
     const isHardLocked = type === "Facture"
-        ? ["Envoyée", "Payée", "Annulée", "Archivée"].includes((initialData as Facture)?.statut)
-        : ["Facturé", "Archivé"].includes((initialData as Devis)?.statut);
+        ? ["Envoyée", "Payée", "Annulée", "Archivée"].includes(localStatus as StatusFacture)
+        : ["Facturé", "Archivé"].includes(localStatus as StatusDevis);
 
     // 2. Local State (SSOT for Soft Lock)
     // Initialized ONCE from server data    const [isLocking, setIsLocking] = useState(false);
@@ -259,7 +275,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             } catch (err: any) {
                 // Rollback
                 setIsLocked(true);
-                toast.error("Erreur lors du déverrouillage");
+                toast.error(err.message || "Erreur lors du déverrouillage");
                 console.error(err);
             } finally {
                 setIsLocking(false);
@@ -871,7 +887,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             totalTVA: totals.tva,
             totalTTC: totals.ttc,
             // Ensure type specific fields exist
-            ...(type === "Facture" ? { statut: initialData?.statut || "Brouillon", echeance: (formData as any).echeance || "" } : { statut: initialData?.statut || "Brouillon", dateValidite: (formData as any).dateValidite || "" })
+            ...(type === "Facture" ? { statut: localStatus || initialData?.statut || "Brouillon", echeance: (formData as any).echeance || "" } : { statut: localStatus || initialData?.statut || "Brouillon", dateValidite: (formData as any).dateValidite || "" })
         } as unknown as Facture | Devis;
 
         // Auto-update status to "Envoyé" if it's a saved Draft and we are downloading
@@ -879,14 +895,20 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             try {
                 if (type === "Facture") {
                     // Only update to "Téléchargée" if current is "Brouillon" (don't overwrite "Envoyée" or "Payée")
-                    if (initialData.statut === "Brouillon") {
+                    // Use localStatus to avoid stale data
+                    const currentStatus = localStatus || initialData.statut;
+                    if (currentStatus === "Brouillon") {
                         await updateInvoice({ ...documentData as Facture, statut: 'Téléchargée' });
                         await markInvoiceAsDownloaded(initialData.id);
+                        // Update local status to reflect change
+                        setLocalStatus('Téléchargée');
                     }
                 } else {
                     // Devis Logic: Brouillon -> Téléchargé. If already Envoyé, do nothing.
-                    if (initialData.statut === "Brouillon") {
+                    const currentStatus = localStatus || initialData.statut;
+                    if (currentStatus === "Brouillon") {
                         await updateQuote({ ...documentData as Devis, statut: 'Téléchargé' });
+                        setLocalStatus('Téléchargé' as any);
                         // We might need a helper markQuoteAsDownloaded if we want to track it, but logically just status update is key here.
                         // Using generic logAction below.
                     }
@@ -945,7 +967,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 showTTCColumn,
                 discountEnabled
             },
-            ...(type === "Facture" ? { statut: initialData?.statut || "Brouillon", echeance: (formData as any).echeance || "" } : { statut: initialData?.statut || "Brouillon", dateValidite: (formData as any).dateValidite || "" })
+            ...(type === "Facture" ? { statut: localStatus || initialData?.statut || "Brouillon", echeance: (formData as any).echeance || "" } : { statut: localStatus || initialData?.statut || "Brouillon", dateValidite: (formData as any).dateValidite || "" })
         } as unknown as Facture | Devis;
 
         const url = generateInvoicePDF(documentData, societe, client, {
@@ -1039,6 +1061,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             } else {
                 await updateQuote({ ...initialData as Devis, statut: newStatus as StatusDevis });
             }
+            setLocalStatus(newStatus as any);
             toast.success(`Statut modifié : ${newStatus}`);
             refreshData();
         } catch (error) {
@@ -1065,10 +1088,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 <h2 className="text-3xl font-bold tracking-tight text-foreground">{pageTitle}</h2>
                                 {initialData && (
                                     <StatusBadge
-                                        status={initialData.statut}
+                                        status={localStatus}
                                         type={type}
                                         onChange={handleStatusChange}
-                                        readOnly={isReadOnly && !["Envoyée", "Envoyé"].includes(initialData.statut)}
+                                        readOnly={isReadOnly && !["Envoyée", "Envoyé"].includes(localStatus)}
                                     />
                                 )}
 
@@ -1482,7 +1505,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                         <div className="grid grid-cols-3 gap-4 items-end">
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">Numéro</label>
-                                <input {...register("numero")} readOnly={isReadOnly || isEditMode} disabled={isReadOnly || isEditMode} className={cn("w-full h-11 rounded-lg glass-input px-4 text-foreground", (isReadOnly || isEditMode) && "opacity-60 pointer-events-none")} />
+                                <input {...register("numero")} readOnly disabled className="w-full h-11 rounded-lg glass-input px-4 text-foreground opacity-60 pointer-events-none" placeholder="Auto-généré" />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-muted-foreground min-h-[20px]">
@@ -2202,13 +2225,15 @@ function StatusBadge({ status, type, onChange, readOnly }: { status: string, typ
     const options = (type === "Facture" && status !== "Brouillon")
         ? baseOptions.filter(opt => {
             if (status === "Annulée") return opt === "Annulée" || opt === "Archivée"; // Strict isolation
+            if (status === "Archivée") return opt === "Archivée"; // Strict isolation for Archive
             if (opt === "Brouillon") return false;
             return true;
         })
         : baseOptions;
 
     // Hard block interactive if status is Annulée (Already handled by readOnly prop passed from Parent, but extra safety here)
-    const isInteractive = !readOnly && status !== "Annulée";
+    // Archive is also non-interactive
+    const isInteractive = !readOnly && status !== "Annulée" && status !== "Archivée";
 
     return (
         <>

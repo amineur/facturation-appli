@@ -1,82 +1,60 @@
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { sendEmail } from '@/lib/email';
+import { prisma } from '@/lib/prisma';
+
 
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { to, subject, message, attachments } = body;
+        const { to, subject, message, attachments, societeId } = body;
 
         // Validations
         if (!to || !subject || !message) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        // Email Options
-        const mailOptions = {
-            from: process.env.SMTP_FROM || '"Facturation App" <no-reply@example.com>',
-            to,
-            subject,
-            text: message, // Plain text version
-            html: message.replace(/\n/g, '<br>'), // Simple HTML version
-            attachments: attachments ? attachments.map((att: any) => ({
-                filename: att.filename,
-                content: Buffer.from(att.content, 'base64'),
-                contentType: att.contentType || 'application/pdf'
-            })) : []
-        };
+        let config: any = undefined;
 
-        let info;
-        try {
-            // Check for critical variables
-            if (!process.env.SMTP_HOST && !process.env.SMTP_USER) {
-                throw new Error("SMTP_HOST or SMTP_USER not configured");
+        // If societeId provided, fetch settings
+        if (societeId) {
+            const societe = await prisma.societe.findUnique({
+                where: { id: societeId }
+            });
+
+            if (societe) {
+                config = {
+                    provider: societe.emailProvider || "SMTP",
+                    host: societe.smtpHost,
+                    port: societe.smtpPort,
+                    user: societe.smtpUser,
+                    pass: societe.smtpPass, // Encrypted in DB
+                    secure: societe.smtpSecure,
+                    fromName: societe.nom,
+                    fromEmail: societe.smtpFrom || societe.email,
+                    googleRefreshToken: societe.googleRefreshToken
+                };
             }
-
-            // Real Transport
-            const transporter = nodemailer.createTransport({
-                host: process.env.SMTP_HOST || "smtp.gmail.com",
-                port: Number(process.env.SMTP_PORT) || 587,
-                secure: process.env.SMTP_SECURE === 'true',
-                auth: {
-                    user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASS,
-                },
-                tls: { rejectUnauthorized: false }
-            });
-
-            await transporter.verify(); // Verify connection first
-            info = await transporter.sendMail(mailOptions);
-            console.log("Message sent (Real): %s", info.messageId);
-
-        } catch (realError: any) {
-            console.warn("Real SMTP failed or not configured, falling back to Ethereal:", realError.message);
-
-            // Fallback to Ethereal
-            const testAccount = await nodemailer.createTestAccount();
-            const testTransporter = nodemailer.createTransport({
-                host: "smtp.ethereal.email",
-                port: 587,
-                secure: false,
-                auth: {
-                    user: testAccount.user,
-                    pass: testAccount.pass,
-                },
-            });
-
-            info = await testTransporter.sendMail(mailOptions);
-            console.log("Message sent (Ethereal): %s", info.messageId);
-            console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
-
-            // Append preview URL to success message if possible
-            return NextResponse.json({
-                success: true,
-                messageId: info.messageId,
-                previewUrl: nodemailer.getTestMessageUrl(info),
-                warning: "Sent via Ethereal (Dev Mode)"
-            });
         }
 
-        return NextResponse.json({ success: true, messageId: info.messageId });
+        // Send
+        const result = await sendEmail({
+            to,
+            subject,
+            html: message.replace(/\n/g, '<br>'),
+            text: message,
+            attachments
+        }, config);
+
+        if (!result.success) {
+            console.error("Sending failed:", result.error);
+            return NextResponse.json({ error: result.error }, { status: 500 });
+        }
+
+        return NextResponse.json({
+            success: true,
+            messageId: result.messageId,
+            previewUrl: result.previewUrl
+        });
 
     } catch (error: any) {
         console.error("Error sending email:", error);
