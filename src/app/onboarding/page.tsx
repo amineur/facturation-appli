@@ -282,7 +282,7 @@ function OnboardingContent() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Option 1: Join */}
-                <div className="glass-card p-6 rounded-2xl border border-white/10 hover:border-purple-500/50 transition-all group flex flex-col h-full">
+                <div className="glass-card p-6 rounded-2xl border border-border hover:border-purple-500/50 transition-all group flex flex-col h-full">
                     <div className="h-12 w-12 bg-purple-500/10 rounded-xl flex items-center justify-center border border-purple-500/20 mb-4 group-hover:scale-110 transition-transform">
                         <Users className="h-6 w-6 text-purple-400" />
                     </div>
@@ -295,7 +295,7 @@ function OnboardingContent() {
                     <div className="space-y-3">
                         <input
                             placeholder="Code d'invitation (optionnel)"
-                            className="w-full glass-input px-3 py-2 rounded-lg text-sm bg-white/5 border border-white/10"
+                            className="w-full glass-input px-3 py-2 rounded-lg text-sm"
                             value={inviteCode}
                             onChange={(e) => setInviteCode(e.target.value)}
                         />
@@ -312,7 +312,7 @@ function OnboardingContent() {
                 {/* Option 2: Create */}
                 <button
                     onClick={() => setStep(1)}
-                    className="glass-card p-6 rounded-2xl border border-white/10 hover:border-blue-500/50 transition-all group flex flex-col h-full text-left"
+                    className="glass-card p-6 rounded-2xl border border-border hover:border-blue-500/50 transition-all group flex flex-col h-full text-left"
                 >
                     <div className="h-12 w-12 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 mb-4 group-hover:scale-110 transition-transform">
                         <Building2 className="h-6 w-6 text-blue-400" />
@@ -376,7 +376,7 @@ function OnboardingContent() {
                                 setIsLoading(false);
                             }
                         }}
-                        className="relative z-50 cursor-pointer text-sm font-medium text-white/70 hover:text-white transition-colors flex items-center gap-2 mx-auto group border-b border-transparent hover:border-white/30 pb-0.5"
+                        className="relative z-50 cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2 mx-auto group border-b border-transparent hover:border-border pb-0.5"
                     >
                         Continuer en mode découverte
                         {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />}
@@ -384,7 +384,7 @@ function OnboardingContent() {
                 ) : (
                     <button
                         onClick={() => router.push('/')}
-                        className="relative z-50 cursor-pointer text-sm font-medium text-white/70 hover:text-white transition-colors flex items-center gap-2 mx-auto group border-b border-transparent hover:border-white/30 pb-0.5"
+                        className="relative z-50 cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2 mx-auto group border-b border-transparent hover:border-border pb-0.5"
                     >
                         <ChevronLeft className="h-3 w-3 group-hover:-translate-x-1 transition-transform" />
                         Retour au tableau de bord
@@ -596,14 +596,14 @@ function OnboardingContent() {
 
     if (step === 0) {
         return (
-            <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+            <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6 relative overflow-hidden">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,60,255,0.1),rgba(0,0,0,0))] pointer-events-none" />
 
                 {/* Close button for existing users */}
                 {realSocietes.length > 0 && (
                     <button
                         onClick={() => router.push('/')}
-                        className="absolute top-6 right-6 p-2 text-white/50 hover:text-white transition-colors rounded-full hover:bg-white/10 z-50"
+                        className="absolute top-6 right-6 p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-secondary/50 z-50"
                         aria-label="Fermer"
                     >
                         <X className="h-6 w-6" />
@@ -616,25 +616,25 @@ function OnboardingContent() {
     }
 
     return (
-        <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6 relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,60,255,0.1),rgba(0,0,0,0))]" />
 
             {/* Close button for existing users */}
             {realSocietes.length > 0 && (
                 <button
                     onClick={() => router.push('/')}
-                    className="absolute top-6 right-6 p-2 text-white/50 hover:text-white transition-colors rounded-full hover:bg-white/10 z-50"
+                    className="absolute top-6 right-6 p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-secondary/50 z-50"
                     aria-label="Fermer"
                 >
                     <X className="h-6 w-6" />
                 </button>
             )}
 
-            <div className="max-w-xl w-full glass-card p-8 rounded-2xl border border-white/10 shadow-2xl relative z-10 transition-all duration-500">
+            <div className="max-w-xl w-full glass-card p-8 rounded-2xl shadow-2xl relative z-10 transition-all duration-500">
                 {/* Header with Steps */}
                 <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 bg-white/10 rounded-xl flex items-center justify-center border border-white/10">
+                        <div className="h-12 w-12 bg-secondary/50 rounded-xl flex items-center justify-center border border-border">
                             <Building2 className="h-6 w-6 text-blue-400" />
                         </div>
                         <div>
@@ -648,7 +648,7 @@ function OnboardingContent() {
                     <div className="flex gap-1.5">
                         {[1, 2, 3].map(i => (
                             <div key={i} className={cn("h-1.5 rounded-full transition-all duration-300",
-                                i === step ? "w-6 bg-blue-500" : i < step ? "w-1.5 bg-blue-500/50" : "w-1.5 bg-white/10")}
+                                i === step ? "w-6 bg-primary" : i < step ? "w-1.5 bg-primary/50" : "w-1.5 bg-secondary")}
                             />
                         ))}
                     </div>
@@ -662,10 +662,10 @@ function OnboardingContent() {
                 </div>
 
                 {/* Footer Actions */}
-                <div className="flex items-center gap-3 mt-8 pt-6 border-t border-white/10">
+                <div className="flex items-center gap-3 mt-8 pt-6 border-t border-border">
                     <button
                         onClick={handleBack} // step 1 goes back to 0 (Choice)
-                        className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                        className="px-6 py-3 rounded-xl bg-secondary/50 hover:bg-secondary border border-border transition-colors text-foreground"
                     >
                         <ChevronLeft className="h-5 w-5" />
                     </button>

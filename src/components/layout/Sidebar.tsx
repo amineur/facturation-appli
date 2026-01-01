@@ -125,7 +125,11 @@ export function Sidebar() {
                     {isSocieteMenuOpen && (
                         <div className="absolute top-full left-0 w-full mt-2 p-1 border border-border rounded-xl shadow-2xl z-50 bg-background animate-in fade-in zoom-in-95 duration-200">
                             <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Changer de société</div>
-                            {societes.map(s => (
+                            {societes.filter(s => {
+                                const hasRealSocietes = societes.some((so: any) => !so.isTemplate);
+                                if (hasRealSocietes && (s as any).isTemplate) return false;
+                                return true;
+                            }).map(s => (
                                 <button
                                     key={s.id}
                                     onClick={() => {

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { dataService } from "@/lib/data-service";
-import { Lock, Mail, ArrowRight, Loader2 } from "lucide-react";
+import { Lock, Mail, ArrowRight, Loader2, User } from "lucide-react";
 import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
 
@@ -88,12 +88,12 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="glass-card p-8 rounded-2xl border border-white/10 shadow-2xl backdrop-blur-xl">
+        <div className="glass-card p-8 rounded-2xl border border-border shadow-2xl backdrop-blur-xl">
             <div className="text-center mb-8">
-                <div className="h-12 w-12 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-white/10">
-                    <Lock className="h-6 w-6 text-white" />
+                <div className="h-12 w-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-border">
+                    <Lock className="h-6 w-6 text-zinc-600 dark:text-zinc-400" />
                 </div>
-                <h1 className="text-2xl font-bold text-white mb-2">
+                <h1 className="text-2xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">
                     {isSignup ? "Créer un compte" : "Connexion"}
                 </h1>
                 <p className="text-sm text-muted-foreground">
@@ -117,22 +117,25 @@ export default function LoginPage() {
                 {isSignup && (
                     <div className="space-y-2">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider ml-1">Nom complet</label>
-                        <input
-                            {...register("fullName", { required: isSignup })}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                            placeholder="Jean Dupont"
-                        />
+                        <div className="relative group">
+                            <User className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-foreground transition-colors" />
+                            <input
+                                {...register("fullName", { required: isSignup })}
+                                className="w-full glass-input rounded-xl py-2.5 pl-10 pr-4 placeholder:text-muted-foreground/50 transition-all text-zinc-800 dark:text-zinc-100"
+                                placeholder="Jean Dupont"
+                            />
+                        </div>
                     </div>
                 )}
 
                 <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider ml-1">Email</label>
                     <div className="relative group">
-                        <Mail className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-white transition-colors" />
+                        <Mail className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-foreground transition-colors" />
                         <input
                             {...register("email", { required: true })}
                             type="email"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                            className="w-full glass-input rounded-xl py-2.5 pl-10 pr-4 placeholder:text-muted-foreground/50 transition-all text-zinc-800 dark:text-zinc-100"
                             placeholder="exemple@email.com"
                         />
                     </div>
@@ -144,11 +147,11 @@ export default function LoginPage() {
                         {!isSignup && <a href="/forgot-password" className="text-xs text-blue-400 hover:text-blue-300">Oublié ?</a>}
                     </div>
                     <div className="relative group">
-                        <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-white transition-colors" />
+                        <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground group-focus-within:text-foreground transition-colors" />
                         <input
                             {...register("password", { required: true, minLength: 6 })}
                             type="password"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                            className="w-full glass-input rounded-xl py-2.5 pl-10 pr-4 placeholder:text-muted-foreground/50 transition-all text-zinc-800 dark:text-zinc-100"
                             placeholder={isSignup ? "Minimum 6 caractères" : "••••••••"}
                         />
                     </div>
@@ -157,7 +160,7 @@ export default function LoginPage() {
                 <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium py-2.5 rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2.5 rounded-xl shadow-lg shadow-primary/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed mt-6"
                 >
                     {isLoading ? (
                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -170,13 +173,13 @@ export default function LoginPage() {
                 </button>
             </form>
 
-            <div className="mt-8 pt-6 border-t border-white/10 text-center">
+            <div className="mt-8 pt-6 border-t border-border text-center">
                 <p className="text-sm text-muted-foreground">
                     {isSignup ? "Déjà un compte ?" : "Pas encore de compte ?"} {" "}
                     <button
                         type="button"
                         onClick={() => setIsSignup(!isSignup)}
-                        className="text-white hover:underline font-medium"
+                        className="text-zinc-800 dark:text-zinc-100 hover:underline font-medium"
                     >
                         {isSignup ? "Se connecter" : "Créer un compte"}
                     </button>

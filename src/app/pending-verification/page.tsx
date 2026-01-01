@@ -73,21 +73,21 @@ function PendingVerificationContent() {
     };
 
     return (
-        <div className="max-w-md w-full glass-card p-8 rounded-2xl border border-white/10 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-500">
+        <div className="max-w-md w-full glass-card p-8 rounded-2xl border border-border shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-500">
             <div className="text-center mb-8">
                 <div className="h-16 w-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
                     <Mail className="h-8 w-8 text-blue-400" />
                 </div>
 
-                <h1 className="text-2xl font-bold text-white mb-2">Vérifiez votre email</h1>
+                <h1 className="text-2xl font-bold text-foreground mb-2">Vérifiez votre email</h1>
                 <p className="text-muted-foreground">
                     Un lien de confirmation a été envoyé à <br />
-                    <span className="text-white font-medium">{email || "votre adresse email"}</span>
+                    <span className="text-foreground font-medium">{email || "votre adresse email"}</span>
                 </p>
             </div>
 
             <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-sm text-muted-foreground text-center">
+                <div className="p-4 rounded-xl bg-primary/5 border border-border text-sm text-muted-foreground text-center">
                     <p>Cliquez sur le lien dans l'email pour activer votre compte et accéder à la plateforme.</p>
                 </div>
 
@@ -95,7 +95,7 @@ function PendingVerificationContent() {
                 <button
                     onClick={handleResend}
                     disabled={countdown > 0}
-                    className="w-full py-3 px-4 rounded-xl border border-white/10 hover:bg-white/5 transition-colors text-sm font-medium text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full py-3 px-4 rounded-xl border border-border hover:bg-primary/10 transition-colors text-sm font-medium text-foreground flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {countdown > 0 ? (
                         <>
@@ -108,8 +108,8 @@ function PendingVerificationContent() {
                 </button>
 
                 <div className="relative my-6">
-                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-                    <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0a0a0f] px-2 text-muted-foreground">Ou</span></div>
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border"></div></div>
+                    <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Ou</span></div>
                 </div>
 
                 {/* Manual Verify Button (Bypass for now) */}
@@ -134,11 +134,11 @@ function PendingVerificationContent() {
 
 export default function PendingVerificationPage() {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f] relative overflow-hidden p-4">
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground relative overflow-hidden p-4">
             {/* Background Effects */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(120,60,255,0.1),rgba(0,0,0,0))]" />
 
-            <Suspense fallback={<div className="text-white">Chargement...</div>}>
+            <Suspense fallback={<div className="text-foreground">Chargement...</div>}>
                 <PendingVerificationContent />
             </Suspense>
         </div>
