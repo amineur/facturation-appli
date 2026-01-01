@@ -4,14 +4,14 @@ import { Building2, ArrowRight, Loader2, Search, MapPin, CreditCard, Image as Im
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useData } from '@/components/data-provider';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { cn } from '@/lib/utils';
 import { getMyPendingInvitations, acceptInvitation } from '@/lib/actions/members';
 import { migrateTemplateToReal, createTemplateSociete } from '@/lib/actions/template-societe';
 
 export const dynamic = "force-dynamic";
 
-export default function OnboardingPage() {
+function OnboardingContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const context = searchParams.get('context');
@@ -735,6 +735,14 @@ export default function OnboardingPage() {
                 </>
             )}
         </div>
+    );
+}
+
+export default function OnboardingPage() {
+    return (
+        <Suspense fallback={<div className="h-screen w-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+            <OnboardingContent />
+        </Suspense>
     );
 }
 
