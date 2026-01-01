@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { getMyPendingInvitations, acceptInvitation } from '@/lib/actions/members';
 import { migrateTemplateToReal, createTemplateSociete } from '@/lib/actions/template-societe';
 
+export const dynamic = "force-dynamic";
+
 export default function OnboardingPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
