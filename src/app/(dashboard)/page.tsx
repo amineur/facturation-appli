@@ -263,7 +263,7 @@ export default function DashboardPage() {
                             value={customStart}
                             onChange={(e) => handleDateChange('start', e.target.value)}
                             aria-label="Filtrer par date de début"
-                            className="bg-transparent border border-gray-200 dark:border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] dark:text-white"
+                            className="bg-transparent border border-border rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] text-foreground placeholder:text-muted-foreground"
                         />
                         <span className="text-sm text-muted-foreground">au</span>
                         <input
@@ -271,7 +271,7 @@ export default function DashboardPage() {
                             value={customEnd}
                             onChange={(e) => handleDateChange('end', e.target.value)}
                             aria-label="Filtrer par date de fin"
-                            className="bg-transparent border border-gray-200 dark:border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] dark:text-white"
+                            className="bg-transparent border border-border rounded-md px-2 py-1 text-sm focus:outline-none focus:border-primary w-[130px] text-foreground placeholder:text-muted-foreground"
                         />
                     </div>
                 </div>

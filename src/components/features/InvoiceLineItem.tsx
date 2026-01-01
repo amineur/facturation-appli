@@ -16,6 +16,9 @@ interface InvoiceLineItemProps {
     remove: (index: number) => void;
     handleDescriptionChange: (index: number, value: string) => void;
     isReadOnly?: boolean;
+    // New props
+    showQuantiteColumn?: boolean;
+    showTvaColumn?: boolean;
 }
 
 const PriceInput = ({ value, onChange, onBlur, inputRef, className, disabled }: any) => {
@@ -58,7 +61,9 @@ export const InvoiceLineItem = ({
     products,
     remove,
     handleDescriptionChange,
-    isReadOnly = false
+    isReadOnly = false,
+    showQuantiteColumn = true,
+    showTvaColumn = true
 }: InvoiceLineItemProps) => {
     const { register, control, setValue, watch, formState: { errors } } = useFormContext();
     const dragControls = useDragControls();
@@ -219,20 +224,22 @@ export const InvoiceLineItem = ({
                             </div>
                         )}
 
-                        <div>
-                            <input
-                                type="number"
-                                lang="fr-FR"
-                                step="any"
-                                {...register(`items.${index}.quantite`, { valueAsNumber: true })}
-                                readOnly={isReadOnly}
-                                disabled={false}
-                                className={cn(
-                                    "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pb-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                    isReadOnly && "opacity-80 pointer-events-none"
-                                )}
-                            />
-                        </div>
+                        {showQuantiteColumn && (
+                            <div>
+                                <input
+                                    type="number"
+                                    lang="fr-FR"
+                                    step="any"
+                                    {...register(`items.${index}.quantite`, { valueAsNumber: true })}
+                                    readOnly={isReadOnly}
+                                    disabled={false}
+                                    className={cn(
+                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pb-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                        isReadOnly && "opacity-80 pointer-events-none"
+                                    )}
+                                />
+                            </div>
+                        )}
 
                         <div className="relative">
                             <Controller
@@ -272,22 +279,24 @@ export const InvoiceLineItem = ({
                             })()} €
                         </div>
 
-                        <div className="flex items-center justify-center pt-1">
-                            <div className="relative w-16">
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    {...register(`items.${index}.tva`, { valueAsNumber: true })}
-                                    readOnly={isReadOnly}
-                                    disabled={false}
-                                    className={cn(
-                                        "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pr-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                        isReadOnly && "opacity-80 pointer-events-none"
-                                    )}
-                                />
-                                <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                        {showTvaColumn && (
+                            <div className="flex items-center justify-center pt-1">
+                                <div className="relative w-16">
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        {...register(`items.${index}.tva`, { valueAsNumber: true })}
+                                        readOnly={isReadOnly}
+                                        disabled={false}
+                                        className={cn(
+                                            "w-full bg-transparent border-b border-white/20 dark:border-white/10 text-center text-foreground focus:border-blue-500 focus:ring-0 pr-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                            isReadOnly && "opacity-80 pointer-events-none"
+                                        )}
+                                    />
+                                    <span className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {showTTCColumn && (
                             <div className="text-right font-medium text-foreground border-b border-white/20 dark:border-white/10 pb-1 min-h-[28px] flex items-center justify-end whitespace-nowrap">

@@ -17,13 +17,14 @@ import { DataManagement } from "@/components/features/DataManagement";
 import { UserProfileEditor } from "@/components/features/UserProfileEditor";
 import { UserManagement } from "@/components/features/UserManagement";
 import { EmailSettings } from "@/components/features/EmailSettings";
+import { PDFSettings } from "@/components/features/PDFSettings";
 import { toast } from "sonner";
 
 interface SettingsFormData extends Societe {
     globalConfig: any;
 }
 
-type SettingsView = "MAIN" | "IDENTITY" | "USERS" | "EMAIL" | "ADVANCED" | "DATA" | "CREATE_SOCIETE" | "PROFILE";
+type SettingsView = "MAIN" | "IDENTITY" | "USERS" | "EMAIL" | "PDF" | "ADVANCED" | "DATA" | "CREATE_SOCIETE" | "PROFILE";
 
 export default function SettingsPageWrapper() {
     return (
@@ -340,6 +341,23 @@ function SettingsPage() {
         );
     }
 
+    if (activeView === "PDF") {
+        return (
+            <div className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="flex items-center justify-between mb-6">
+                    <button
+                        onClick={() => handleNavigation("MAIN")}
+                        className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors font-medium"
+                    >
+                        <ChevronLeft className="h-5 w-5" />
+                        Réglages
+                    </button>
+                </div>
+                <PDFSettings />
+            </div>
+        );
+    }
+
     if (activeView === "PROFILE") {
         return (
             <div className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -375,6 +393,12 @@ function SettingsPage() {
                             color="bg-blue-500/10 text-blue-500"
                             onClick={() => setActiveView("PROFILE")}
                         />
+                        <SettingsItem
+                            icon={Plus}
+                            label="Nouvelle Société"
+                            color="bg-orange-500"
+                            onClick={() => router.push("/onboarding?context=add")}
+                        />
                     </SettingsSection>
 
                     {/* SECTION: Identité & Société (Renamed / Restructured) */}
@@ -393,26 +417,21 @@ function SettingsPage() {
                         />
                         <SettingsItem
                             icon={Mail}
-                            label="Email & PDF"
+                            label="Email"
                             color="bg-blue-500"
                             onClick={() => setActiveView("EMAIL")}
                         />
-                    </SettingsSection>
-
-                    {/* SECTION: Fonctionnalités avancées */}
-                    <SettingsSection title="Outils & Données">
-
+                        <SettingsItem
+                            icon={FileText}
+                            label="PDF"
+                            color="bg-purple-500"
+                            onClick={() => setActiveView("PDF")}
+                        />
                         <SettingsItem
                             icon={Database}
                             label="Import / Export"
                             color="bg-emerald-500"
                             onClick={() => setActiveView("DATA")}
-                        />
-                        <SettingsItem
-                            icon={Plus}
-                            label="Ajouter une société"
-                            color="bg-orange-500"
-                            onClick={() => router.push("/onboarding?context=add")}
                         />
                     </SettingsSection>
                 </div>

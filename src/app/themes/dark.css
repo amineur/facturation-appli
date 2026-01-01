@@ -12,7 +12,6 @@
     /* -- Semantics: Icons -- */
     --icon-nav: #a1a1aa;
     --icon-invoice: #10B981;
-    /* Explicitly defined for strict separation */
     --icon-quote: #6366F1;
     --icon-client: #F59E0B;
 
@@ -28,8 +27,5 @@
     --input-text: #ffffff;
 
     /* -- Visualization -- */
-    --bg-gradient:
-        radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
-        radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%),
-        radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+    --bg-gradient: radial-gradient(at 50% 0%, rgba(30, 41, 59, 0.3) 0, transparent 70%);
 }

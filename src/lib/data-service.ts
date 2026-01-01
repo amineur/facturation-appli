@@ -25,6 +25,23 @@ export interface GlobalConfig {
     discountEnabled: boolean;
     discountType: 'pourcentage' | 'montant';
     showOptionalFields: boolean;
+    // Split defaults
+    invoiceDefaults?: {
+        showDate: boolean;
+        showQuantite: boolean;
+        showTva: boolean; // Refers to Column TVA
+        showRemise: boolean;
+        showTtc: boolean;
+    };
+    quoteDefaults?: {
+        showDate: boolean;
+        showQuantite: boolean;
+        showTva: boolean;
+        showRemise: boolean;
+        showTtc: boolean;
+    };
+    // Operation Type
+    operationType?: 'none' | 'service' | 'goods';
 }
 
 const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
@@ -33,7 +50,22 @@ const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
     showTTCColumn: false,
     discountEnabled: false,
     discountType: 'pourcentage',
-    showOptionalFields: false
+    showOptionalFields: false,
+    operationType: 'service', // Default to "Prestation de services"
+    invoiceDefaults: {
+        showDate: false,
+        showQuantite: true,
+        showTva: true,
+        showRemise: false,
+        showTtc: false
+    },
+    quoteDefaults: {
+        showDate: false,
+        showQuantite: true,
+        showTva: true,
+        showRemise: false,
+        showTtc: false
+    }
 };
 
 class DataService {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray, Control, useWatch, FormProvider } from "react-hook-form";
-import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical, Lock, Unlock } from "lucide-react";
+import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical, Lock, Unlock, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Facture, Devis, Client, LigneItem, Produit, Societe, StatusFacture, StatusDevis } from "@/types";
 import { Reorder } from "framer-motion";
@@ -388,16 +388,35 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
 
 
     // Load Global Config for defaults if not editing specific invoice config
+    // Load Global Config for defaults
     const globalConfig = dataService.getGlobalConfig();
+    const defaults = type === "Facture" ? globalConfig.invoiceDefaults : globalConfig.quoteDefaults;
 
-    // Column visibility states - Loaded from saved config or defaults
-    const [showDateColumn, setShowDateColumn] = useState(initialData?.config?.showDateColumn ?? globalConfig.showDateColumn ?? false);
-    const [showTTCColumn, setShowTTCColumn] = useState(initialData?.config?.showTTCColumn ?? globalConfig.showTTCColumn ?? false);
-    const [discountEnabled, setDiscountEnabled] = useState(initialData?.config?.discountEnabled ?? globalConfig.discountEnabled ?? false);
+    // Column visibility states
+    const [showDateColumn, setShowDateColumn] = useState(initialData?.config?.showDateColumn ?? defaults?.showDate ?? globalConfig.showDateColumn ?? false);
+
+    // New States for Columns
+    const [showQuantiteColumn, setShowQuantiteColumn] = useState(initialData?.config?.showQuantiteColumn ?? defaults?.showQuantite ?? true);
+    const [showTvaColumn, setShowTvaColumn] = useState(initialData?.config?.showTvaColumn ?? defaults?.showTva ?? true);
+    const [showRemiseColumn, setShowRemiseColumn] = useState(initialData?.config?.showRemiseColumn ?? defaults?.showRemise ?? false);
+
+    const [showTTCColumn, setShowTTCColumn] = useState(initialData?.config?.showTTCColumn ?? defaults?.showTtc ?? globalConfig.showTTCColumn ?? false);
+    const [discountEnabled, setDiscountEnabled] = useState(initialData?.config?.discountEnabled ?? defaults?.showRemise ?? globalConfig.discountEnabled ?? false);
     const [discountType, setDiscountType] = useState<'pourcentage' | 'montant'>(initialData?.config?.discountType || globalConfig.discountType || 'pourcentage');
     const [globalDiscountType, setGlobalDiscountType] = useState<'pourcentage' | 'montant'>(initialData?.remiseGlobaleType || 'pourcentage');
     const [defaultTva, setDefaultTva] = useState(initialData?.config?.defaultTva ?? globalConfig.defaultTva ?? 20); // Default VAT rate
     const [showOptionalFields, setShowOptionalFields] = useState(initialData?.config?.showOptionalFields ?? globalConfig.showOptionalFields ?? false);
+
+    // Freeze Operation Type
+    // If Editing (initialData exists): Use saved value. If missing (legacy), force 'service' to preserve history.
+    // If Creating (no initialData): Use current Global Config.
+    const [operationType] = useState<'none' | 'service' | 'goods'>(() => {
+        if (initialData) {
+            return initialData.config?.operationType ?? 'service';
+        }
+        return globalConfig.operationType ?? 'service';
+    });
+
     const [isEditingClient, setIsEditingClient] = useState(false);
     const [editedClientData, setEditedClientData] = useState<Partial<Client>>({});
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -713,14 +732,18 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 totalHT: totals.ht,
                 totalTVA: totals.tva,
                 totalTTC: totals.ttc,
-                config: {
+                config: JSON.stringify({
                     showDateColumn,
                     showTTCColumn,
                     discountEnabled,
                     discountType,
                     defaultTva,
-                    showOptionalFields
-                },
+                    showOptionalFields,
+                    showQuantiteColumn,
+                    showTvaColumn,
+                    showRemiseColumn,
+                    operationType // Save frozen operation type
+                }),
                 remiseGlobale: data.remiseGlobale || 0,
                 remiseGlobaleMontant: totals.remiseGlobale,
                 clientId: data.clientId,
@@ -1506,6 +1529,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                             {errors.clientId && (
                                 <p className="text-xs text-red-500 mt-1 animate-in slide-in-from-left-1">{errors.clientId.message}</p>
                             )}
+
                         </div>
 
                         <div className="grid grid-cols-3 gap-4 items-end">
@@ -1828,26 +1852,27 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 <p className="text-xs text-red-500 animate-in slide-in-from-left-1">{errors.items.root?.message || errors.items.message}</p>
                             )}
                         </div>
-                        <div className="grid gap-4 px-2 py-3 text-sm font-medium text-muted-foreground pl-8"
-                            style={{
-                                gridTemplateColumns: [
-                                    "4fr", // Description
-                                    showDateColumn ? "1.6fr" : null,
-                                    "0.7fr", // Qté
-                                    "1.1fr", // P.U HT
-                                    "1.3fr", // Total HT (moved)
-                                    "0.8fr", // TVA
-                                    showTTCColumn ? "1.2fr" : null, // Total TTC
-                                    discountEnabled ? "1.1fr" : null, // Remise (moved to end)
-                                    "0.4fr"
-                                ].filter(Boolean).join(" ")
-                            }}>
-                            <div className="pl-1">Description</div>
+                        <div style={{
+                            display: "grid",
+                            gridTemplateColumns: [
+                                "4fr", // Description
+                                showDateColumn ? "1.6fr" : null,
+                                showQuantiteColumn ? "0.7fr" : null, // Qté
+                                "1.1fr", // P.U HT
+                                "1.3fr", // Total HT
+                                showTvaColumn ? "0.8fr" : null, // TVA
+                                showTTCColumn ? "1.2fr" : null, // Total TTC
+                                discountEnabled ? "1.1fr" : null, // Remise
+                                "0.4fr"
+                            ].filter(Boolean).join(" "),
+                            gap: "1rem"
+                        }} className="px-2 pl-8 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                            <div>Description</div>
                             {showDateColumn && <div className="text-center">Date</div>}
-                            <div className="text-center">Qté</div>
+                            {showQuantiteColumn && <div className="text-center">Qté</div>}
                             <div className="text-right">P.U HT</div>
                             <div className="text-right">Total HT</div>
-                            <div className="text-center">TVA</div>
+                            {showTvaColumn && <div className="text-center">TVA</div>}
                             {showTTCColumn && <div className="text-right">Total TTC</div>}
                             {discountEnabled && <div className="text-right">Remise</div>}
                             <div></div>
@@ -1863,7 +1888,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                 {fields.map((field, index) => (
                                     <InvoiceLineItem
                                         key={field.id}
-                                        field={field}
+                                        field={field as any}
                                         index={index}
                                         showDateColumn={showDateColumn}
                                         showTTCColumn={showTTCColumn}
@@ -1873,6 +1898,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                         remove={remove}
                                         handleDescriptionChange={handleDescriptionChange}
                                         isReadOnly={isReadOnly}
+                                        showQuantiteColumn={showQuantiteColumn}
+                                        showTvaColumn={showTvaColumn}
                                     />
                                 ))}
                             </Reorder.Group>
@@ -2161,24 +2188,29 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 message="Des modifications ont été apportées. Êtes-vous sûr de vouloir quitter sans enregistrer ?"
 
             />
-            {/* Client Creation Modal */}
+            {/* Client Creation Slide-in Panel */}
             {isClientModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-background dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl border border-border dark:border-white/10 p-4 md:p-6 animate-in zoom-in-95 duration-200">
+                <>
+                    {/* Backdrop */}
+                    <div
+                        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 animate-in fade-in duration-200"
+                        onClick={() => setIsClientModalOpen(false)}
+                    />
+                    {/* Slide-in Panel */}
+                    <div className="fixed inset-y-0 right-0 w-full max-w-3xl bg-background dark:bg-slate-900 shadow-2xl z-50 overflow-y-auto animate-in slide-in-from-right duration-300">
                         <ClientEditor
                             onSuccess={async (newClient) => {
                                 setIsClientModalOpen(false);
                                 setOptimisticClients(prev => [...prev, newClient]);
-                                setValue("clientId", newClient.id); // Auto select new client
-                                // Sync backgroun
+                                setValue("clientId", newClient.id);
                                 await refreshData();
                             }}
                             onCancel={() => setIsClientModalOpen(false)}
                         />
                     </div>
-                </div>
+                </>
             )}
-        </FormProvider>
+        </FormProvider >
     );
 }
 

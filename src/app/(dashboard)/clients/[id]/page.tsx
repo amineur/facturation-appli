@@ -48,16 +48,10 @@ function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
     if (isEditing) {
         return (
             <div className="max-w-4xl mx-auto space-y-6">
-                <div>
-                    <button
-                        onClick={() => setIsEditing(false)}
-                        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
-                    >
-                        <ArrowLeft className="h-4 w-4" />
-                        Retour à la fiche
-                    </button>
-                </div>
-                <ClientEditor initialData={client} />
+                <ClientEditor
+                    initialData={client}
+                    onCancel={() => setIsEditing(false)}
+                />
             </div>
         );
     }
@@ -65,14 +59,15 @@ function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             <div>
-                <Link href="/clients" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors">
-                    <ArrowLeft className="h-4 w-4" />
-                    Retour aux clients
-                </Link>
                 <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-3xl font-bold tracking-tight text-foreground">{getClientDisplayName(client)}</h2>
-                        <p className="text-muted-foreground mt-1">Fiche client détaillée</p>
+                    <div className="flex items-center gap-3">
+                        <Link href="/clients" className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground">
+                            <ArrowLeft className="h-5 w-5" />
+                        </Link>
+                        <div>
+                            <h2 className="text-3xl font-bold tracking-tight text-foreground">{getClientDisplayName(client)}</h2>
+                            <p className="text-muted-foreground mt-1">Fiche client détaillée</p>
+                        </div>
                     </div>
                     <button
                         onClick={() => setIsEditing(true)}

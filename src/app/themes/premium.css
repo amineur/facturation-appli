@@ -1,0 +1,38 @@
+/* -----------------------------------------
+   [SECTION] PREMIUM THEME
+   Midnight Blue & Grayscale Elegance
+   ----------------------------------------- */
+.premium {
+    /* -- Colors -- */
+    --background: #F8FAFC; /* Slate 50 - Business White */
+    --foreground: #0F172A; /* Slate 900 - Midnight Blue Text */
+    --muted-foreground: #64748B; /* Slate 500 */
+    
+    --primary: #0F172A; /* Slate 900 - Midnight Brand */
+    --primary-foreground: #FFFFFF;
+    
+    --border: #E2E8F0; /* Slate 200 */
+
+    /* -- Semantics: Icons -- */
+    --icon-nav: #64748B; /* Slate 500 */
+    --icon-invoice: #059669; /* Emerald 600 - Muted Green */
+    --icon-quote: #4F46E5; /* Indigo 600 - Elegant Blue */
+    --icon-client: #D97706; /* Amber 600 - Muted Gold */
+
+    /* -- Semantics: Glass -- */
+    --glass-bg: rgba(255, 255, 255, 0.95); /* Nearly Opaque White */
+    --glass-dropdown-bg: #FFFFFF;
+    --glass-border: transparent; /* No visible border for clean look */
+    --glass-shadow: 
+        0 4px 6px -1px rgba(15, 23, 42, 0.05),
+        0 10px 15px -3px rgba(15, 23, 42, 0.05); /* Soft, luxurious shadow */
+
+    /* -- Semantics: Inputs -- */
+    --input-bg: #FFFFFF;
+    --input-border: #E2E8F0;
+    --input-text: #0F172A; /* Slate 900 */
+
+    /* -- Visualization -- */
+    /* Subtle vertical gradient from Slate-50 to White */
+    --bg-gradient: linear-gradient(to bottom, #F8FAFC 0%, #FFFFFF 100%);
+}

@@ -422,7 +422,7 @@ function DevisPage() {
                             placeholder="Rechercher par numéro..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="h-10 w-full rounded-lg glass-input pl-10 pr-4 text-sm transition-all focus:ring-1 focus:ring-primary/20 text-foreground"
+                            className="h-10 w-full rounded-lg pl-10 pr-4 text-sm transition-all focus:ring-1 focus:ring-primary/20 text-foreground bg-transparent border border-border dark:border-white/20 hover:border-primary/30 focus:border-primary/50"
                         />
                     </div>
                     <div className="relative w-full md:w-48">

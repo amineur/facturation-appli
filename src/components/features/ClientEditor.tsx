@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2, Check, AlertTriangle, Search } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2, Check, AlertTriangle, Search, FileText } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
@@ -51,7 +51,7 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
 
     const { register, handleSubmit, setValue, watch, reset, formState: { errors, isDirty } } = useForm<ClientFormValues>({
         defaultValues: {
-            type: (initialData?.siret || initialData?.tvaIntra) ? "societe" : "particulier",
+            type: initialData ? ((initialData.siret || initialData.tvaIntra) ? "societe" : "particulier") : "societe",
             nom: initialData?.nom || "",
             siret: initialData?.siret || "",
             tvaIntra: initialData?.tvaIntra || "",
@@ -250,9 +250,9 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
     };
 
     return (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-12 max-w-5xl mx-auto py-8 px-8">
+            <div className="flex items-center justify-between mb-12">
+                <div className="flex items-center gap-3">
                     {onCancel ? (
                         <button type="button" onClick={onCancel} className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground">
                             <ArrowLeft className="h-5 w-5" />
@@ -277,91 +277,99 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         </button>
                     )}
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight text-foreground">{initialData ? "Modifier le Client" : "Nouveau Client"}</h2>
-                        <p className="text-muted-foreground mt-1">Saisissez les informations du client.</p>
+                        <h2 className="text-2xl font-semibold text-foreground">{initialData ? "Modifier le Client" : "Nouveau Client"}</h2>
+                        <p className="text-muted-foreground text-sm mt-0.5">Saisissez les informations du client.</p>
                     </div>
                 </div>
 
-
-
-                <button
-                    type="submit"
-                    disabled={isSaving || (!!initialData?.id && !isDirty)}
-                    className={cn(
-                        "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 border",
-                        (!isSaving && !(!!initialData?.id && !isDirty)) && "bg-emerald-600 text-white hover:bg-emerald-500 hover:shadow-md border-transparent shadow-sm",
-                        isSaving && "bg-emerald-600 text-white opacity-80 cursor-wait border-transparent",
-                        (!!initialData?.id && !isDirty && !isSaving) && "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 shadow-none translate-y-[1px]"
+                <div className="flex items-center gap-3">
+                    {initialData?.id && onCancel && (
+                        <button
+                            type="button"
+                            onClick={onCancel}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors border border-blue-500/20 hover:border-blue-500/30"
+                        >
+                            <FileText className="h-4 w-4" />
+                            Voir la fiche client
+                        </button>
                     )}
-                >
-                    {isSaving ? (
-                        <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Enregistrement...
-                        </>
-                    ) : (!!initialData?.id && !isDirty) ? (
-                        <>
-                            <Check className="h-4 w-4" />
-                            Enregistré
-                        </>
-                    ) : (
-                        <>
-                            <Save className="h-4 w-4" />
-                            Enregistrer
-                        </>
-                    )}
-                </button>
+
+                    <button
+                        type="submit"
+                        disabled={isSaving || (!!initialData?.id && !isDirty)}
+                        className={cn(
+                            "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 border",
+                            (!isSaving && !(!!initialData?.id && !isDirty)) && "bg-emerald-600 text-white hover:bg-emerald-500 hover:shadow-md border-transparent shadow-sm",
+                            isSaving && "bg-emerald-600 text-white opacity-80 cursor-wait border-transparent",
+                            (!!initialData?.id && !isDirty && !isSaving) && "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 shadow-none translate-y-[1px]"
+                        )}
+                    >
+                        {isSaving ? (
+                            <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Enregistrement...
+                            </>
+                        ) : (!!initialData?.id && !isDirty) ? (
+                            <>
+                                <Check className="h-4 w-4" />
+                                Enregistré
+                            </>
+                        ) : (
+                            <>
+                                <Save className="h-4 w-4" />
+                                Enregistrer
+                            </>
+                        )}
+                    </button>
+                </div>
             </div>
 
 
 
-            <div className="space-y-6 md:space-y-8">
-                {/* Subtle Type Selector - Inline with form */}
-                <div className="flex items-center justify-end gap-6 px-1">
-                    <span className="text-sm text-muted-foreground">Type :</span>
-                    <div className="flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer group">
-                            <input
-                                type="radio"
-                                name="clientType"
-                                checked={watchedType === "societe"}
-                                onChange={() => setValue("type", "societe", { shouldDirty: true })}
-                                className="w-4 h-4 text-blue-500 bg-white/5 border-white/20 focus:ring-blue-500 focus:ring-2 cursor-pointer"
-                            />
-                            <span className={cn(
-                                "text-sm font-medium transition-colors",
-                                watchedType === "societe" ? "text-blue-400" : "text-muted-foreground group-hover:text-foreground"
-                            )}>
-                                Société
-                            </span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer group">
-                            <input
-                                type="radio"
-                                name="clientType"
-                                checked={watchedType === "particulier"}
-                                onChange={() => setValue("type", "particulier", { shouldDirty: true })}
-                                className="w-4 h-4 text-blue-500 bg-white/5 border-white/20 focus:ring-blue-500 focus:ring-2 cursor-pointer"
-                            />
-                            <span className={cn(
-                                "text-sm font-medium transition-colors",
-                                watchedType === "particulier" ? "text-blue-400" : "text-muted-foreground group-hover:text-foreground"
-                            )}>
-                                Particulier
-                            </span>
-                        </label>
-                    </div>
+            <div className="space-y-10">
+                {/* Type Selector - Subtle Tabs */}
+                <div className="flex gap-8 border-b border-border pb-4 mb-10">
+                    <button
+                        type="button"
+                        onClick={() => setValue("type", "societe", { shouldDirty: true })}
+                        className={cn(
+                            "pb-3 text-sm font-medium transition-all duration-200 relative",
+                            watchedType === "societe"
+                                ? "text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                        )}
+                    >
+                        Société
+                        {watchedType === "societe" && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+                        )}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setValue("type", "particulier", { shouldDirty: true })}
+                        className={cn(
+                            "pb-3 text-sm font-medium transition-all duration-200 relative",
+                            watchedType === "particulier"
+                                ? "text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                        )}
+                    >
+                        Particulier
+                        {watchedType === "particulier" && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+                        )}
+                    </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     {/* Section Identité - Only for Société */}
                     {watchedType === "societe" && (
-                        <div className="space-y-4 md:col-span-2">
-                            <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                        <div className="space-y-6 md:col-span-2">
+                            <h3 className="text-base font-semibold text-foreground flex items-center gap-2 mb-6">
                                 <User className="h-4 w-4 text-blue-500" /> Identité de la Société
                             </h3>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">
+                            <div className="space-y-3">
+                                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                                     Raison Sociale
                                 </label>
                                 <div className="space-y-1 relative" ref={searchRef}>
@@ -390,21 +398,20 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
 
                                     {/* Company Search Results */}
                                     {showResults && searchResults.length > 0 && (
-                                        <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a24] border border-white/10 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto">
+                                        <div className="absolute top-full left-0 right-0 mt-2 bg-background dark:bg-slate-900 border border-border rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto">
                                             {searchResults.map((company, index) => (
                                                 <button
                                                     key={`${company.siret}-${index}`}
                                                     type="button"
                                                     onClick={() => handleSelectCompany(company)}
-                                                    className="w-full text-left p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 flex flex-col gap-0.5 group"
+                                                    className="w-full text-left px-4 py-2.5 hover:bg-muted dark:hover:bg-white/5 transition-colors border-b border-border last:border-0 flex flex-col gap-0.5 group"
                                                 >
-                                                    <span className="font-medium text-white group-hover:text-blue-400 transition-colors">
+                                                    <span className="font-medium text-foreground group-hover:text-blue-500 transition-colors text-sm">
                                                         {company.nom}
                                                     </span>
-                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                        <span className="bg-white/10 px-1.5 py-0.5 rounded text-[10px]">{company.formeJuridique || 'N/A'}</span>
-                                                        {company.ville && <span>• {company.ville} ({company.codePostal})</span>}
-                                                    </div>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        SIRET: {company.siret}
+                                                    </span>
                                                 </button>
                                             ))}
                                         </div>
@@ -420,13 +427,13 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                 {errors.nom && <span className="text-xs text-red-400">{errors.nom.message}</span>}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">SIRET</label>
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">SIRET</label>
                                     <input {...register("siret")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">N° TVA Intracommunautaire</label>
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">N° TVA Intracommunautaire</label>
                                     <input {...register("tvaIntra")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                                 </div>
                             </div>
@@ -434,14 +441,14 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                     )}
 
 
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                    <div className="space-y-6">
+                        <h3 className="text-base font-semibold text-foreground flex items-center gap-2 mb-6">
                             <Mail className="h-4 w-4 text-purple-500" /> {watchedType === "particulier" ? "Informations" : "Contact"}
                         </h3>
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">
+                        <div className="space-y-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                                         Prénom {watchedType === "particulier" && <span className="text-red-400">*</span>}
                                     </label>
                                     <input
@@ -453,7 +460,7 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                     {errors.prenomContact && <span className="text-xs text-red-400">{errors.prenomContact.message}</span>}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                                         Nom {watchedType === "particulier" && <span className="text-red-400">*</span>}
                                     </label>
                                     <input
@@ -465,8 +472,8 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                     {errors.nomContact && <span className="text-xs text-red-400">{errors.nomContact.message}</span>}
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Email</label>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</label>
                                 <input
                                     {...register("email", { required: "L'email est requis" })}
                                     className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
@@ -474,8 +481,8 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                 {errors.email && <span className="text-xs text-red-400">{errors.email.message}</span>}
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Téléphone</label>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Téléphone</label>
                                 <div className="flex gap-2">
                                     <select className="h-11 rounded-lg glass-input px-2 bg-transparent text-foreground border-r border-white/10 w-24">
                                         <option value="+33">FR +33</option>
@@ -494,28 +501,28 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                    <div className="space-y-6">
+                        <h3 className="text-base font-semibold text-foreground flex items-center gap-2 mb-6">
                             <MapPin className="h-4 w-4 text-orange-500" /> Adresse
                         </h3>
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Adresse</label>
+                        <div className="space-y-8">
+                            <div className="space-y-3">
+                                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Adresse</label>
                                 <input {...register("adresse")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">Code Postal</label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Code Postal</label>
                                     <input {...register("codePostal")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">Ville</label>
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ville</label>
                                     <input {...register("ville")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                                 </div>
                             </div>
 
-                            <div className="space-y-2 relative" ref={dropdownRef}>
-                                <label className="block text-sm font-medium text-muted-foreground">Pays</label>
+                            <div className="space-y-3 relative" ref={dropdownRef}>
+                                <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pays</label>
                                 <div className="relative">
                                     <input
                                         type="text"

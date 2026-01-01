@@ -185,6 +185,13 @@ export interface Facture {
         discountType?: 'pourcentage' | 'montant';
         defaultTva?: number;
         showOptionalFields?: boolean;
+        // Split columns visibility
+        showQuantiteColumn?: boolean;
+        showTvaColumn?: boolean;
+        showRemiseColumn?: boolean;
+
+        // Operation Type Snapshot
+        operationType?: 'none' | 'service' | 'goods';
     };
 
     // Relations

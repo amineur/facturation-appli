@@ -8,6 +8,7 @@
 
 @import "./themes/light.css";
 @import "./themes/dark.css";
+@import "./themes/premium.css";
 
 /* =========================================
    TAILWIND THEME & UTILITIES

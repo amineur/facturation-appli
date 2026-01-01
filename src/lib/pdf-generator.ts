@@ -115,7 +115,19 @@ export const generateInvoicePDF = (
             doc.text(`${label}: ${dateEcheance}`, PAGE_WIDTH - MARGIN_RIGHT, yHeaderRight, { align: "right" });
             yHeaderRight += 4;
         }
-        doc.text("Type d'opération: Prestation de services", PAGE_WIDTH - MARGIN_RIGHT, yHeaderRight, { align: "right" });
+        // Handle Operation Type (Persisted in Document Config)
+        // Legacy Support: If config.operationType is missing, we default to 'service' (the historical hardcoded value).
+        // We DO NOT look up global config to avoid retroactive changes.
+
+        const opType = document.config?.operationType || 'service';
+
+        if (opType !== 'none') {
+            const opLabel = opType === 'goods' ? "Vente de biens" : "Prestation de services"; // Default to service if not goods/none
+            doc.text(`Type d'opération: ${opLabel}`, PAGE_WIDTH - MARGIN_RIGHT, yHeaderRight, { align: "right" });
+        }
+
+        // Clean up fallback try-catch block as we no longer need dataService dynamic lookup here
+
         yHeaderRight += 4;
 
         // --- ADDRESSES BLOCK (Emitter & Client) ---

@@ -187,7 +187,7 @@ export default function TrashPage() {
                     onClick={() => setFilter("ALL")}
                     className={cn(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                        filter === "ALL" ? "bg-white/10 text-white border border-white/20" : "text-muted-foreground hover:bg-white/5"
+                        filter === "ALL" ? "bg-white/10 text-foreground border border-white/20" : "text-muted-foreground hover:bg-white/5"
                     )}
                 >
                     Tout
@@ -196,7 +196,7 @@ export default function TrashPage() {
                     onClick={() => setFilter("FACTURE")}
                     className={cn(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2",
-                        filter === "FACTURE" ? "bg-white/10 text-white border border-white/20" : "text-muted-foreground hover:bg-white/5"
+                        filter === "FACTURE" ? "bg-white/10 text-foreground border border-white/20" : "text-muted-foreground hover:bg-white/5"
                     )}
                 >
                     <Receipt className="h-4 w-4" />
@@ -206,7 +206,7 @@ export default function TrashPage() {
                     onClick={() => setFilter("DEVIS")}
                     className={cn(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2",
-                        filter === "DEVIS" ? "bg-white/10 text-white border border-white/20" : "text-muted-foreground hover:bg-white/5"
+                        filter === "DEVIS" ? "bg-white/10 text-foreground border border-white/20" : "text-muted-foreground hover:bg-white/5"
                     )}
                 >
                     <FileText className="h-4 w-4" />
