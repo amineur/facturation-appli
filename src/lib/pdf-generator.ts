@@ -127,13 +127,15 @@ export const generateInvoicePDF = (
         let yClient = yAddresses;
 
         // -- COLONNE GAUCHE: EMITTER --
-        doc.setFontSize(10); // Reduced from 11
+        doc.setFontSize(10);
         doc.setFont(FONT, "bold");
         doc.setTextColor(...COLOR_PRIMARY);
-        doc.text(societe.nom, MARGIN_LEFT, yEmitter);
-        yEmitter += 5; // Reduced spacing
 
-        doc.setFontSize(8); // Reduced from 9
+        const societeNomLines = doc.splitTextToSize(societe.nom, 85); // Matches col width
+        doc.text(societeNomLines, MARGIN_LEFT, yEmitter);
+        yEmitter += (societeNomLines.length * 5);
+
+        doc.setFontSize(9);
         doc.setFont(FONT, "normal");
         doc.setTextColor(...COLOR_SECONDARY);
 
@@ -156,11 +158,16 @@ export const generateInvoicePDF = (
         // -- COLONNE DROITE: CLIENT --
         const xClient = 110;
 
+        doc.setFontSize(10);
         doc.setFont(FONT, "bold");
         doc.setTextColor(...COLOR_PRIMARY);
-        doc.text((client.nom || "").toUpperCase(), xClient, yClient);
-        yClient += 5;
 
+        const clientNom = (client.nom || "").toUpperCase();
+        const clientNomLines = doc.splitTextToSize(clientNom, 80); // Matches col width
+        doc.text(clientNomLines, xClient, yClient);
+        yClient += (clientNomLines.length * 5);
+
+        doc.setFontSize(9);
         doc.setFont(FONT, "normal");
         doc.setTextColor(...COLOR_SECONDARY);
         const clientAddr = [

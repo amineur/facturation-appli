@@ -22,6 +22,14 @@ export async function POST(req: Request) {
             });
 
             if (societe) {
+                // RESTRICTION DEMO MODE
+                if (societe.isTemplate) {
+                    return NextResponse.json(
+                        { error: "Action impossible en mode DÉMO. Activez votre société pour envoyer des emails." },
+                        { status: 403 }
+                    );
+                }
+
                 config = {
                     provider: societe.emailProvider || "SMTP",
                     host: societe.smtpHost,

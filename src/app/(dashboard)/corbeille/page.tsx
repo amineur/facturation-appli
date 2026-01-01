@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 type DeletedItem = (Facture & { itemType: "Facture" }) | (Devis & { itemType: "Devis" });
 
 import { fetchDeletedInvoices, fetchDeletedQuotes, restoreRecord, permanentlyDeleteRecord, emptyTrash, archiveRecord } from "@/app/actions";
+import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
 
 export default function TrashPage() {
     const router = useRouter();
@@ -65,13 +66,10 @@ export default function TrashPage() {
 
                 if (res.success) {
                     // Log Action (Explicitly)
-                    const clientName = (item as any).client?.nom || "Client inconnu";
-                    logAction(
-                        'update',
-                        item.itemType === "Facture" ? 'facture' : 'devis',
-                        `A restauré ${item.itemType === "Facture" ? "la facture" : "le devis"} ${item.numero} pour ${clientName} depuis la corbeille`,
-                        item.id
-                    );
+                    const client = clients.find(c => c.id === item.clientId);
+                    const clientName = client ? getClientDisplayName(client) : "Client inconnu";
+                    const type = item.itemType === "Facture" ? 'Facture' : 'Devis';
+                    logAction('update', type.toLowerCase() as any, `${type} ${item.numero} restauré pour ${clientName}`, item.id);
 
                     toast.success("Élément restauré avec succès");
                     loadDeletedItems();
@@ -134,7 +132,7 @@ export default function TrashPage() {
         const matchesSearch =
             searchTerm === "" ||
             item.numero.toLowerCase().includes(searchLower) ||
-            (client?.nom || "").toLowerCase().includes(searchLower) ||
+            (client ? getClientSearchText(client).includes(searchLower) : false) ||
             item.totalTTC.toString().includes(searchLower);
 
         return matchesType && matchesSearch;
@@ -263,7 +261,10 @@ export default function TrashPage() {
                                         {item.numero}
                                     </td>
                                     <td className="px-6 py-4 text-muted-foreground">
-                                        {(item as any).client?.nom || "Inconnu"}
+                                        {(() => {
+                                            const client = clients.find(c => c.id === item.clientId);
+                                            return client ? getClientDisplayName(client) : "Inconnu";
+                                        })()}
                                     </td>
                                     <td className="px-6 py-4">
                                         {item.deletedAt

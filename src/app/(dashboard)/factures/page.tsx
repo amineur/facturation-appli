@@ -18,6 +18,7 @@ import { createClientAction as createClient } from "@/app/actions-clients";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, X } from "lucide-react";
 import { SidePanel } from "@/components/ui/SidePanel";
+import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
 
 // Lazy load heavy components
 const PDFPreviewModal = dynamic(() => import("@/components/ui/PDFPreviewModal").then(mod => ({ default: mod.PDFPreviewModal })), {
@@ -216,7 +217,7 @@ function InvoicesPage() {
 
             const matchesSearch =
                 facture.numero.toLowerCase().includes(searchLower) ||
-                (client?.nom || "").toLowerCase().includes(searchLower) ||
+                (client ? getClientSearchText(client).includes(searchLower) : false) ||
                 facture.totalTTC.toString().includes(searchLower) ||
                 facture.totalTTC.toLocaleString("fr-FR", { minimumFractionDigits: 2 }).includes(searchLower);
 
@@ -271,7 +272,8 @@ function InvoicesPage() {
                     await deleteRecord('Factures', id);
                     dataService.deleteInvoice(id);
                     if (invoiceToDelete) {
-                        const clientName = clients.find(c => c.id === invoiceToDelete.clientId)?.nom || "Client inconnu";
+                        const client = clients.find(c => c.id === invoiceToDelete.clientId);
+                        const clientName = client ? getClientDisplayName(client) : "Client inconnu";
                         logAction('delete', 'facture', `A mis à la corbeille la facture ${invoiceToDelete.numero} pour ${clientName}`, id);
                     }
                     refreshData(); // Sync exact state eventually
@@ -310,7 +312,8 @@ function InvoicesPage() {
             await updateInvoice(updatedInvoice);
             dataService.saveInvoice(updatedInvoice);
 
-            const clientName = clients.find(c => c.id === selectedInvoice.clientId)?.nom || "Client inconnu";
+            const client = clients.find(c => c.id === selectedInvoice.clientId);
+            const clientName = client ? getClientDisplayName(client) : "Client inconnu";
             logAction('update', 'facture', `Statut Facture ${selectedInvoice.numero} changé pour ${newStatus} (Client: ${clientName})`, selectedInvoice.id);
 
             refreshData(); // Sync Eventually
@@ -569,8 +572,8 @@ function InvoicesPage() {
                                                             {facture.numero}
                                                         </div>
                                                     </td>
-                                                    <td className="px-3 py-4 max-w-[200px] truncate" title={client?.nom}>
-                                                        {client?.nom || "Inconnu"}
+                                                    <td className="px-3 py-4 max-w-[200px] truncate" title={client ? getClientDisplayName(client) : "Inconnu"}>
+                                                        {client ? getClientDisplayName(client) : "Inconnu"}
                                                     </td>
                                                     <td className="px-3 py-4">{formatDateSafe(facture.dateEmission)}</td>
                                                     <td className="px-3 py-4">{formatDateSafe(facture.echeance)}</td>
@@ -640,7 +643,7 @@ function InvoicesPage() {
                                                         <FileText className="h-4 w-4 text-purple-500" />
                                                         <span className="font-semibold text-foreground">{facture.numero}</span>
                                                     </div>
-                                                    <p className="text-sm text-muted-foreground">{client?.nom || "Client inconnu"}</p>
+                                                    <p className="text-sm text-muted-foreground">{client ? getClientDisplayName(client) : "Client inconnu"}</p>
                                                 </div>
                                                 <button
                                                     onClick={(e) => {

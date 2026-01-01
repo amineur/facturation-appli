@@ -195,7 +195,7 @@ export function UserProfileEditor({ onBack }: { onBack?: () => void }) {
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-muted-foreground">Nom complet</label>
+                            <label className="text-sm font-medium text-muted-foreground">Nom</label>
                             <div className="relative">
                                 <UserIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                                 <input

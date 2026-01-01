@@ -17,6 +17,7 @@ import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { EmailComposer } from "@/components/features/EmailComposer";
 import { SidePanel } from "@/components/ui/SidePanel";
 import { CommunicationsPanel } from "@/components/features/CommunicationsPanel";
+import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
 
 
 const getStatusColor = (status: StatusDevis) => {
@@ -126,7 +127,7 @@ function DevisPage() {
                     console.error("Failed to update status on download", error);
                 }
             } else {
-                logAction('read', 'devis', `Devis ${devis.numero} téléchargé pour ${client.nom}`, devis.id);
+                logAction('read', 'devis', `Devis ${devis.numero} téléchargé pour ${getClientDisplayName(client)}`, devis.id);
             }
         } else {
             toast.error("Client introuvable");
@@ -151,7 +152,8 @@ function DevisPage() {
         const res = await updateQuoteStatus(selectedQuote.id, newStatus);
 
         if (res.success) {
-            const clientName = clients.find(c => c.id === selectedQuote.clientId)?.nom || "Client inconnu";
+            const client = clients.find(c => c.id === selectedQuote.clientId);
+            const clientName = client ? getClientDisplayName(client) : "Client inconnu";
             logAction('update', 'devis', `Statut Devis ${selectedQuote.numero} changé pour ${newStatus} (Client: ${clientName})`, selectedQuote.id);
             refreshData();
             toast.success(`Statut modifié : ${newStatus}`);
@@ -170,7 +172,7 @@ function DevisPage() {
 
         const matchesSearch =
             devis.numero.toLowerCase().includes(searchLower) ||
-            (client?.nom || "").toLowerCase().includes(searchLower) ||
+            (client ? getClientSearchText(client).includes(searchLower) : false) ||
             devis.totalTTC.toString().includes(searchLower) ||
             devis.totalTTC.toLocaleString("fr-FR", { minimumFractionDigits: 2 }).includes(searchLower);
 
@@ -189,7 +191,7 @@ function DevisPage() {
 
         if (res.success && res.newInvoiceId) {
             const client = clients.find(c => c.id === devis.clientId);
-            const clientName = client ? client.nom : "Client inconnu";
+            const clientName = client ? getClientDisplayName(client) : "Client inconnu";
             const invoiceRef = res.newInvoiceNumber || "???";
             logAction('create', 'facture', `Devis ${devis.numero} converti en facture ${invoiceRef} pour ${clientName}`, res.newInvoiceId);
             refreshData();
@@ -208,7 +210,8 @@ function DevisPage() {
                 await deleteRecord('Devis', id);
                 dataService.deleteQuote(id);
                 if (devisToDelete) {
-                    const clientName = clients.find(c => c.id === devisToDelete.clientId)?.nom || "Client inconnu";
+                    const client = clients.find(c => c.id === devisToDelete.clientId);
+                    const clientName = client ? getClientDisplayName(client) : "Client inconnu";
                     logAction('delete', 'devis', `Devis ${devisToDelete.numero} supprimé pour ${clientName}`, id);
                 }
                 refreshData();
@@ -477,7 +480,7 @@ function DevisPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {client?.nom || "Inconnu"}
+                                                    {client ? getClientDisplayName(client) : "Inconnu"}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     {devis.dateEmission ? format(new Date(devis.dateEmission), "dd.MM.yy") : "-"}
@@ -548,7 +551,7 @@ function DevisPage() {
                                                     <FileText className="h-4 w-4 text-purple-500" />
                                                     <span className="font-semibold text-foreground">{devis.numero}</span>
                                                 </div>
-                                                <p className="text-sm text-muted-foreground">{client?.nom || "Client inconnu"}</p>
+                                                <p className="text-sm text-muted-foreground">{client ? getClientDisplayName(client) : "Client inconnu"}</p>
                                             </div>
                                             <button
                                                 onClick={(e) => {

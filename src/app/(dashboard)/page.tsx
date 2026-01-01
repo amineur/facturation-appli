@@ -18,6 +18,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay, subMonths } from "date-fns";
 import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 import { fetchDashboardMetrics } from "@/app/actions";
+import { Facture, Devis } from "@/types";
+import { getClientDisplayName } from "@/lib/client-utils";
 
 const InvoiceStatusChart = dynamic(() => import("@/components/features/InvoiceStatusChart").then(mod => mod.InvoiceStatusChart), {
     loading: () => (
@@ -38,7 +40,7 @@ const QuoteStatusChart = dynamic(() => import("@/components/features/QuoteStatus
 
 type DateRangeType = "month" | "custom" | "3months" | "total";
 export default function DashboardPage() {
-    const { invoices: globalInvoices, quotes, clients, switchSociete, societe } = useData();
+    const { invoices: globalInvoices, quotes, clients, switchSociete, societe, societes } = useData();
     const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
     const [serverMetrics, setServerMetrics] = useState<any>(null);
 
@@ -154,7 +156,9 @@ export default function DashboardPage() {
 
 
     // --- EMPTY STATE: NO SOCIETY ---
-    if (!societe && !isLoadingMetrics) {
+    // Filter out template societies - users with only templates should see the welcome screen
+    const realSocietes = societes?.filter((s: any) => !s.isTemplate) || [];
+    if (!societe && !isLoadingMetrics && realSocietes.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 text-center animate-in fade-in zoom-in-95 duration-500">
                 <div className="h-24 w-24 bg-white/5 rounded-3xl flex items-center justify-center border border-white/10 shadow-2xl relative overflow-hidden group">
@@ -384,7 +388,7 @@ export default function DashboardPage() {
                                 <div key={invoice.id} className="p-3 hover:bg-white/5 transition-colors">
                                     <div className="flex items-center justify-between">
                                         <div className="flex-1 min-w-0 pr-4">
-                                            <p className="font-semibold text-foreground truncate text-sm">{client?.nom || "Client inconnu"}</p>
+                                            <p className="font-semibold text-foreground truncate text-sm">{client ? getClientDisplayName(client) : "Client inconnu"}</p>
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <Receipt className="h-3 w-3 text-muted-foreground shrink-0" />
                                                 <span className="text-xs text-muted-foreground truncate">{invoice.numero} • {format(new Date(invoice.dateEmission), "dd/MM/yyyy")}</span>
@@ -415,7 +419,7 @@ export default function DashboardPage() {
                                 <div key={quote.id} className="p-3 hover:bg-white/5 transition-colors">
                                     <div className="flex items-center justify-between">
                                         <div className="flex-1 min-w-0 pr-4">
-                                            <p className="font-semibold text-foreground truncate text-sm">{client?.nom || "Client inconnu"}</p>
+                                            <p className="font-semibold text-foreground truncate text-sm">{client ? getClientDisplayName(client) : "Client inconnu"}</p>
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
                                                 <span className="text-xs text-muted-foreground truncate">{quote.numero} • {format(new Date(quote.dateEmission), "dd/MM/yyyy")}</span>

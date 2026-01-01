@@ -12,7 +12,7 @@ import { HistoryDropdown } from "@/components/features/HistoryDropdown";
 export function Header() {
     const router = useRouter();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const { user, isLoading } = useData();
+    const { user, isLoading, societe } = useData();
 
     const handleLogout = () => {
         dataService.logout();
@@ -33,7 +33,17 @@ export function Header() {
     return (
         <header className="flex h-16 items-center justify-between border-b border-white/10 px-6 glass sticky top-0 z-10 w-full">
             <div className="flex w-full max-w-md items-center gap-4">
-                {/* Glassy Manage removed as requested */}
+                {/* Demo Mode Banner */}
+                {/* @ts-ignore */}
+                {societe?.isTemplate && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 text-amber-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 animate-pulse">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                        MODE DÉMO
+                    </div>
+                )}
             </div>
 
             <div className="flex items-center gap-4">

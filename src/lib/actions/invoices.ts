@@ -152,7 +152,7 @@ async function fetchInvoicesLegacy(societeId: string): Promise<{ success: boolea
                 isLocked: inv.isLocked,
                 archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
                 config: inv.config ? JSON.parse(inv.config) : {},
-                client: (inv as any).client
+                clientSnapshot: (inv as any).client
             };
         });
         return { success: true, data: mapped };
@@ -211,7 +211,7 @@ export async function fetchInvoiceDetails(id: string): Promise<{ success: boolea
             isLocked: inv.isLocked,
             archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : undefined,
             config: inv.config ? JSON.parse(inv.config) : {},
-            client: (inv as any).client
+            clientSnapshot: (inv as any).client
         };
         return { success: true, data: mapped };
     } catch (error: any) {

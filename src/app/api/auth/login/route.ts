@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
+import { createTemplateSociete } from '@/lib/actions/template-societe';
 
 export async function POST(request: Request) {
     try {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
             where: { email },
             include: {
                 societes: {
-                    select: { id: true, nom: true }
+                    select: { id: true, nom: true, isTemplate: true }
                 }
             }
         });
@@ -83,6 +84,19 @@ export async function POST(request: Request) {
             maxAge: 60 * 60 * 24 * 7
         });
 
+        // Auto-create Template if user has NO society
+        let userSocietes: any[] = user.societes;
+        if (userSocietes.length === 0) {
+            try {
+                const template = await createTemplateSociete(user.id);
+                if (template) {
+                    userSocietes = [{ id: template.id, nom: template.nom, isTemplate: true }];
+                }
+            } catch (error) {
+                console.error("[LOGIN] Failed to create template:", error);
+            }
+        }
+
         // Success - return user info
         return NextResponse.json({
             success: true,
@@ -91,10 +105,11 @@ export async function POST(request: Request) {
                 email: user.email,
                 fullName: user.fullName,
                 role: user.role,
-                currentSocieteId: user.currentSocieteId,
-                societes: user.societes.map(s => ({
+                currentSocieteId: user.currentSocieteId || (userSocietes.length > 0 ? userSocietes[0].id : null),
+                societes: userSocietes.map(s => ({
                     id: s.id,
-                    nom: s.nom
+                    nom: s.nom,
+                    isTemplate: s.isTemplate
                 }))
             }
         });

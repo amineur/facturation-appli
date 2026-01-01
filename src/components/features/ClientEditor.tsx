@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2, Check, AlertTriangle } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, ArrowLeft, ChevronDown, Loader2, Check, AlertTriangle, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useData } from "@/components/data-provider";
@@ -14,6 +14,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 interface ClientFormValues {
+    type: "societe" | "particulier";
     nom: string;
     siret: string;
     tvaIntra: string;
@@ -38,8 +39,19 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
     const [countrySearch, setCountrySearch] = useState(initialData?.pays || "France");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
+    const [isSaving, setIsSaving] = useState(false);
+    const [isSuccess, setIsSuccess] = useState(false);
+
+    // Company Search State
+    const [searchTerm, setSearchTerm] = useState(initialData?.nom || "");
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [showResults, setShowResults] = useState(false);
+    const searchRef = useRef<HTMLDivElement>(null);
+
     const { register, handleSubmit, setValue, watch, reset, formState: { errors, isDirty } } = useForm<ClientFormValues>({
         defaultValues: {
+            type: (initialData?.siret || initialData?.tvaIntra) ? "societe" : "particulier",
             nom: initialData?.nom || "",
             siret: initialData?.siret || "",
             tvaIntra: initialData?.tvaIntra || "",
@@ -58,9 +70,29 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
     // Auto-fill City based on Zip Code (France only)
     const watchedZip = watch("codePostal");
     const watchedName = watch("nom");
+    const watchedPrenomContact = watch("prenomContact");
+    const watchedNomContact = watch("nomContact");
+    const watchedType = watch("type");
+
+    // Auto-fill 'nom' for INDIVIDUAL type
+    useEffect(() => {
+        if (watchedType === "particulier") {
+            const parts = [];
+            if (watchedPrenomContact?.trim()) parts.push(watchedPrenomContact.trim());
+            if (watchedNomContact?.trim()) parts.push(watchedNomContact.trim());
+            if (parts.length > 0) {
+                setValue("nom", parts.join(" "), { shouldDirty: true });
+            }
+        }
+    }, [watchedPrenomContact, watchedNomContact, watchedType, setValue]);
+
+    // Reset success state when name changes
+    useEffect(() => {
+        if (isSuccess) setIsSuccess(false);
+    }, [watchedName, isSuccess]);
 
     // Check for duplicates
-    const duplicateClient = clients.find(c =>
+    const duplicateClient = !isSaving && !isSuccess && clients.find(c =>
         c.nom.trim().toLowerCase() === watchedName?.trim().toLowerCase() &&
         c.id !== initialData?.id
     );
@@ -94,32 +126,85 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
         return () => setIsDirty(false);
     }, [isDirty, setIsDirty]);
 
-    // Close dropdown when clicking outside
+    // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setCountryOpen(false);
+            }
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setShowResults(false);
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Debounced Company Search
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(async () => {
+            if (searchTerm.length >= 3 && document.activeElement === searchRef.current?.querySelector('input')) {
+                setIsSearching(true);
+                try {
+                    const response = await fetch(`/api/company-search?q=${encodeURIComponent(searchTerm)}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        setSearchResults(data.results);
+                        setShowResults(true);
+                    } else {
+                        setSearchResults([]);
+                    }
+                } catch (error) {
+                    console.error("Search error:", error);
+                } finally {
+                    setIsSearching(false);
+                }
+            } else {
+                setSearchResults([]);
+                setShowResults(false);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm]);
+
+    const handleSelectCompany = (company: any) => {
+        setSearchTerm(company.nom || "");
+        setShowResults(false);
+
+        // Auto-fill fields
+        setValue("nom", company.nom || "", { shouldValidate: true });
+        setValue("siret", company.siret || "", { shouldValidate: true });
+        setValue("tvaIntra", company.tvaIntra || "", { shouldValidate: true });
+        setValue("adresse", company.adresse || "", { shouldValidate: true });
+        setValue("codePostal", company.codePostal || "", { shouldValidate: true });
+        setValue("ville", company.ville || "", { shouldValidate: true });
+
+        // Also update country if needed (api defaults to France usually)
+        setValue("pays", "France");
+        setCountrySearch("France");
+    };
+
     const filteredCountries = COUNTRIES.filter(c =>
         c.toLowerCase().includes(countrySearch.toLowerCase())
     );
 
-    const [isSaving, setIsSaving] = useState(false);
+    // Old isSaving declaration removed from here
 
     const onSubmit = async (data: ClientFormValues) => {
         setIsSaving(true);
+        setIsSuccess(false);
         try {
             const isNew = !initialData?.id;
 
             const clientData: Client = {
                 id: initialData?.id || "temp",
                 societeId: societe?.id || "",
+
                 ...data,
+                typeClient: data.type === "particulier" ? "INDIVIDUAL" : "COMPANY",
+                siret: data.siret,
+                tvaIntra: data.tvaIntra,
                 adresse2: "",
                 pays: countrySearch
             };
@@ -137,6 +222,7 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
 
             await refreshData();
             toast.success("Client enregistré avec succès !");
+            setIsSuccess(true);
             reset(data);
 
             if (onSuccess) {
@@ -195,6 +281,9 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         <p className="text-muted-foreground mt-1">Saisissez les informations du client.</p>
                     </div>
                 </div>
+
+
+
                 <button
                     type="submit"
                     disabled={isSaving || (!!initialData?.id && !isDirty)}
@@ -224,57 +313,156 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                 </button>
             </div>
 
-            <div className="glass-card rounded-xl p-4 md:p-8 space-y-6 md:space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4 md:col-span-2">
-                        <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
-                            <User className="h-4 w-4 text-blue-500" /> Identité
-                        </h3>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-muted-foreground">Nom / Raison Sociale</label>
-                            <div className="space-y-1">
-                                <input
-                                    {...register("nom", { required: "Le nom est requis" })}
-                                    className={cn(
-                                        "w-full h-11 rounded-lg glass-input px-4 text-foreground focus:ring-2 focus:ring-blue-500/50 transition-all",
-                                        duplicateClient && "border-amber-500/50 focus:ring-amber-500/50"
-                                    )}
-                                    placeholder="Ex: Acme Corp"
-                                />
-                                {duplicateClient && (
-                                    <div className="flex items-center gap-2 text-amber-500 text-xs animate-in slide-in-from-top-1">
-                                        <AlertTriangle className="h-3 w-3" />
-                                        <span>Attention : Un client existe déjà avec ce nom</span>
-                                    </div>
-                                )}
-                            </div>
-                            {errors.nom && <span className="text-xs text-red-400">{errors.nom.message}</span>}
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">SIRET</label>
-                                <input {...register("siret")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="14 chiffres" />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">TVA Intracommunautaire</label>
-                                <input {...register("tvaIntra")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="FR..." />
-                            </div>
-                        </div>
+
+
+            <div className="space-y-6 md:space-y-8">
+                {/* Subtle Type Selector - Inline with form */}
+                <div className="flex items-center justify-end gap-6 px-1">
+                    <span className="text-sm text-muted-foreground">Type :</span>
+                    <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <input
+                                type="radio"
+                                name="clientType"
+                                checked={watchedType === "societe"}
+                                onChange={() => setValue("type", "societe", { shouldDirty: true })}
+                                className="w-4 h-4 text-blue-500 bg-white/5 border-white/20 focus:ring-blue-500 focus:ring-2 cursor-pointer"
+                            />
+                            <span className={cn(
+                                "text-sm font-medium transition-colors",
+                                watchedType === "societe" ? "text-blue-400" : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                                Société
+                            </span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <input
+                                type="radio"
+                                name="clientType"
+                                checked={watchedType === "particulier"}
+                                onChange={() => setValue("type", "particulier", { shouldDirty: true })}
+                                className="w-4 h-4 text-blue-500 bg-white/5 border-white/20 focus:ring-blue-500 focus:ring-2 cursor-pointer"
+                            />
+                            <span className={cn(
+                                "text-sm font-medium transition-colors",
+                                watchedType === "particulier" ? "text-blue-400" : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                                Particulier
+                            </span>
+                        </label>
                     </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Section Identité - Only for Société */}
+                    {watchedType === "societe" && (
+                        <div className="space-y-4 md:col-span-2">
+                            <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                                <User className="h-4 w-4 text-blue-500" /> Identité de la Société
+                            </h3>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-muted-foreground">
+                                    Raison Sociale
+                                </label>
+                                <div className="space-y-1 relative" ref={searchRef}>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                                        <input
+                                            {...register("nom", { required: watchedType === "societe" ? "Ce champ est requis" : false })}
+                                            onChange={(e) => {
+                                                register("nom").onChange(e);
+                                                setSearchTerm(e.target.value);
+                                                if (showResults) setShowResults(false);
+                                            }}
+                                            className={cn(
+                                                "w-full h-11 rounded-lg glass-input pl-10 pr-4 text-foreground focus:ring-2 focus:ring-blue-500/50 transition-all",
+                                                duplicateClient && "border-amber-500/50 focus:ring-amber-500/50"
+                                            )}
+                                            placeholder="Rechercher une société (Nom ou SIRET)..."
+                                            autoComplete="off"
+                                        />
+                                        {isSearching && (
+                                            <div className="absolute right-3 top-3.5">
+                                                <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Company Search Results */}
+                                    {showResults && searchResults.length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a24] border border-white/10 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto">
+                                            {searchResults.map((company, index) => (
+                                                <button
+                                                    key={`${company.siret}-${index}`}
+                                                    type="button"
+                                                    onClick={() => handleSelectCompany(company)}
+                                                    className="w-full text-left p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 flex flex-col gap-0.5 group"
+                                                >
+                                                    <span className="font-medium text-white group-hover:text-blue-400 transition-colors">
+                                                        {company.nom}
+                                                    </span>
+                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                        <span className="bg-white/10 px-1.5 py-0.5 rounded text-[10px]">{company.formeJuridique || 'N/A'}</span>
+                                                        {company.ville && <span>• {company.ville} ({company.codePostal})</span>}
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {duplicateClient && (
+                                        <div className="flex items-center gap-2 text-amber-500 text-xs animate-in slide-in-from-top-1">
+                                            <AlertTriangle className="h-3 w-3" />
+                                            <span>Attention : Un client existe déjà avec ce nom</span>
+                                        </div>
+                                    )}
+                                </div>
+                                {errors.nom && <span className="text-xs text-red-400">{errors.nom.message}</span>}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-muted-foreground">SIRET</label>
+                                    <input {...register("siret")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-muted-foreground">N° TVA Intracommunautaire</label>
+                                    <input {...register("tvaIntra")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
 
                     <div className="space-y-4">
                         <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
-                            <Mail className="h-4 w-4 text-purple-500" /> Contact
+                            <Mail className="h-4 w-4 text-purple-500" /> {watchedType === "particulier" ? "Informations" : "Contact"}
                         </h3>
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">Prénom Contact</label>
-                                    <input {...register("prenomContact")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="Ex: Jean" />
+                                    <label className="block text-sm font-medium text-muted-foreground">
+                                        Prénom {watchedType === "particulier" && <span className="text-red-400">*</span>}
+                                    </label>
+                                    <input
+                                        {...register("prenomContact", {
+                                            required: watchedType === "particulier" ? "Le prénom est requis" : false
+                                        })}
+                                        className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
+                                    />
+                                    {errors.prenomContact && <span className="text-xs text-red-400">{errors.prenomContact.message}</span>}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">Nom Contact</label>
-                                    <input {...register("nomContact")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="Ex: Dupont" />
+                                    <label className="block text-sm font-medium text-muted-foreground">
+                                        Nom {watchedType === "particulier" && <span className="text-red-400">*</span>}
+                                    </label>
+                                    <input
+                                        {...register("nomContact", {
+                                            required: watchedType === "particulier" ? "Le nom est requis" : false
+                                        })}
+                                        className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
+                                    />
+                                    {errors.nomContact && <span className="text-xs text-red-400">{errors.nomContact.message}</span>}
                                 </div>
                             </div>
                             <div className="space-y-2">
@@ -282,18 +470,25 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                                 <input
                                     {...register("email", { required: "L'email est requis" })}
                                     className="w-full h-11 rounded-lg glass-input px-4 text-foreground"
-                                    placeholder="contact@example.com"
                                 />
                                 {errors.email && <span className="text-xs text-red-400">{errors.email.message}</span>}
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">Téléphone</label>
-                                    <input {...register("telephone")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="Fixe" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-muted-foreground">Portable</label>
-                                    <input {...register("mobile")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="Mobile" />
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-muted-foreground">Téléphone</label>
+                                <div className="flex gap-2">
+                                    <select className="h-11 rounded-lg glass-input px-2 bg-transparent text-foreground border-r border-white/10 w-24">
+                                        <option value="+33">FR +33</option>
+                                        <option value="+32">BE +32</option>
+                                        <option value="+41">CH +41</option>
+                                        <option value="+352">LU +352</option>
+                                        <option value="+44">UK +44</option>
+                                        <option value="+1">US +1</option>
+                                        <option value="+212">MA +212</option>
+                                        <option value="+216">TN +216</option>
+                                        <option value="+213">DZ +213</option>
+                                    </select>
+                                    <input {...register("telephone")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground appearance-none" />
                                 </div>
                             </div>
                         </div>
@@ -305,17 +500,17 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                         </h3>
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-muted-foreground">Adresse complète (Ligne 1)</label>
-                                <input {...register("adresse")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="123 Rue..." />
+                                <label className="block text-sm font-medium text-muted-foreground">Adresse</label>
+                                <input {...register("adresse")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-muted-foreground">Code Postal</label>
-                                    <input {...register("codePostal")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="75001" />
+                                    <input {...register("codePostal")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-muted-foreground">Ville</label>
-                                    <input {...register("ville")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" placeholder="Paris" />
+                                    <input {...register("ville")} className="w-full h-11 rounded-lg glass-input px-4 text-foreground" />
                                 </div>
                             </div>
 
@@ -366,6 +561,6 @@ export function ClientEditor({ initialData, onSuccess, onCancel }: { initialData
                     </div>
                 </div>
             </div>
-        </form>
+        </form >
     );
 }

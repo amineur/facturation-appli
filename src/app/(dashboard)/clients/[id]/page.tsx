@@ -10,6 +10,7 @@ import { ArrowLeft, Pencil, Mail, Phone, MapPin, Building, FileText, Globe } fro
 import Link from "next/link";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { getClientDisplayName } from "@/lib/client-utils";
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
                 </Link>
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight text-foreground">{client.nom}</h2>
+                        <h2 className="text-3xl font-bold tracking-tight text-foreground">{getClientDisplayName(client)}</h2>
                         <p className="text-muted-foreground mt-1">Fiche client détaillée</p>
                     </div>
                     <button
@@ -97,7 +98,7 @@ function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
                             </div>
                             <div>
                                 <span className="text-muted-foreground block">Nom / Raison Sociale</span>
-                                <span className="text-foreground font-medium">{client.nom}</span>
+                                <span className="text-foreground font-medium">{getClientDisplayName(client)}</span>
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4 text-sm">

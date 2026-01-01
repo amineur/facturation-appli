@@ -24,6 +24,7 @@ import { useInvoiceEmail } from "@/hooks/use-invoice-email";
 import { Minimize2, Maximize2, Clock } from "lucide-react";
 import Link from "next/link";
 import { ClientEditor } from "./ClientEditor";
+import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
 
 
 
@@ -777,8 +778,8 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             const savedId = (result as any).id || (documentData as any).id;
             const actionType = initialData?.id ? 'update' : 'create';
             const entityType = type === 'Facture' ? 'facture' : 'devis';
-            const clientName = clients.find(c => c.id === data.clientId)?.nom || "Client";
-            const description = `${actionType === 'create' ? 'Création' : 'Modification'} ${type === 'Facture' ? 'de la facture' : 'du devis'} ${documentData.numero} pour ${clientName} `;
+            const clientName = clients.find(c => c.id === data.clientId);
+            const description = `${actionType === 'create' ? 'Création' : 'Modification'} ${type === 'Facture' ? 'de la facture' : 'du devis'} ${documentData.numero} pour ${getClientDisplayName(clientName)} `;
 
             await logAction(actionType, entityType, description, savedId);
 
@@ -845,7 +846,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const handleGeneratePDF = async () => {
         // Guard: Block download if invoice is not saved
         if (!initialData?.id) {
-            toast.error(`Le document (${type}) doit être enregistré avant de pouvoir être téléchargé. Téléchargement interdit`, {
+            const message = type === "Facture"
+                ? "La facture doit être enregistrée avant de pouvoir être téléchargée."
+                : "Le devis doit être enregistré avant de pouvoir être téléchargé.";
+            toast.error(message, {
                 duration: 5000,
                 style: {
                     background: '#EF4444',
@@ -929,7 +933,10 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const handlePreview = () => {
         // Guard: Block preview if invoice is not saved (same as download)
         if (!initialData?.id) {
-            toast.error(`Le document (${type}) doit être enregistré avant de pouvoir générer un aperçu.`, {
+            const message = type === "Facture"
+                ? "La facture doit être enregistrée avant de pouvoir générer un aperçu."
+                : "Le devis doit être enregistré avant de pouvoir générer un aperçu.";
+            toast.error(message, {
                 duration: 5000,
                 style: {
                     background: '#EF4444',
@@ -980,8 +987,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     };
 
     const filteredClients = clients.filter(client =>
-        client.nom.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        client.email?.toLowerCase().includes(clientSearch.toLowerCase())
+        getClientSearchText(client).includes(clientSearch.toLowerCase())
     );
     const selectedClientId = watch("clientId");
     const selectedClient = clients.find(c => c.id === selectedClientId);
@@ -1425,7 +1431,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                     )}
                                 >
                                     <span className={!selectedClient ? "text-muted-foreground" : ""}>
-                                        {selectedClient ? selectedClient.nom : "Sélectionner un client..."}
+                                        {selectedClient ? getClientDisplayName(selectedClient) : "Sélectionner un client..."}
                                     </span>
                                     <ChevronsUpDown className={cn(
                                         "h-4 w-4 text-muted-foreground",
@@ -1470,7 +1476,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                                                 : "text-foreground hover:bg-muted dark:hover:bg-white/10"
                                                         )}
                                                     >
-                                                        {client.nom}
+                                                        {getClientDisplayName(client)}
                                                         {selectedClientId === client.id && (
                                                             <Check className="h-4 w-4" />
                                                         )}

@@ -5,6 +5,8 @@ import { cookies } from 'next/headers';
 import { generateToken, hashToken } from '@/lib/tokens';
 import { sendEmail, getEmailVerificationTemplate } from '@/lib/email';
 
+import { createTemplateSociete } from '@/lib/actions/template-societe';
+
 export async function POST(request: Request) {
     try {
         const { email, password, fullName } = await request.json();
@@ -39,6 +41,15 @@ export async function POST(request: Request) {
                 emailVerified: false, // Not verified yet
             }
         });
+
+        // 4b. Auto-create Template Society (Demo Mode)
+        // This ensures the user has a society ready immediately.
+        try {
+            await createTemplateSociete(user.id);
+        } catch (err) {
+            console.error("[SIGNUP] Failed to create template society:", err);
+            // Non-blocking error, user created successfully anyway
+        }
 
         // 5. Generate verification token
         const token = generateToken(); // 64 char hex string

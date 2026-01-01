@@ -4,6 +4,7 @@ import { deleteRecord } from '@/app/actions';
 import { useData } from "@/components/data-provider";
 import { dataService } from "@/lib/data-service";
 import { updateSociete } from "@/app/actions";
+import { migrateTemplateToReal } from '@/lib/actions/template-societe';
 import { Societe } from "@/types";
 import { Save, Building, FileText, CreditCard, ChevronRight, Lock, Shield, Users, Layers, Layout, Key, PenTool, ArrowLeft, ChevronLeft, Database, Mail, Plus, Check, User, Upload, X, Image as ImageIcon, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -33,7 +34,7 @@ export default function SettingsPageWrapper() {
 }
 
 function SettingsPage() {
-    const { societe, societes, refreshData, createSociete, logAction, confirm } = useData();
+    const { societe, societes, refreshData, createSociete, logAction, confirm, user } = useData();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -199,7 +200,21 @@ function SettingsPage() {
         }
     };
 
+
+    // ... (Inside SettingsPage)
+
+    const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
+    const [activationData, setActivationData] = useState<SettingsFormData | null>(null);
+
     const onSubmit = async (data: SettingsFormData) => {
+        // DETECT DEMO MODE ACTIVATION
+        // @ts-ignore
+        if (societe?.isTemplate) {
+            setActivationData(data);
+            setIsActivationModalOpen(true);
+            return;
+        }
+
         setIsSaving(true);
         try {
             const { globalConfig, ...societeData } = data;
@@ -216,6 +231,37 @@ function SettingsPage() {
             setIsSaving(false);
         }
     };
+
+    const handleActivation = async (keepData: boolean) => {
+        if (!activationData || !user?.id) return;
+        setIsActivationModalOpen(false); // Close modal
+        setIsSaving(true);
+        const toastId = toast.loading(keepData ? "Activation et migration..." : "Création de la nouvelle société...");
+
+        try {
+            const { globalConfig, ...societeData } = activationData;
+
+            // Server Action
+            const result = await migrateTemplateToReal(user.id, societeData, keepData);
+
+            if (result.success) {
+                toast.dismiss(toastId);
+                toast.success("Compte activé avec succès !");
+
+                // Force full reload to reset context/IDs
+                window.location.href = "/";
+            } else {
+                throw new Error(result.error || "Erreur inconnue");
+            }
+        } catch (error: any) {
+            console.error("Activation error", error);
+            toast.dismiss(toastId);
+            toast.error("Erreur d'activation : " + error.message);
+            setIsSaving(false);
+        }
+    };
+
+    // ... (Hooks) ...
 
     // ... helper components remain the same ...
     const SettingsItem = ({ icon: Icon, label, color, onClick }: { icon: any, label: string, color: string, onClick?: () => void }) => (
@@ -272,7 +318,7 @@ function SettingsPage() {
                         Réglages
                     </button>
                 </div>
-                <UserManagement onBack={() => handleNavigation("MAIN")} />
+                <UserManagement />
             </div>
         );
     }
@@ -381,6 +427,68 @@ function SettingsPage() {
     if (activeView === "IDENTITY") {
         return (
             <div className="max-w-6xl mx-auto px-6 pb-20 animate-in fade-in slide-in-from-right-8 duration-300">
+                {/* Activation Modal */}
+                {isActivationModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                        <div className="bg-background border border-border rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-6 glass-card">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-amber-500/10 rounded-full">
+                                    <Key className="h-6 w-6 text-amber-500" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold">Activer votre compte</h2>
+                                    <p className="text-sm text-muted-foreground">Vous passez du mode démo à une vraie société.</p>
+                                </div>
+                            </div>
+
+                            <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 text-sm text-amber-600">
+                                <strong>Note :</strong> La société de démonstration sera remplacée par la nouvelle.
+                            </div>
+
+                            <div className="space-y-4">
+                                <p className="font-medium text-foreground">Que voulez-vous faire des données de test (factures, clients...) ?</p>
+
+                                <button
+                                    onClick={() => handleActivation(true)}
+                                    className="w-full flex items-center gap-4 p-4 rounded-xl border border-border hover:bg-white/5 hover:border-blue-500/50 transition-all text-left group"
+                                >
+                                    <div className="p-2 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition-colors">
+                                        <Database className="h-5 w-5 text-blue-500" />
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-foreground">Conserver les données</div>
+                                        <div className="text-xs text-muted-foreground">Migrer tout l'historique vers la nouvelle société.</div>
+                                    </div>
+                                    <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
+                                </button>
+
+                                <button
+                                    onClick={() => handleActivation(false)}
+                                    className="w-full flex items-center gap-4 p-4 rounded-xl border border-border hover:bg-white/5 hover:border-emerald-500/50 transition-all text-left group"
+                                >
+                                    <div className="p-2 bg-emerald-500/10 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
+                                        <Layout className="h-5 w-5 text-emerald-500" />
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-foreground">Repartir à zéro</div>
+                                        <div className="text-xs text-muted-foreground">Supprimer les données de test et commencer propre.</div>
+                                    </div>
+                                    <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
+                                </button>
+                            </div>
+
+                            <div className="pt-2 text-center">
+                                <button
+                                    onClick={() => setIsActivationModalOpen(false)}
+                                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                                >
+                                    Annuler et rester en mode démo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Header - Not Sticky */}
                 <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-4">
@@ -410,7 +518,124 @@ function SettingsPage() {
                     {/* Top Grid: Logo & General Info */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
 
-                        {/* Left Col: Logo (4/12) */}
+                        {/* Right Col: General Info (8/12) -> NOW LEFT */}
+                        <div className="md:col-span-8 space-y-6">
+                            <div className="glass-card p-6 rounded-xl border border-border">
+                                <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
+                                    <div className="p-2 rounded-lg bg-purple-500/10">
+                                        <Building className="h-5 w-5 text-purple-400" />
+                                    </div>
+                                    <h2 className="text-sm font-semibold text-foreground">Informations Générales</h2>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Nom de l'entreprise</label>
+                                        <input
+                                            {...register("nom")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Forme Juridique</label>
+                                        <input
+                                            {...register("formeJuridique")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Capital Social</label>
+                                        <input
+                                            {...register("capitalSocial")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Email contact</label>
+                                        <input
+                                            {...register("email")}
+                                            type="email"
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Site Web</label>
+                                        <input
+                                            {...register("siteWeb")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Address Card */}
+                            <div className="glass-card p-6 rounded-xl border border-border">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2 rounded-lg bg-orange-500/10">
+                                        <Layout className="h-5 w-5 text-orange-400" />
+                                    </div>
+                                    <h2 className="text-sm font-semibold text-foreground">Adresse & Contact</h2>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Adresse postale</label>
+                                        <input
+                                            {...register("adresse")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Code Postal</label>
+                                        <input
+                                            {...register("codePostal")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Ville</label>
+                                        <input
+                                            {...register("ville")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Téléphone</label>
+                                        <input
+                                            {...register("telephone")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Pays</label>
+                                        <input
+                                            {...register("pays")}
+                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
+                                            placeholder=""
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Left Col: Logo (4/12) -> NOW RIGHT */}
                         <div className="md:col-span-4 space-y-6">
                             <div className="glass-card p-5 rounded-xl flex flex-col h-full border border-border">
                                 <div className="flex items-center gap-3 mb-4">
@@ -477,122 +702,6 @@ function SettingsPage() {
                             </div>
                         </div>
 
-                        {/* Right Col: General Info (8/12) */}
-                        <div className="md:col-span-8 space-y-6">
-                            <div className="glass-card p-6 rounded-xl border border-border">
-                                <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
-                                    <div className="p-2 rounded-lg bg-purple-500/10">
-                                        <Building className="h-5 w-5 text-purple-400" />
-                                    </div>
-                                    <h2 className="text-sm font-semibold text-foreground">Informations Générales</h2>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                    <div className="md:col-span-2">
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Nom de l'entreprise</label>
-                                        <input
-                                            {...register("nom")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="Ex: Ma Société"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Forme Juridique</label>
-                                        <input
-                                            {...register("formeJuridique")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="SAS, SARL, EURL..."
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Capital Social</label>
-                                        <input
-                                            {...register("capitalSocial")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="Ex: 1000 €"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Email contact</label>
-                                        <input
-                                            {...register("email")}
-                                            type="email"
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="contact@societe.com"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Site Web</label>
-                                        <input
-                                            {...register("siteWeb")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="https://www.societe.com"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Address Card */}
-                            <div className="glass-card p-6 rounded-xl border border-border">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2 rounded-lg bg-orange-500/10">
-                                        <Layout className="h-5 w-5 text-orange-400" />
-                                    </div>
-                                    <h2 className="text-sm font-semibold text-foreground">Adresse & Contact</h2>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                    <div className="md:col-span-2">
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Adresse postale</label>
-                                        <input
-                                            {...register("adresse")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="123 Avenue de la République"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Code Postal</label>
-                                        <input
-                                            {...register("codePostal")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="75001"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Ville</label>
-                                        <input
-                                            {...register("ville")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="Paris"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Téléphone</label>
-                                        <input
-                                            {...register("telephone")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="+33 1 23 45 67 89"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground ml-1 mb-1.5 block">Pays</label>
-                                        <input
-                                            {...register("pays")}
-                                            className="w-full h-10 glass-input px-3 rounded-lg text-sm"
-                                            placeholder="France"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     {/* Bottom Grid: Legal & Banking (2 Cols) */}
@@ -786,7 +895,7 @@ function CreateSocieteView({ onBack }: { onBack: () => void }) {
         setIsLoading(true);
         try {
             // 1. Create with Name
-            // Warning: createSociete returns Promise<any> or void? 
+            // Warning: createSociete returns Promise<any> or void?
             // We assume it returns the new ID or object, or we fetch it.
             // If createSociete is just `actions.createSociete`, it returns {success, id}.
             // If it's wrapped in DataProvider, it might return the result.

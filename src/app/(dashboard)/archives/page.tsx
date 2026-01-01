@@ -10,6 +10,7 @@ import { Facture, Devis } from "@/types";
 import { cn } from "@/lib/utils";
 import { fetchArchivedInvoices, fetchArchivedQuotes } from "@/app/actions";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
+import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
 
 type ArchivedItem = (Facture & { itemType: "Facture" }) | (Devis & { itemType: "Devis" });
 
@@ -107,7 +108,7 @@ export default function ArchivesPage() {
         const matchesSearch =
             searchTerm === "" ||
             item.numero.toLowerCase().includes(searchLower) ||
-            (client?.nom || "").toLowerCase().includes(searchLower) ||
+            (client ? getClientSearchText(client).includes(searchLower) : false) ||
             item.totalTTC.toString().includes(searchLower);
 
         return matchesType && matchesSearch;
@@ -195,58 +196,61 @@ export default function ArchivesPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {filteredItems.map((item) => (
-                                <tr
-                                    key={`${item.itemType}-${item.id}`}
-                                    className="hover:bg-white/5 transition-colors cursor-pointer group"
-                                    onClick={() => handlePreview(item)}
-                                >
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
-                                            {item.itemType === "Facture" ? (
-                                                <Receipt className="h-4 w-4 text-emerald-500" />
-                                            ) : (
-                                                <FileText className="h-4 w-4 text-purple-500" />
-                                            )}
-                                            <span className={cn(
-                                                "text-xs font-medium px-2 py-0.5 rounded-full border",
-                                                item.itemType === "Facture"
-                                                    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                                    : "bg-purple-500/10 text-purple-500 border-purple-500/20"
-                                            )}>
-                                                {item.itemType}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 font-medium text-foreground">
-                                        {item.numero}
-                                    </td>
-                                    <td className="px-6 py-4 text-muted-foreground">
-                                        {(item as any).client?.nom || "Inconnu"}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        {format(new Date(item.dateEmission), "dd MMM yyyy", { locale: fr })}
-                                    </td>
-                                    <td className="px-6 py-4 font-bold text-foreground">
-                                        {item.totalTTC.toLocaleString("fr-FR", {
-                                            style: "currency",
-                                            currency: "EUR",
-                                        })}
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handlePreview(item); }}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors"
-                                                title="Aperçu"
-                                            >
-                                                <Eye className="h-3 w-3" />
-                                                Aperçu
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {filteredItems.map((item) => {
+                                const client = clients.find(c => c.id === item.clientId);
+                                return (
+                                    <tr
+                                        key={`${item.itemType}-${item.id}`}
+                                        className="hover:bg-white/5 transition-colors cursor-pointer group"
+                                        onClick={() => handlePreview(item)}
+                                    >
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                {item.itemType === "Facture" ? (
+                                                    <Receipt className="h-4 w-4 text-emerald-500" />
+                                                ) : (
+                                                    <FileText className="h-4 w-4 text-purple-500" />
+                                                )}
+                                                <span className={cn(
+                                                    "text-xs font-medium px-2 py-0.5 rounded-full border",
+                                                    item.itemType === "Facture"
+                                                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                        : "bg-purple-500/10 text-purple-500 border-purple-500/20"
+                                                )}>
+                                                    {item.itemType}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 font-medium text-foreground">
+                                            {item.numero}
+                                        </td>
+                                        <td className="px-6 py-4 text-muted-foreground">
+                                            {client ? getClientDisplayName(client) : "Inconnu"}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {format(new Date(item.dateEmission), "dd MMM yyyy", { locale: fr })}
+                                        </td>
+                                        <td className="px-6 py-4 font-bold text-foreground">
+                                            {item.totalTTC.toLocaleString("fr-FR", {
+                                                style: "currency",
+                                                currency: "EUR",
+                                            })}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handlePreview(item); }}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors"
+                                                    title="Aperçu"
+                                                >
+                                                    <Eye className="h-3 w-3" />
+                                                    Aperçu
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

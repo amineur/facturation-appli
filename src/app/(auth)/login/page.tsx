@@ -41,15 +41,11 @@ export default function LoginPage() {
 
                 if (!res.ok) throw new Error(result.error || "Erreur inscription");
 
-                toast.success("Compte créé ! Vérifie ton email.");
-
-                // Redirect to home (Safe Mode) - Bypass verification UI
-                const redirectUrl = "/";
+                // Redirect to Pending Verification (Intermediate Step)
+                const redirectUrl = `/pending-verification?email=${encodeURIComponent(data.email)}`;
 
                 // Use window.location for more reliable redirect
-                setTimeout(() => {
-                    window.location.href = redirectUrl;
-                }, 500); // Small delay for toast to show
+                window.location.href = redirectUrl;
 
             } else {
                 // LOGIN LOGIC (via API for Cookie)
@@ -67,8 +63,6 @@ export default function LoginPage() {
 
                 const user = result.user;
                 if (user) {
-                    toast.success(`Bon retour, ${user.fullName}`);
-
                     // CLEAR SCOPE
                     localStorage.removeItem('glassy_active_societe');
                     localStorage.removeItem('active_societe_id');
@@ -76,7 +70,13 @@ export default function LoginPage() {
 
                     // refreshData(); // Redundant with hard reload below
                     // Hard reload to ensure cookie is picked up by server actions immediately
-                    window.location.href = "/";
+
+                    // Conditional Redirect: If no society -> Onboarding, else -> Dashboard
+                    if (user.societes && user.societes.length > 0) {
+                        window.location.href = "/";
+                    } else {
+                        window.location.href = "/onboarding";
+                    }
                 }
             }
         } catch (error: any) {

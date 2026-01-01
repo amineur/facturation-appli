@@ -10,6 +10,7 @@ import { dataService } from "@/lib/data-service";
 import { Client } from "@/types";
 import { deleteRecord } from "@/app/actions";
 import { toast } from "sonner";
+import { getClientDisplayName, getClientInitials } from "@/lib/client-utils";
 
 export default function ClientsPage() {
     const { clients, refreshData, societe, confirm, logAction } = useData();
@@ -197,10 +198,10 @@ export default function ClientsPage() {
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/20 to-blue-500/20 text-blue-500 dark:text-blue-300 font-semibold border border-white/10 shrink-0">
-                                                {(client.nom || "?")[0]?.toUpperCase() || "?"}
+                                                {getClientInitials(client)}
                                             </div>
                                             <div>
-                                                <div className="font-medium text-foreground">{client.nom}</div>
+                                                <div className="font-medium text-foreground">{getClientDisplayName(client)}</div>
                                                 <div className="md:hidden text-xs text-muted-foreground mt-0.5">{client.email}</div>
                                             </div>
                                         </div>
@@ -258,10 +259,10 @@ export default function ClientsPage() {
                                 <div className="flex items-start justify-between mb-3">
                                     <div className="flex items-center gap-3">
                                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/20 to-blue-500/20 text-blue-500 dark:text-blue-300 font-semibold border border-white/10 shrink-0">
-                                            {(client.nom || "?")[0]?.toUpperCase() || "?"}
+                                            {getClientInitials(client)}
                                         </div>
                                         <div>
-                                            <div className="font-medium text-foreground">{client.nom}</div>
+                                            <div className="font-medium text-foreground">{getClientDisplayName(client)}</div>
                                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
                                                 <Mail className="h-3 w-3" />
                                                 {client.email}

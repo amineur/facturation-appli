@@ -26,9 +26,13 @@ export interface Produit {
     societeId: string;
 }
 
+export type ClientType = 'COMPANY' | 'INDIVIDUAL';
+
 export interface Client {
     id: string;
     societeId: string; // Lien vers l'émetteur
+
+    typeClient?: 'INDIVIDUAL' | 'COMPANY'; // Type of client
     nom: string;
     reference?: string; // Add missing field
     email: string;
@@ -107,6 +111,7 @@ export interface Societe {
 
     createdAt?: string;
     updatedAt?: string;
+    isTemplate?: boolean;
 }
 
 export interface User {

@@ -42,7 +42,7 @@ export async function GET(
                 }
 
                 const processedBuffer = await pipeline.webp({ quality: 80 }).toBuffer();
-                imageBuffer = processedBuffer;
+                imageBuffer = processedBuffer as any;
                 mimeType = 'image/webp';
                 console.log(`[AvatarAPI] Optimization Success | New Size: ${imageBuffer.length}`);
             } catch (e) {
