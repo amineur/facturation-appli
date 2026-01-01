@@ -412,7 +412,7 @@ function SettingsPage() {
                             icon={Plus}
                             label="Ajouter une société"
                             color="bg-orange-500"
-                            onClick={() => router.push("/onboarding")}
+                            onClick={() => router.push("/onboarding?context=add")}
                         />
                     </SettingsSection>
                 </div>

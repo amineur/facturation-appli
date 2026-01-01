@@ -1,7 +1,7 @@
 'use client';
 
 import { Building2, ArrowRight, Loader2, Search, MapPin, CreditCard, Image as ImageIcon, ChevronLeft, Upload, X, Users, Mail, ArrowRightCircle } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useData } from '@/components/data-provider';
 import { useState, useEffect, useRef } from 'react';
@@ -11,6 +11,8 @@ import { migrateTemplateToReal, createTemplateSociete } from '@/lib/actions/temp
 
 export default function OnboardingPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const context = searchParams.get('context');
     const { createSociete, isLoading: isGlobalLoading, societes, refreshData, user, switchSociete } = useData();
 
     // --- STATE ---
@@ -261,15 +263,16 @@ export default function OnboardingPage() {
 
     // Filter out template societies for welcome screen logic
     const realSocietes = societes?.filter((s: any) => !s.isTemplate) || [];
+    const isAddMode = realSocietes.length > 0 || context === 'add';
 
     const renderStep0_Choice = () => (
-        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300 w-full max-w-4xl">
+        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300 w-full max-w-4xl relative z-10">
             <div className="text-center space-y-2 mb-8">
                 <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-                    {realSocietes.length > 0 ? "Nouvelle Société" : "Bienvenue"}
+                    {isAddMode ? "Nouvelle Société" : "Bienvenue"}
                 </h1>
                 <p className="text-muted-foreground">
-                    {realSocietes.length > 0
+                    {isAddMode
                         ? "Configurez une nouvelle entité pour votre compte."
                         : "Rejoignez une équipe existante ou créez votre propre structure."}
                 </p>
@@ -350,7 +353,7 @@ export default function OnboardingPage() {
 
             {/* Option 3: Wait for invite (Skip) OR Back to Dashboard if societies exist */}
             <div className="mt-8 text-center space-y-4">
-                {realSocietes.length === 0 ? (
+                {!isAddMode ? (
                     <button
                         onClick={async () => {
                             if (!user?.id) return;
@@ -592,7 +595,7 @@ export default function OnboardingPage() {
     if (step === 0) {
         return (
             <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,60,255,0.1),rgba(0,0,0,0))]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,60,255,0.1),rgba(0,0,0,0))] pointer-events-none" />
 
                 {/* Close button for existing users */}
                 {realSocietes.length > 0 && (
