@@ -17,6 +17,7 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
     const [activeTab, setActiveTab] = useState<"FACTURE" | "DEVIS">(initialTab);
     const [searchQuery, setSearchQuery] = useState("");
     const [showSearch, setShowSearch] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
     // -- Filter Options --
@@ -109,6 +110,12 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
                             <h1 className="text-xl font-bold tracking-tight">Documents</h1>
                             <div className="flex items-center gap-1">
                                 <button
+                                    onClick={() => setShowFilters(!showFilters)}
+                                    className={cn("h-10 w-10 rounded-full flex items-center justify-center active:scale-95 transition-all", showFilters ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground")}
+                                >
+                                    <Filter className="h-5 w-5" />
+                                </button>
+                                <button
                                     onClick={() => setShowSearch(true)}
                                     className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
                                 >
@@ -146,23 +153,25 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
 
 
 
-                {/* Status Filters Scroll */}
-                <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
-                    {activeFilters.map(f => (
-                        <button
-                            key={f.id}
-                            onClick={() => setStatusFilter(f.id)}
-                            className={cn(
-                                "whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                                statusFilter === f.id
-                                    ? "bg-foreground text-background border-foreground"
-                                    : "bg-card border-border hover:bg-muted text-muted-foreground"
-                            )}
-                        >
-                            {f.label}
-                        </button>
-                    ))}
-                </div>
+                {/* Status Filters Scroll (Collapsible) */}
+                {showFilters && (
+                    <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide animate-in slide-in-from-top-2 fade-in duration-200">
+                        {activeFilters.map(f => (
+                            <button
+                                key={f.id}
+                                onClick={() => setStatusFilter(f.id)}
+                                className={cn(
+                                    "whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+                                    statusFilter === f.id
+                                        ? "bg-foreground text-background border-foreground"
+                                        : "bg-card border-border hover:bg-muted text-muted-foreground"
+                                )}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* List */}
