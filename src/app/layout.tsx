@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { DataProvider } from "@/components/data-provider";
 import { Toaster } from "sonner";
 import { FaviconUpdater, DebugLogger } from "@/components/features/GlobalLazyLoaders";
+import { MobileGuard } from "@/providers/MobileGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -89,7 +90,9 @@ export default function RootLayout({
           <DataProvider>
             <DebugLogger />
             <FaviconUpdater />
-            {children}
+            <MobileGuard>
+              {children}
+            </MobileGuard>
             <Toaster position="top-right" richColors theme="system" />
           </DataProvider>
         </ThemeProvider>

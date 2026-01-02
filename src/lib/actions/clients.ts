@@ -101,3 +101,22 @@ export async function updateClient(client: Client) {
         return { success: false, error: error.message };
     }
 }
+
+export async function deleteClient(id: string) {
+    if (!id) return { success: false, error: "ID manquant" };
+    try {
+        const existing = await prisma.client.findUnique({ where: { id }, select: { societeId: true } });
+        if (!existing) return { success: false, error: "Client introuvable" };
+
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const authorized = await canAccessSociete(userRes.data.id, existing.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Droit insuffisant" };
+
+        await prisma.client.delete({ where: { id } });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}

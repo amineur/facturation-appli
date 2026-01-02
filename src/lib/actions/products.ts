@@ -183,3 +183,22 @@ export async function updateProduct(product: Produit) {
         return { success: false, error: error.message };
     }
 }
+
+export async function deleteProduct(id: string) {
+    if (!id) return { success: false, error: "ID manquant" };
+    try {
+        const userRes = await getCurrentUser();
+        if (!userRes.success || !userRes.data) return { success: false, error: "Non authentifié" };
+
+        const existing = await prisma.produit.findUnique({ where: { id }, select: { societeId: true } });
+        if (!existing) return { success: false, error: "Produit introuvable" };
+
+        const authorized = await canAccessSociete(userRes.data.id, existing.societeId, MembershipRole.EDITOR);
+        if (!authorized) return { success: false, error: "Accès refusé" };
+
+        await prisma.produit.delete({ where: { id } });
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}

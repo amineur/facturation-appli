@@ -1,0 +1,75 @@
+"use client";
+
+import { useData } from "@/components/data-provider";
+import { cn } from "@/lib/utils";
+import { Search, Mail, Phone, MapPin, ChevronRight, User } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
+
+export function MobileClients() {
+    const { clients } = useData();
+    const [searchQuery, setSearchQuery] = useState("");
+
+    const filteredClients = clients.filter(client =>
+        client.nom.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (client.email && client.email.toLowerCase().includes(searchQuery.toLowerCase()))
+    ).sort((a, b) => a.nom.localeCompare(b.nom));
+
+    return (
+        <div className="flex flex-col min-h-screen">
+            {/* Header */}
+            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3">
+                <h1 className="text-xl font-bold">Clients ({clients.length})</h1>
+            </div>
+
+            {/* Search */}
+            <div className="p-4 bg-muted/20">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <input
+                        type="text"
+                        placeholder="Rechercher..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                </div>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 p-4 pb-32 space-y-3">
+                {filteredClients.map((client) => (
+                    <Link
+                        key={client.id}
+                        href={`/clients/${client.id}`}
+                        className="block p-4 rounded-xl bg-card border border-border/50 shadow-sm active:bg-accent/50 transition-colors"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="h-10 w-10 rounded-full bg-orange-500/10 text-orange-500 flex items-center justify-center shrink-0">
+                                    <span className="font-bold text-sm">{client.nom.substring(0, 2).toUpperCase()}</span>
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="font-bold text-sm truncate">{client.nom}</h3>
+                                    {client.email && (
+                                        <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+                                            <Mail className="h-3 w-3" /> {client.email}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <ChevronRight className="h-5 w-5 text-muted-foreground/50" />
+                        </div>
+                    </Link>
+                ))}
+
+                {filteredClients.length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground">
+                        <User className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                        <p>Aucun client trouvé</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

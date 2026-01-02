@@ -4,8 +4,6 @@ import { prisma } from '@/lib/prisma';
 import { User } from '@/types';
 import { cookies } from "next/headers";
 
-// Helper
-// Helper removed (moved to shared.ts or made internal if not used elsewhere)
 function mapUser(prismaUser: any): User {
     return {
         id: prismaUser.id,
@@ -56,8 +54,6 @@ export async function registerUser(data: any) {
             sameSite: "strict",
             path: "/"
         });
-
-
 
         return { success: true, data: mapUser(user) };
     } catch (error: any) {
@@ -273,6 +269,45 @@ export async function markHistoryAsRead(userId: string) {
             data: { lastReadHistory: new Date() }
         });
         return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function updateUserProfile(data: { fullName?: string; email?: string; currentPassword?: string; newPassword?: string }) {
+    try {
+        const cookieStore = await cookies();
+        const userId = cookieStore.get("session_userid")?.value;
+
+        if (!userId) return { success: false, error: "Non authentifié" };
+
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return { success: false, error: "Utilisateur introuvable" };
+
+        const updateData: any = {};
+        if (data.fullName) updateData.fullName = data.fullName;
+        if (data.email) updateData.email = data.email;
+
+        // Verify current password if changing password
+        if (data.newPassword) {
+            if (!data.currentPassword) {
+                return { success: false, error: "Mot de passe actuel requis pour changer de mot de passe" };
+            }
+            if (user.password !== data.currentPassword) {
+                return { success: false, error: "Mot de passe actuel incorrect" };
+            }
+            updateData.password = data.newPassword;
+        }
+
+        const updated = await prisma.user.update({
+            where: { id: userId },
+            data: updateData
+        });
+
+        // Update session cookie if needed (optional but good practice)
+        // But Next.js server actions handle this mostly via data.
+
+        return { success: true, data: mapUser(updated) };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
