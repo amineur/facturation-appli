@@ -2,13 +2,14 @@
 
 import { useData } from "@/components/data-provider";
 import { cn } from "@/lib/utils";
-import { Search, Mail, Phone, MapPin, ChevronRight, User, Plus } from "lucide-react";
+import { Search, Mail, Phone, MapPin, ChevronRight, User, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 export function MobileClients() {
     const { clients } = useData();
     const [searchQuery, setSearchQuery] = useState("");
+    const [showSearch, setShowSearch] = useState(false);
 
     const filteredClients = clients.filter(client =>
         client.nom.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -18,26 +19,45 @@ export function MobileClients() {
     return (
         <div className="flex flex-col min-h-screen">
             {/* Header */}
-            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between">
-                <h1 className="text-xl font-bold">Clients ({clients.length})</h1>
-                <Link href="/clients/new" className="h-9 w-9 rounded-full bg-primary text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-                    <Plus className="h-5 w-5" />
-                </Link>
+            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2">
+                {showSearch ? (
+                    <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <input
+                            autoFocus
+                            placeholder="Rechercher..."
+                            className="w-full h-10 pl-9 pr-10 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                        />
+                        <button
+                            onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex items-center justify-between">
+                        <h1 className="text-xl font-bold">Clients ({clients.length})</h1>
+                        <button
+                            onClick={() => setShowSearch(true)}
+                            className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
+                        >
+                            <Search className="h-5 w-5 text-muted-foreground" />
+                        </button>
+                    </div>
+                )}
+
+                {!showSearch && (
+                    <Link href="/clients/new" className="h-9 w-9 rounded-full bg-primary text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform shrink-0">
+                        <Plus className="h-5 w-5" />
+                    </Link>
+                )}
             </div>
 
             {/* Search */}
-            <div className="p-4 bg-muted/20">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                        type="text"
-                        placeholder="Rechercher..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                </div>
-            </div>
+
 
             {/* List */}
             <div className="flex-1 p-4 pb-32 space-y-3">
