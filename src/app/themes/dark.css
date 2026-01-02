@@ -7,6 +7,7 @@
     --foreground: #ededed;
     --muted-foreground: #a1a1aa;
     --primary: #ededed;
+    --primary-foreground: #0a0a0a;
     --border: rgba(255, 255, 255, 0.1);
 
     /* -- Semantics: Icons -- */

@@ -7,6 +7,7 @@ import { fr } from "date-fns/locale";
 import { useState, useMemo } from "react";
 import { BarChart3, Users, Package, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 
 type TabType = "clients" | "produits" | "mois";
 
@@ -144,6 +145,34 @@ export function MobileReports() {
                 <p className="text-sm text-muted-foreground">Analyses du {format(filteredData.start, "d MMM")} au {format(filteredData.end, "d MMM")}</p>
             </div>
 
+            {/* KPI Cards (New Audit Requirement) */}
+            <div className="grid grid-cols-2 gap-3">
+                <div className="bg-card border border-border/50 rounded-2xl p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Chiffre d'Affaires</p>
+                    <p className="text-lg font-bold">
+                        {filteredData.invoices.filter(i => i.statut === "Payée").reduce((acc, i) => acc + i.totalTTC, 0).toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
+                    </p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-2xl p-4">
+                    <p className="text-xs text-muted-foreground mb-1">En Attente</p>
+                    <p className="text-lg font-bold text-blue-500">
+                        {filteredData.invoices.filter(i => ["Envoyée", "Envoyé", "Retard"].includes(i.statut)).reduce((acc, i) => acc + i.totalTTC, 0).toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
+                    </p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-2xl p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Volume Devis</p>
+                    <p className="text-lg font-bold text-purple-500">
+                        {filteredData.quotes.length} <span className="text-xs text-muted-foreground font-normal">/ {filteredData.quotes.reduce((acc, q) => acc + q.totalTTC, 0).toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}</span>
+                    </p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-2xl p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Clients Actifs</p>
+                    <p className="text-lg font-bold text-orange-500">
+                        {new Set([...filteredData.invoices, ...filteredData.quotes].map(i => i.clientId)).size}
+                    </p>
+                </div>
+            </div>
+
             {/* Date Filters */}
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
                 {[
@@ -157,7 +186,7 @@ export function MobileReports() {
                         className={cn(
                             "whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium border transition-colors",
                             dateRange === opt.key
-                                ? "bg-primary text-primary-foreground border-primary"
+                                ? "bg-primary text-primary-foreground dark:!text-black border-primary"
                                 : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
                         )}
                     >
@@ -231,7 +260,21 @@ export function MobileReports() {
                 )}
 
                 {activeTab === "mois" && (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
+                        <div className="h-[200px] w-full bg-card p-4 rounded-xl border border-border/50">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={monthlyData}>
+                                    <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: 'black', borderRadius: '8px', border: 'none', fontSize: '12px' }}
+                                        itemStyle={{ padding: 0 }}
+                                    />
+                                    <Bar dataKey="factures" fill="#10b981" radius={[4, 4, 0, 0]} name="CA Facturé" />
+                                    <Bar dataKey="devis" fill="#a855f7" radius={[4, 4, 0, 0]} name="Vol. Devis" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+
                         {monthlyData.reverse().map((item, idx) => (
                             <div key={idx} className="bg-card p-4 rounded-xl border border-border/50">
                                 <div className="flex justify-between items-center mb-2">

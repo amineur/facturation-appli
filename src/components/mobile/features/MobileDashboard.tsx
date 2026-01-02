@@ -147,7 +147,7 @@ export function MobileDashboard() {
                             className={cn(
                                 "whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium border transition-colors",
                                 dateRange === opt.key
-                                    ? "bg-primary text-primary-foreground border-primary"
+                                    ? "bg-primary text-primary-foreground dark:!text-black border-primary"
                                     : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
                             )}
                         >
@@ -162,7 +162,7 @@ export function MobileDashboard() {
                         className={cn(
                             "whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium border transition-colors",
                             dateRange === "custom"
-                                ? "bg-primary text-primary-foreground border-primary"
+                                ? "bg-primary text-primary-foreground dark:text-zinc-950 border-primary"
                                 : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
                         )}
                     >
@@ -249,6 +249,59 @@ export function MobileDashboard() {
                         <p className="text-lg font-bold">
                             {kpi.signedQuotes.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
                         </p>
+                    </div>
+                </div>
+
+                {/* Distribution & Summary (New Audit Requirement) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Invoice Status Distribution */}
+                    <div className="bg-card border border-border/50 rounded-2xl p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-muted-foreground mb-2">Répartition Factures</h3>
+                        <div className="space-y-2">
+                            {[
+                                { label: "Payées", count: filteredData.invoices.filter(i => i.statut === "Payée").length, color: "bg-emerald-500" },
+                                { label: "En Retard", count: filteredData.invoices.filter(i => i.statut === "Retard").length, color: "bg-red-500" },
+                                { label: "En Attente", count: filteredData.invoices.filter(i => ["Envoyée", "Envoyé"].includes(i.statut)).length, color: "bg-blue-500" },
+                                { label: "Brouillons", count: filteredData.invoices.filter(i => i.statut === "Brouillon").length, color: "bg-slate-500" }
+                            ].map(stat => (
+                                <div key={stat.label} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${stat.color}`} />
+                                        <span>{stat.label}</span>
+                                    </div>
+                                    <span className="font-bold">{stat.count}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Period Summary */}
+                    <div className="bg-card border border-border/50 rounded-2xl p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-muted-foreground mb-2">Résumé Période</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="p-3 bg-muted/30 rounded-xl">
+                                <p className="text-xs text-muted-foreground">Factures</p>
+                                <p className="font-bold text-lg">{filteredData.invoices.length}</p>
+                            </div>
+                            <div className="p-3 bg-muted/30 rounded-xl">
+                                <p className="text-xs text-muted-foreground">Devis</p>
+                                <p className="font-bold text-lg">{filteredData.quotes.length}</p>
+                            </div>
+                            <div className="p-3 bg-muted/30 rounded-xl">
+                                <p className="text-xs text-muted-foreground">Clients Actifs</p>
+                                <p className="font-bold text-lg">
+                                    {new Set([...filteredData.invoices, ...filteredData.quotes].map(i => i.clientId)).size}
+                                </p>
+                            </div>
+                            <div className="p-3 bg-muted/30 rounded-xl">
+                                <p className="text-xs text-muted-foreground">Tx. Conversion</p>
+                                <p className="font-bold text-lg">
+                                    {filteredData.quotes.length > 0
+                                        ? Math.round((filteredData.quotes.filter(q => q.statut === 'Signé' || q.statut === 'Accepté').length / filteredData.quotes.length) * 100)
+                                        : 0}%
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

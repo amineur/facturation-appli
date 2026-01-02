@@ -2,7 +2,7 @@
 
 import { useData } from "@/components/data-provider";
 import { cn } from "@/lib/utils";
-import { Search, Mail, Phone, MapPin, ChevronRight, User } from "lucide-react";
+import { Search, Mail, Phone, MapPin, ChevronRight, User, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -18,8 +18,11 @@ export function MobileClients() {
     return (
         <div className="flex flex-col min-h-screen">
             {/* Header */}
-            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3">
+            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between">
                 <h1 className="text-xl font-bold">Clients ({clients.length})</h1>
+                <Link href="/clients/new" className="h-9 w-9 rounded-full bg-primary text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+                    <Plus className="h-5 w-5" />
+                </Link>
             </div>
 
             {/* Search */}

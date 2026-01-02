@@ -2,7 +2,7 @@
 
 import { useData } from "@/components/data-provider";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Plus, Search, Package, Box, Edit2, Trash2, Save, X } from "lucide-react";
+import { ArrowLeft, Plus, Search, Package, Box, Edit2, Trash2, Save, X, ArrowUpDown, Filter } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { BottomSheet } from "../layout/BottomSheet";
@@ -11,12 +11,45 @@ import { createProduct, updateProduct, deleteProduct } from "@/lib/actions/produ
 import { useRouter } from "next/navigation";
 
 export function MobileProducts() {
-    const { products } = useData();
+    const { products, invoices } = useData();
     const [search, setSearch] = useState("");
+    const [sortBy, setSortBy] = useState<"nom_asc" | "nom_desc" | "prix_asc" | "prix_desc" | "sold_desc" | "sold_asc">("nom_asc");
     const [isEditing, setIsEditing] = useState(false);
     const [editingProduct, setEditingProduct] = useState<any>(null); // null = create, object = edit
+    const [showSort, setShowSort] = useState(false);
 
-    const filtered = products.filter(p => p.nom.toLowerCase().includes(search.toLowerCase()));
+    // Calculate Sales Stats for each product
+    const productStats = products.map(p => {
+        let soldCount = 0;
+        invoices.forEach(inv => {
+            if (["Payée", "Envoyée"].includes(inv.statut)) {
+                inv.items?.forEach(item => {
+                    // Loose matching by description as we might not have ID link in legacy data
+                    if (item.description === p.nom || item.description?.includes(p.nom)) {
+                        soldCount += Number(item.quantite || 0);
+                    }
+                });
+            }
+        });
+        return { ...p, soldCount };
+    });
+
+    const filtered = productStats.filter(p => p.nom.toLowerCase().includes(search.toLowerCase()))
+        .sort((a, b) => {
+            switch (sortBy) {
+                case "nom_asc": return a.nom.localeCompare(b.nom);
+                case "nom_desc": return b.nom.localeCompare(a.nom);
+                case "prix_asc": return a.prixUnitaire - b.prixUnitaire;
+                case "prix_desc": return b.prixUnitaire - a.prixUnitaire;
+                case "sold_desc": return b.soldCount - a.soldCount;
+                case "sold_asc": return a.soldCount - b.soldCount;
+                default: return 0;
+            }
+        });
+
+    // Header KPIs
+    const avgPrice = products.length > 0 ? products.reduce((acc, p) => acc + p.prixUnitaire, 0) / products.length : 0;
+    const totalProducts = products.length;
 
     const handleCreate = () => {
         setEditingProduct({ nom: "", description: "", prixUnitaire: 0, tva: 20 });
@@ -39,7 +72,7 @@ export function MobileProducts() {
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <input
-                            placeholder="Rechercher un produit..."
+                            placeholder="Rechercher..."
                             className="w-full h-10 pl-9 pr-4 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
                             value={search}
                             onChange={e => setSearch(e.target.value)}
@@ -47,12 +80,57 @@ export function MobileProducts() {
                     </div>
                 </div>
                 <button
+                    onClick={() => setShowSort(!showSort)}
+                    className={cn("h-10 w-10 mr-2 rounded-full flex items-center justify-center transition-colors", showSort ? "bg-primary text-black" : "bg-muted text-muted-foreground")}
+                >
+                    <ArrowUpDown className="h-5 w-5" />
+                </button>
+                <button
                     onClick={handleCreate}
                     className="h-10 w-10 rounded-full bg-primary text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform"
                 >
                     <Plus className="h-6 w-6" />
                 </button>
             </div>
+
+            {/* Sort & KPIs */}
+            {showSort && (
+                <div className="bg-background/95 backdrop-blur border-b border-white/10 p-4 space-y-4 animate-in slide-in-from-top-2">
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                        {[
+                            { id: "sold_desc", label: "Plus vendus" },
+                            { id: "sold_asc", label: "Moins vendus" },
+                            { id: "prix_desc", label: "Prix décroissant" },
+                            { id: "prix_asc", label: "Prix croissant" },
+                            { id: "nom_asc", label: "A - Z" },
+                            { id: "nom_desc", label: "Z - A" },
+                        ].map(opt => (
+                            <button
+                                key={opt.id}
+                                onClick={() => setSortBy(opt.id as any)}
+                                className={cn(
+                                    "whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium border transition-colors",
+                                    sortBy === opt.id
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                                )}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-muted/30 p-3 rounded-xl border border-border/50">
+                            <p className="text-xs text-muted-foreground">Prix Moyen</p>
+                            <p className="font-bold">{avgPrice.toFixed(2)}€</p>
+                        </div>
+                        <div className="bg-muted/30 p-3 rounded-xl border border-border/50">
+                            <p className="text-xs text-muted-foreground">Total Produits</p>
+                            <p className="font-bold">{totalProducts}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* List */}
             <div className="p-4 space-y-3">
@@ -66,7 +144,14 @@ export function MobileProducts() {
                                 <h3 className="font-bold truncate pr-2">{product.nom}</h3>
                                 <span className="font-mono font-bold">{Number(product.prixUnitaire).toFixed(2)}€</span>
                             </div>
-                            <p className="text-xs text-muted-foreground truncate">{product.description || "Aucune description"}</p>
+                            <div className="flex justify-between items-end">
+                                <p className="text-xs text-muted-foreground truncate max-w-[70%]">{product.description || "Aucune description"}</p>
+                                {product.soldCount > 0 && (
+                                    <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-medium">
+                                        {product.soldCount} ventes
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                 ))}
