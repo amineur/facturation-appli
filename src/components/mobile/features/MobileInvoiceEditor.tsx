@@ -1,7 +1,7 @@
 "use client";
 
 import { useData } from "@/components/data-provider";
-import { generateNextInvoiceNumber } from "@/lib/invoice-utils";
+import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoice-utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -36,6 +36,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     const [statut, setStatut] = useState<string>("Brouillon");
     const [notes, setNotes] = useState("");
     const [conditions, setConditions] = useState("");
+    const [conditionsPaiement, setConditionsPaiement] = useState("À réception");
     const [currentDocNumber, setCurrentDocNumber] = useState("");
 
     // UI States
@@ -66,6 +67,11 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     setStatut(doc.statut);
                     setNotes(doc.notes || "");
                     setConditions(doc.conditions || "");
+                    setConditions(doc.conditions || "");
+                    try {
+                        const conf = typeof (doc as any).config === 'string' ? JSON.parse((doc as any).config) : (doc as any).config || {};
+                        if (conf.conditionsPaiement) setConditionsPaiement(conf.conditionsPaiement);
+                    } catch (e) { }
                     setCurrentDocNumber(doc.numero);
                 }
             } else if (sourceId) {
@@ -142,7 +148,8 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                 conditions,
                 statut,
                 totalHT,
-                totalTTC
+                totalTTC,
+                config: JSON.stringify({ conditionsPaiement })
             };
 
             if (type === "FACTURE") {
@@ -162,7 +169,9 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                 toast.success("Modifications enregistrées");
             } else {
                 // Create
-                const numero = currentDocNumber || await generateNextInvoiceNumber(type === "FACTURE" ? "facture" : "devis", type === "FACTURE" ? invoices : quotes);
+                const numero = currentDocNumber || (type === "FACTURE"
+                    ? generateNextInvoiceNumber(invoices)
+                    : generateNextQuoteNumber(quotes));
                 docData.numero = numero;
 
                 if (type === "FACTURE") await createInvoice(docData);
@@ -429,28 +438,80 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                             className="w-full bg-card border border-border rounded-xl p-3 text-sm min-h-[80px]"
                         />
                     </div>
+                    {type === "FACTURE" && (
+                        <div>
+                            <label className="text-xs font-semibold text-muted-foreground mb-2 block">Conditions de paiement</label>
+                            <select
+                                value={conditionsPaiement}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setConditionsPaiement(val);
+                                    if (val !== "Personnalisé" && dateEmission) {
+                                        const now = new Date(dateEmission);
+                                        let days = 0;
+                                        switch (val) {
+                                            case "À réception": days = 0; break;
+                                            case "15 jours": days = 15; break;
+                                            case "30 jours": days = 30; break;
+                                            case "30 jours fin du mois":
+                                                const endOfMonth30 = new Date(now.getFullYear(), now.getMonth() + 2, 0); // Next month end
+                                                setDateEcheance(endOfMonth30.toISOString().split('T')[0]);
+                                                return;
+                                            case "45 jours": days = 45; break;
+                                            case "45 jours fin du mois":
+                                                // Logic: +45 days then end of THAT month
+                                                const d45 = new Date(now);
+                                                d45.setDate(d45.getDate() + 45);
+                                                const eom45 = new Date(d45.getFullYear(), d45.getMonth() + 1, 0);
+                                                setDateEcheance(eom45.toISOString().split('T')[0]);
+                                                return;
+                                            case "60 jours": days = 60; break;
+                                            case "60 jours fin du mois":
+                                                const d60 = new Date(now);
+                                                d60.setDate(d60.getDate() + 60);
+                                                const eom60 = new Date(d60.getFullYear(), d60.getMonth() + 1, 0);
+                                                setDateEcheance(eom60.toISOString().split('T')[0]);
+                                                return;
+                                        }
+                                        const target = new Date(now);
+                                        target.setDate(target.getDate() + days);
+                                        setDateEcheance(target.toISOString().split('T')[0]);
+                                    }
+                                }}
+                                className="w-full bg-card border border-border rounded-xl p-3 text-sm h-12"
+                            >
+                                <option value="À réception">À réception</option>
+                                <option value="15 jours">15 jours</option>
+                                <option value="30 jours">30 jours</option>
+                                <option value="30 jours fin du mois">30 jours fin du mois</option>
+                                <option value="45 jours">45 jours</option>
+                                <option value="45 jours fin du mois">45 jours fin du mois</option>
+                                <option value="60 jours">60 jours</option>
+                                <option value="60 jours fin du mois">60 jours fin du mois</option>
+                            </select>
+                        </div>
+                    )}
 
                 </div>
 
-            </div>
-
-            {/* Bottom Bar Total & Save */}
-            <div className="fixed bottom-0 left-0 right-0 p-4 pb-8 bg-background border-t border-border flex items-center gap-4 z-[60]">
-                <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">Total TTC</p>
-                    <div className="flex items-baseline gap-2">
-                        <p className="text-xl font-bold">{calculateTotal().toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p>
-                        <span className="text-xs text-muted-foreground">({items.length} articles)</span>
+                {/* Bottom Bar Total & Save */}
+                <div className="fixed bottom-0 left-0 right-0 p-4 pb-8 bg-background border-t border-border flex items-center gap-4 z-[60]">
+                    <div className="flex-1">
+                        <p className="text-xs text-muted-foreground">Total TTC</p>
+                        <div className="flex items-baseline gap-2">
+                            <p className="text-xl font-bold">{calculateTotal().toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p>
+                            <span className="text-xs text-muted-foreground">({items.length} articles)</span>
+                        </div>
                     </div>
+                    <button
+                        onClick={handleSave}
+                        disabled={isSubmitting}
+                        className="h-12 px-6 rounded-xl bg-primary text-primary-foreground font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-transform disabled:opacity-50"
+                    >
+                        <Save className="h-5 w-5" />
+                        {isSubmitting ? "..." : "Enregistrer"}
+                    </button>
                 </div>
-                <button
-                    onClick={handleSave}
-                    disabled={isSubmitting}
-                    className="h-12 px-6 rounded-xl bg-primary text-primary-foreground font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-transform disabled:opacity-50"
-                >
-                    <Save className="h-5 w-5" />
-                    {isSubmitting ? "..." : "Enregistrer"}
-                </button>
             </div>
         </div>
     );
