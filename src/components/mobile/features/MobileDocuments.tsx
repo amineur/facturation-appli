@@ -2,7 +2,7 @@
 
 import { useData } from "@/components/data-provider";
 import { useState } from "react";
-import { Search, Plus, Filter, FileText, Receipt, ArrowUpRight } from "lucide-react";
+import { Search, Plus, Filter, FileText, Receipt, ArrowUpRight, X, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -16,6 +16,7 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
     const { invoices, quotes, clients } = useData();
     const [activeTab, setActiveTab] = useState<"FACTURE" | "DEVIS">(initialTab);
     const [searchQuery, setSearchQuery] = useState("");
+    const [showSearch, setShowSearch] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
     // -- Filter Options --
@@ -80,12 +81,45 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
     return (
         <div className="flex flex-col h-screen pb-20 bg-background">
             {/* Extended Header */}
-            <div className="bg-background/80 backdrop-blur-xl border-b border-border sticky top-0 z-30 pt-4 px-4 pb-2 space-y-3">
-                <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold tracking-tight">Documents</h1>
-                    <Link href={activeTab === 'FACTURE' ? "/factures/new" : "/devis/new"} className="p-2 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/20 active:scale-90 transition-transform">
-                        <Plus className="h-5 w-5" />
+            <div className="bg-background/80 backdrop-blur-xl border-b border-border sticky top-0 z-30 px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                    <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
+                        <ArrowLeft className="h-6 w-6" />
                     </Link>
+
+                    {showSearch ? (
+                        <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <input
+                                autoFocus
+                                placeholder={activeTab === "FACTURE" ? "Rechercher une facture..." : "Rechercher un devis..."}
+                                className="w-full h-10 pl-9 pr-10 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                            />
+                            <button
+                                onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-between">
+                            <h1 className="text-xl font-bold tracking-tight">Documents</h1>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setShowSearch(true)}
+                                    className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
+                                >
+                                    <Search className="h-5 w-5 text-muted-foreground" />
+                                </button>
+                                <Link href={activeTab === 'FACTURE' ? "/factures/new" : "/devis/new"} className="h-9 w-9 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/20 flex items-center justify-center active:scale-90 transition-transform">
+                                    <Plus className="h-5 w-5" />
+                                </Link>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Tabs */}
@@ -110,16 +144,7 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
                     </button>
                 </div>
 
-                {/* Search */}
-                <div className="relative">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <input
-                        placeholder={activeTab === "FACTURE" ? "Rechercher une facture..." : "Rechercher un devis..."}
-                        className="w-full bg-card h-9 pl-9 pr-4 rounded-xl border border-border/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/50"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
+
 
                 {/* Status Filters Scroll */}
                 <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
