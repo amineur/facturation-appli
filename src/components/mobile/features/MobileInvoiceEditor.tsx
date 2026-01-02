@@ -5,7 +5,7 @@ import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoic
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp, Eye } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp, Eye, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { createInvoice, updateInvoice } from "@/lib/actions/invoices";
@@ -21,7 +21,7 @@ interface MobileEditorProps {
 
 export function MobileEditor({ type, id }: MobileEditorProps) {
     const router = useRouter();
-    const { clients, societe, invoices, quotes, products } = useData();
+    const { clients, societe, invoices, quotes, products, isLoading } = useData();
 
     // Form State
     const searchParams = useSearchParams();
@@ -290,6 +290,15 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
             setIsSubmitting(false);
         }
     };
+
+    // Loading State
+    if (isLoading && !initialDoc && (id || sourceId)) {
+        return (
+            <div className="min-h-screen bg-muted/10 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     // Client Selection View
     if (isSelectingClient) {
