@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, FileText, Users, Menu, Plus, Package } from "lucide-react";
+import { Home, FileText, Users, Menu, Plus, Package, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 // We will implement BottomSheet later
@@ -24,7 +24,7 @@ export function BottomNav() {
         { label: "Documents", icon: FileText, path: "/factures" }, // Maps to MobileDocuments
         { label: "Clients", icon: Users, path: "/clients" },
         { label: "Produits", icon: Package, path: "/produits" },
-        { label: "Menu", icon: Menu, path: "/settings" },
+        { label: "Rapports", icon: BarChart3, path: "/rapports" },
     ];
 
     return (

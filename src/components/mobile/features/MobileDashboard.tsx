@@ -130,7 +130,7 @@ export function MobileDashboard() {
                         <h1 className="text-2xl font-bold tracking-tight">Tableau de bord</h1>
                         <p className="text-sm text-muted-foreground">Activité du {format(filteredData.start, "d MMM", { locale: fr })} au {format(filteredData.end, "d MMM", { locale: fr })}</p>
                     </div>
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-purple-600 shadow-lg" />
+                    <Link href="/settings" className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-purple-600 shadow-lg active:scale-95 transition-transform" />
                 </div>
 
                 {/* Date Filter Scroll */}

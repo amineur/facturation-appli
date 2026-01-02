@@ -90,17 +90,6 @@ export function MobileSettings() {
                 />
             </div>
 
-            {/* Analytics Section */}
-            <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase px-1">Pilotage</p>
-                <MenuItem
-                    icon={BarChart3}
-                    label="Rapports & Statistiques"
-                    href="/rapports"
-                    color="bg-pink-500"
-                />
-            </div>
-
             {/* App Settings */}
             <div className="space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase px-1">Application</p>
