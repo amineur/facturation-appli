@@ -65,11 +65,11 @@ export function MobileProducts() {
     return (
         <div className="min-h-screen bg-muted/10 pb-24">
             {/* Header */}
-            <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b border-white/10 p-4 flex items-center justify-between">
-                <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted">
+            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2">
+                <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
                     <ArrowLeft className="h-6 w-6" />
                 </Link>
-                <div className="flex-1 px-4 flex items-center justify-end gap-2">
+                <div className="flex-1 flex items-center justify-end gap-2">
                     {showSearch ? (
                         <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -89,7 +89,7 @@ export function MobileProducts() {
                         </div>
                     ) : (
                         <div className="flex-1 flex items-center justify-between">
-                            <h1 className="text-lg font-bold">Produits</h1>
+                            <h1 className="text-xl font-bold">Produits</h1>
                             <button
                                 onClick={() => setShowSearch(true)}
                                 className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
