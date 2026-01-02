@@ -2,7 +2,7 @@
 
 import { useData } from "@/components/data-provider";
 import { cn } from "@/lib/utils";
-import { Search, Mail, Phone, MapPin, ChevronRight, User, Plus, X } from "lucide-react";
+import { Search, Mail, Phone, MapPin, ChevronRight, User, Plus, X, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -20,6 +20,9 @@ export function MobileClients() {
         <div className="flex flex-col min-h-screen">
             {/* Header */}
             <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2">
+                <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
+                    <ArrowLeft className="h-6 w-6" />
+                </Link>
                 {showSearch ? (
                     <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
