@@ -68,17 +68,32 @@ export function MobileProducts() {
                 <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted">
                     <ArrowLeft className="h-6 w-6" />
                 </Link>
-                <div className="flex-1 px-4">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <input
-                            placeholder="Rechercher..."
-                            className="w-full h-10 pl-9 pr-4 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                    </div>
+                <div className="flex-1 px-4 flex items-center gap-3">
+                    <h1 className="text-lg font-bold">Produits</h1>
                 </div>
+                {/* Search Toggle or Search Input? 
+                   If I add title, Search might need to be a toggle or smaller.
+                   Let's specificially add a Title Row above the search or simplify.
+                   
+                   Better approach: 
+                   Keep Sticky Header.
+                   Add Title "Produits" at the start of the scrollable content (below header).
+                   But wait, previous file `MobileDashboard` has title in normal flow.
+                   
+                   Let's add the title inside the rendering flow, right after the sticky header?
+                   No, `MobileProducts` starts with `sticky top-0`.
+                   If I put title above, it won't be sticky.
+                   
+                   Let's put the Title *inside* the sticky header, replacing the Back button (since it is a main tab now).
+                   And make search a bit more compact or a separate row.
+                   
+                   Actually, let's look at the "header" div.
+                   It has Back Button, Search Input, Sort Button, Add Button.
+                   That's a lot.
+                   
+                   I will add the Title Block *below* the sticky header but *above* the list.
+                   `<div className="px-4 py-2"><h1 className="text-2xl font-bold">Produits</h1></div>`
+                */}
                 <button
                     onClick={() => setShowSort(!showSort)}
                     className={cn("h-10 w-10 mr-2 rounded-full flex items-center justify-center transition-colors", showSort ? "bg-primary text-black" : "bg-muted text-muted-foreground")}
