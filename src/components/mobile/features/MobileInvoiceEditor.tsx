@@ -37,6 +37,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     const [notes, setNotes] = useState("");
     const [conditions, setConditions] = useState("");
     const [conditionsPaiement, setConditionsPaiement] = useState("À réception");
+    const [datePaiement, setDatePaiement] = useState("");
     const [currentDocNumber, setCurrentDocNumber] = useState("");
 
     // UI States
@@ -75,6 +76,9 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                         if (conf.conditionsPaiement) setConditionsPaiement(conf.conditionsPaiement);
                     } catch (e) { }
                     setCurrentDocNumber(doc.numero);
+                    if ((doc as any).datePaiement) {
+                        try { setDatePaiement(new Date((doc as any).datePaiement).toISOString().split('T')[0]); } catch (e) { }
+                    }
                 }
             } else if (sourceId) {
                 // Duplicate Mode
@@ -158,6 +162,10 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                 docData.dateEcheance = new Date(dateEcheance).toISOString();
             } else {
                 docData.dateValidite = new Date(dateEcheance).toISOString();
+            }
+
+            if (type === "FACTURE" && statut === "Payée" && datePaiement) {
+                docData.datePaiement = new Date(datePaiement).toISOString();
             }
 
             if (id) {
@@ -397,6 +405,17 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                     )}
                                 </select>
                             </div>
+                            {type === "FACTURE" && statut === "Payée" && (
+                                <div className="col-span-2 animate-in slide-in-from-top-2">
+                                    <label className="text-[11px] font-medium text-muted-foreground uppercase mb-1 block">Date de paiement</label>
+                                    <input
+                                        type="date"
+                                        value={datePaiement}
+                                        onChange={e => setDatePaiement(e.target.value)}
+                                        className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
