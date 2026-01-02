@@ -27,20 +27,60 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     const searchParams = useSearchParams();
     const sourceId = searchParams.get("duplicate");
 
-    const [selectedClientId, setSelectedClientId] = useState<string>("");
-    const [items, setItems] = useState<any[]>([{ id: 1, description: "", quantite: 1, prixUnitaire: 0, tva: 20, remise: 0 }]);
+    // -- Data Resolution --
+    const initialDoc = id
+        ? (type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id))
+        : (sourceId ? (type === "FACTURE" ? invoices.find(i => i.id === sourceId) : quotes.find(q => q.id === sourceId)) : null);
+
+    const [hasInitialized, setHasInitialized] = useState(!!initialDoc);
+
+    // Form State (Lazy Init)
+    const [selectedClientId, setSelectedClientId] = useState<string>(() => initialDoc?.clientId || "");
+    const [items, setItems] = useState<any[]>(() => {
+        if (initialDoc?.items) {
+            return initialDoc.items.map((i: any) => ({ ...i, id: Math.random() }));
+        }
+        return [{ id: 1, description: "", quantite: 1, prixUnitaire: 0, tva: 20, remise: 0 }];
+    });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // New Fields
-    const [dateEmission, setDateEmission] = useState(new Date().toISOString().split('T')[0]);
-    // Default 30 days validity/due date
-    const [dateEcheance, setDateEcheance] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-    const [statut, setStatut] = useState<string>("Brouillon");
-    const [notes, setNotes] = useState("");
-    const [conditions, setConditions] = useState("");
-    const [conditionsPaiement, setConditionsPaiement] = useState("À réception");
-    const [datePaiement, setDatePaiement] = useState("");
-    const [currentDocNumber, setCurrentDocNumber] = useState("");
+    const [dateEmission, setDateEmission] = useState(() => {
+        if (initialDoc && (initialDoc as any).dateEmission) {
+            try { return new Date((initialDoc as any).dateEmission).toISOString().split('T')[0]; } catch (e) { }
+        }
+        return new Date().toISOString().split('T')[0];
+    });
+
+    const [dateEcheance, setDateEcheance] = useState(() => {
+        if (initialDoc) {
+            const d = type === "FACTURE" ? (initialDoc as any).dateEcheance : (initialDoc as any).dateValidite;
+            if (d) {
+                try { return new Date(d).toISOString().split('T')[0]; } catch (e) { }
+            }
+        }
+        return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    });
+
+    const [statut, setStatut] = useState<string>(() => initialDoc?.statut || "Brouillon");
+    const [notes, setNotes] = useState(() => initialDoc?.notes || "");
+    const [conditions, setConditions] = useState(() => initialDoc?.conditions || "");
+
+    const [conditionsPaiement, setConditionsPaiement] = useState(() => {
+        try {
+            const conf = initialDoc ? (typeof (initialDoc as any).config === 'string' ? JSON.parse((initialDoc as any).config) : (initialDoc as any).config || {}) : {};
+            return conf.conditionsPaiement || "À réception";
+        } catch { return "À réception"; }
+    });
+
+    const [datePaiement, setDatePaiement] = useState(() => {
+        if (initialDoc && (initialDoc as any).datePaiement) {
+            try { return new Date((initialDoc as any).datePaiement).toISOString().split('T')[0]; } catch (e) { }
+        }
+        return "";
+    });
+
+    const [currentDocNumber, setCurrentDocNumber] = useState(() => initialDoc?.numero || "");
 
     // UI States
     const [clientSearch, setClientSearch] = useState("");
@@ -53,52 +93,48 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     // Preview State
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-    // Initial Load (Edit or Duplicate)
+    // Late Load Effect (if data wasn't ready at mount)
     useEffect(() => {
-        const loadDoc = async () => {
-            if (id) {
-                // Edit Mode
-                const doc = type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id);
-                if (doc) {
-                    setSelectedClientId(doc.clientId);
-                    setItems((doc.items || []).map((i: any) => ({ ...i, id: Math.random() }))); // Regen IDs for local React keys
+        // If we already initialized from data, don't overwrite user edits
+        if (hasInitialized) return;
 
-                    if ((doc as any).dateEmission) {
-                        try { setDateEmission(new Date((doc as any).dateEmission).toISOString().split('T')[0]); } catch (e) { }
-                    }
+        // Try to find doc again (in case invoices loaded late)
+        const doc = id
+            ? (type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id))
+            : (sourceId ? (type === "FACTURE" ? invoices.find(i => i.id === sourceId) : quotes.find(q => q.id === sourceId)) : null);
 
-                    const echeance = type === "FACTURE" ? (doc as any).dateEcheance : (doc as any).dateValidite;
-                    if (echeance) {
-                        try { setDateEcheance(new Date(echeance).toISOString().split('T')[0]); } catch (e) { }
-                    }
+        if (doc) {
+            setSelectedClientId(doc.clientId);
+            setItems((doc.items || []).map((i: any) => ({ ...i, id: Math.random() })));
 
-                    setStatut(doc.statut);
-                    setNotes(doc.notes || "");
-                    setConditions(doc.conditions || "");
-                    setConditions(doc.conditions || "");
-                    try {
-                        const conf = typeof (doc as any).config === 'string' ? JSON.parse((doc as any).config) : (doc as any).config || {};
-                        if (conf.conditionsPaiement) setConditionsPaiement(conf.conditionsPaiement);
-                    } catch (e) { }
-                    setCurrentDocNumber(doc.numero);
-                    if ((doc as any).datePaiement) {
-                        try { setDatePaiement(new Date((doc as any).datePaiement).toISOString().split('T')[0]); } catch (e) { }
-                    }
-                }
-            } else if (sourceId) {
-                // Duplicate Mode
-                const doc = type === "FACTURE" ? invoices.find(i => i.id === sourceId) : quotes.find(q => q.id === sourceId);
-                if (doc) {
-                    setSelectedClientId(doc.clientId);
-                    setItems((doc.items || []).map((i: any) => ({ ...i, id: Math.random() })));
-                    setNotes(doc.notes || "");
-                    setConditions(doc.conditions || "");
-                    // Keep default dates and status for duplicate
-                }
+            if ((doc as any).dateEmission) {
+                try { setDateEmission(new Date((doc as any).dateEmission).toISOString().split('T')[0]); } catch (e) { }
             }
-        };
-        loadDoc();
-    }, [id, sourceId, type, invoices, quotes]);
+
+            const echeance = type === "FACTURE" ? (doc as any).dateEcheance : (doc as any).dateValidite;
+            if (echeance) {
+                try { setDateEcheance(new Date(echeance).toISOString().split('T')[0]); } catch (e) { }
+            }
+
+            setStatut(doc.statut);
+            setNotes(doc.notes || "");
+            setConditions(doc.conditions || "");
+
+            try {
+                const conf = typeof (doc as any).config === 'string' ? JSON.parse((doc as any).config) : (doc as any).config || {};
+                if (conf.conditionsPaiement) setConditionsPaiement(conf.conditionsPaiement);
+            } catch (e) { }
+
+            setCurrentDocNumber(doc.numero);
+            if ((doc as any).datePaiement) {
+                try { setDatePaiement(new Date((doc as any).datePaiement).toISOString().split('T')[0]); } catch (e) { }
+            }
+
+            setHasInitialized(true);
+        }
+
+
+    }, [id, sourceId, type, invoices, quotes, hasInitialized]);
 
     const handleAddItem = () => {
         const newId = Date.now();
