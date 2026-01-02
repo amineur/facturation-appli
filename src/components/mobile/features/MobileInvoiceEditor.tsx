@@ -429,15 +429,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                             className="w-full bg-card border border-border rounded-xl p-3 text-sm min-h-[80px]"
                         />
                     </div>
-                    <div>
-                        <label className="text-xs font-semibold text-muted-foreground mb-2 block">Conditions Spécifiques</label>
-                        <textarea
-                            value={conditions}
-                            onChange={e => setConditions(e.target.value)}
-                            placeholder="Conditions de paiement particulières, mentions légales..."
-                            className="w-full bg-card border border-border rounded-xl p-3 text-sm min-h-[80px]"
-                        />
-                    </div>
+
                 </div>
 
             </div>
