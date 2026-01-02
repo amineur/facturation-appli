@@ -20,7 +20,7 @@ export function BottomNav() {
     };
 
     const navItems = [
-        { label: "Accueil", icon: Home, path: "/" },
+        { label: "Tableau de bord", icon: Home, path: "/" },
         { label: "Documents", icon: FileText, path: "/factures" }, // Maps to MobileDocuments
         { label: "Clients", icon: Users, path: "/clients" },
         { label: "Produits", icon: Package, path: "/products" },

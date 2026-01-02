@@ -66,21 +66,19 @@ export default function MobileApp() {
         }
     } else if (pathname.startsWith("/clients")) {
         const parts = pathname.split('/');
+        // parts = ["", "clients", "new"] or ["", "clients", "123", "edit"]
 
-        // Handle /new -> For now, reuse editor concept or just a stub?
-        if (parts.length > 2 && parts[2] === "new") {
+        if (parts[2] === "new") {
             content = <MobileClientEditor />;
         }
         else if (parts.length > 3 && parts[3] === "edit") {
             const id = parts[2];
             content = <MobileClientEditor id={id} />;
         }
-        // Handle /123 -> Details
-        else if (parts.length > 2) {
+        else if (parts.length > 2 && parts[2]) {
             const id = parts[2];
             content = <MobileClientDetails id={id} />;
         }
-        // Handle List
         else {
             content = <MobileClients />;
         }
@@ -96,6 +94,8 @@ export default function MobileApp() {
         content = <MobileArchives />;
     } else if (pathname.startsWith("/settings")) {
         const parts = pathname.split('/');
+        // pathname = /settings/identity -> parts = ["", "settings", "identity"]
+
         if (parts.length > 2) {
             const sub = parts[2];
             if (sub === 'identity') content = <MobileIdentityEditor />;
@@ -109,7 +109,9 @@ export default function MobileApp() {
             content = <MobileSettings />;
         }
     } else {
-        // 404 or other routes
+        // Fallback for unknown routes - instead of showing dashboard, show a specific error or redirect
+        // For now, let's keep it safe by falling back to Dashboard but maybe logging
+        console.warn("MobileApp: Unknown route", pathname);
         content = <MobileDashboard />;
     }
 

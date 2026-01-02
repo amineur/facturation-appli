@@ -306,30 +306,7 @@ export function MobileDashboard() {
                 </div>
             </div>
 
-            {/* Quick Actions (Horizontal Scroll) */}
-            <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-muted-foreground px-1">Actions Rapides</h3>
-                <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 scrollbar-hide">
-                    <Link href="/factures/new" className="flex flex-col items-center gap-2 min-w-[80px]">
-                        <div className="h-14 w-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 active:scale-95 transition-transform">
-                            <Receipt className="h-6 w-6" />
-                        </div>
-                        <span className="text-xs font-medium">Facture</span>
-                    </Link>
-                    <Link href="/devis/new" className="flex flex-col items-center gap-2 min-w-[80px]">
-                        <div className="h-14 w-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-500 active:scale-95 transition-transform">
-                            <FileText className="h-6 w-6" />
-                        </div>
-                        <span className="text-xs font-medium">Devis</span>
-                    </Link>
-                    <Link href="/clients/new" className="flex flex-col items-center gap-2 min-w-[80px]">
-                        <div className="h-14 w-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 active:scale-95 transition-transform">
-                            <Users className="h-6 w-6" />
-                        </div>
-                        <span className="text-xs font-medium">Client</span>
-                    </Link>
-                </div>
-            </div>
+
 
             {/* Recent Activity */}
             <div className="space-y-4">
