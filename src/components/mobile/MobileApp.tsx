@@ -94,21 +94,15 @@ export default function MobileApp() {
     } else if (pathname.startsWith("/archives")) {
         content = <MobileArchives />;
     } else if (pathname.startsWith("/settings")) {
-        const parts = pathname.split('/');
-        // pathname = /settings/identity -> parts = ["", "settings", "identity"]
+        const view = searchParams.get("view");
 
-        if (parts.length > 2) {
-            const sub = parts[2];
-            if (sub === 'identity') content = <MobileIdentityEditor />;
-            else if (sub === 'users') content = <MobileUsers />;
-            else if (sub === 'email') content = <MobileEmailSettings />;
-            else if (sub === 'pdf') content = <MobilePDFSettings />;
-            else if (sub === 'data') content = <MobileDataManagement />;
-            else if (sub === 'profile') content = <MobileProfile />;
-            else content = <MobileSettings />;
-        } else {
-            content = <MobileSettings />;
-        }
+        if (view === 'identity') content = <MobileIdentityEditor />;
+        else if (view === 'users') content = <MobileUsers />;
+        else if (view === 'email') content = <MobileEmailSettings />;
+        else if (view === 'pdf') content = <MobilePDFSettings />;
+        else if (view === 'data') content = <MobileDataManagement />;
+        else if (view === 'profile') content = <MobileProfile />;
+        else content = <MobileSettings />;
     } else {
         // Fallback for unknown routes - instead of showing dashboard, show a specific error or redirect
         // For now, let's keep it safe by falling back to Dashboard but maybe logging
