@@ -358,7 +358,9 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     {currentDocNumber && <span className="text-[10px] text-muted-foreground">{currentDocNumber}</span>}
                 </div>
 
-                <div className="w-10" />
+                <button onClick={handlePreview} className="p-2 -mr-2 rounded-full hover:bg-muted text-muted-foreground">
+                    <Eye className="h-6 w-6" />
+                </button>
             </div>
 
             <div className="p-4 space-y-6">
