@@ -5,12 +5,13 @@ import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoic
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp, Eye } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { createInvoice, updateInvoice } from "@/lib/actions/invoices";
 import { createQuote, updateQuote } from "@/lib/actions/quotes";
 import { format } from "date-fns";
+import { generateInvoicePDF } from "@/lib/pdf-generator";
 
 interface MobileEditorProps {
     type: "FACTURE" | "DEVIS";
@@ -117,6 +118,55 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
             const tvaAmt = ht * (Number(item.tva || 0) / 100);
             return sum + ht + tvaAmt;
         }, 0);
+    };
+
+    const handlePreview = () => {
+        if (!selectedClientId) {
+            toast.error("Veuillez sélectionner un client d'abord");
+            return;
+        }
+        const client = clients.find(c => c.id === selectedClientId);
+        if (!client || !societe) return;
+
+        const totalTTC = calculateTotal();
+        const totalHT = items.reduce((sum, i) => sum + (Number(i.quantite) * Number(i.prixUnitaire) * (1 - Number(i.remise || 0) / 100)), 0);
+
+        const mappedItems = items.map(i => ({
+            ...i,
+            prixUnitaire: Number(i.prixUnitaire),
+            quantite: Number(i.quantite),
+            tva: Number(i.tva),
+            remise: Number(i.remise || 0),
+            totalLigne: Number(i.quantite) * Number(i.prixUnitaire)
+        }));
+
+        const mockDoc: any = {
+            id: id || "preview",
+            numero: currentDocNumber || "PREVIEW",
+            type: type,
+            dateEmission: new Date(dateEmission).toISOString(),
+            clientId: selectedClientId,
+            items: mappedItems,
+            notes,
+            conditions,
+            statut,
+            totalHT,
+            totalTTC,
+            config: JSON.stringify({ conditionsPaiement }),
+            docType: type // Helper for generator if needed
+        };
+
+        if (type === "FACTURE") {
+            mockDoc.echeance = new Date(dateEcheance).toISOString();
+            if (datePaiement) mockDoc.datePaiement = new Date(datePaiement).toISOString();
+        } else {
+            mockDoc.dateValidite = new Date(dateEcheance).toISOString();
+        }
+
+        const url = generateInvoicePDF(mockDoc, societe, client, { returnBlob: true });
+        if (url && typeof url === 'string') {
+            window.open(url, '_blank');
+        }
     };
 
     const handleSave = async () => {
@@ -594,6 +644,13 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                         <p className="text-[10px] uppercase text-muted-foreground font-semibold">Total TTC</p>
                         <p className="text-xl font-bold">{calculateTotal().toFixed(2)}€</p>
                     </div>
+                    <button
+                        onClick={handlePreview}
+                        className="h-12 w-12 rounded-xl bg-muted text-foreground flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+                        title="Prévisualiser PDF"
+                    >
+                        <Eye className="h-5 w-5" />
+                    </button>
                     <button
                         onClick={handleSave}
                         disabled={isSubmitting}
