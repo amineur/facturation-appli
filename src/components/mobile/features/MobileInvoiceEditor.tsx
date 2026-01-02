@@ -19,7 +19,7 @@ interface MobileEditorProps {
 
 export function MobileEditor({ type, id }: MobileEditorProps) {
     const router = useRouter();
-    const { clients, societe, invoices, quotes } = useData();
+    const { clients, societe, invoices, quotes, products } = useData();
 
     // Form State
     const searchParams = useSearchParams();
@@ -41,7 +41,9 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
     // UI States
     const [clientSearch, setClientSearch] = useState("");
+    const [productSearch, setProductSearch] = useState("");
     const [isSelectingClient, setIsSelectingClient] = useState(false);
+    const [isSelectingProduct, setIsSelectingProduct] = useState(false);
     const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
     const [showAdvanced, setShowAdvanced] = useState(false); // Dates & Status
 
@@ -233,6 +235,59 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
     const selectedClient = clients.find(c => c.id === selectedClientId);
 
+    // Product Selection View
+    if (isSelectingProduct) {
+        const filteredProducts = (products || []).filter(p => p.nom.toLowerCase().includes(productSearch.toLowerCase()));
+        return (
+            <div className="min-h-screen bg-background p-4 flex flex-col">
+                <div className="flex items-center gap-4 mb-6">
+                    <button onClick={() => setIsSelectingProduct(false)} className="p-2 -ml-2"><ArrowLeft /></button>
+                    <input
+                        autoFocus
+                        placeholder="Rechercher produit..."
+                        className="flex-1 bg-transparent border-none text-lg focus:outline-none"
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto space-y-2 pb-20">
+                    {filteredProducts.map(product => (
+                        <button
+                            key={product.id}
+                            onClick={() => {
+                                const newId = Date.now();
+                                setItems([...items, {
+                                    id: newId,
+                                    description: product.nom,
+                                    quantite: 1,
+                                    prixUnitaire: product.prixUnitaire,
+                                    tva: product.tva || 20,
+                                    remise: 0
+                                }]);
+                                setExpandedItemId(newId);
+                                setIsSelectingProduct(false);
+                                toast.success("Produit ajouté");
+                            }}
+                            className="w-full text-left p-4 rounded-xl bg-card border border-border flex items-center gap-3"
+                        >
+                            <div className="h-10 w-10 rounded-full bg-indigo-500/10 flex items-center justify-center font-bold text-indigo-500">
+                                {product.nom[0]}
+                            </div>
+                            <div>
+                                <p className="font-bold">{product.nom}</p>
+                                <p className="text-xs text-muted-foreground">{product.prixUnitaire}€ HT</p>
+                            </div>
+                        </button>
+                    ))}
+                    <Link href="/produits/new" className="w-full text-left p-4 rounded-xl border border-dashed border-indigo-500/50 flex items-center gap-3 text-indigo-500">
+                        <div className="h-10 w-10 rounded-full flex items-center justify-center"><Plus /></div>
+                        <span className="font-bold">Créer nouveau produit</span>
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-muted/10 pb-40">
             {/* Header */}
@@ -259,39 +314,47 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                             : "bg-muted/30 border-dashed border-muted-foreground/30 hover:bg-muted/50"
                     )}
                 >
-                    <div className={cn("h-12 w-12 rounded-full flex items-center justify-center shrink-0", selectedClient ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
-                        <User className="h-6 w-6" />
-                    </div>
-                    <div className="flex-1">
-                        {selectedClient ? (
-                            <>
-                                <p className="font-bold">{selectedClient.nom}</p>
-                                <p className="text-xs text-muted-foreground">{selectedClient.email}</p>
-                            </>
-                        ) : (
-                            <p className="font-medium text-muted-foreground">Sélectionner un client</p>
-                        )}
-                    </div>
-                    {!selectedClient && <Plus className="h-5 w-5 text-muted-foreground" />}
+                    {selectedClient ? (
+                        <>
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary shrink-0">
+                                {selectedClient.nom[0]}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold truncate">{selectedClient.nom}</p>
+                                <p className="text-xs text-muted-foreground truncate">{selectedClient.email || "Sans email"}</p>
+                            </div>
+                            <div className="bg-primary/5 p-2 rounded-full text-primary">
+                                <User className="h-4 w-4" />
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground shrink-0">
+                                <UserPlus className="h-5 w-5" />
+                            </div>
+                            <span className="font-medium text-muted-foreground">Sélectionner un client</span>
+                        </>
+                    )}
                 </button>
 
-                {/* Advanced Info Toggle */}
-                <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
+                {/* Dates & Status */}
+                <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-4">
                     <button
                         onClick={() => setShowAdvanced(!showAdvanced)}
-                        className="w-full flex items-center justify-between p-4 bg-muted/20"
+                        className="flex items-center justify-between w-full"
                     >
-                        <span className="text-sm font-semibold flex items-center gap-2">
-                            <Calendar className="h-4 w-4" /> Dates & Statut
-                        </span>
+                        <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                            <Calendar className="h-4 w-4" />
+                            Dates & Statut
+                        </h3>
                         {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
 
                     {showAdvanced && (
-                        <div className="p-4 space-y-4 animate-in slide-in-from-top-2">
+                        <div className="space-y-4 pt-2 animate-in slide-in-from-top-2">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[11px] font-medium text-muted-foreground uppercase mb-1 block">Date Émission</label>
+                                    <label className="text-[11px] font-medium text-muted-foreground uppercase mb-1 block">Émission</label>
                                     <input
                                         type="date"
                                         value={dateEmission}
@@ -342,15 +405,32 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                 <div className="space-y-4">
                     <div className="flex items-center justify-between px-1">
                         <h3 className="text-sm font-semibold text-muted-foreground">Articles</h3>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setIsSelectingProduct(true)}
+                                className="text-xs bg-primary/10 text-primary px-3 py-1.5 rounded-full font-medium hover:bg-primary/20 transition-colors"
+                            >
+                                + Catalogue
+                            </button>
+                        </div>
                     </div>
 
                     {items.map((item, index) => (
                         <div key={item.id} className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-3 relative group">
+                            <div className="absolute top-2 right-2 opacity-100">
+                                <button
+                                    onClick={() => handleRemoveItem(item.id)}
+                                    className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            </div>
+
                             <input
                                 placeholder="Description"
                                 value={item.description}
                                 onChange={(e) => updateItem(item.id, "description", e.target.value)}
-                                className="w-full bg-transparent border-b border-border/50 pb-2 text-sm font-medium focus:outline-none focus:border-primary"
+                                className="w-[90%] bg-transparent border-b border-border/50 pb-2 text-sm font-medium focus:outline-none focus:border-primary"
                             />
                             <div className="flex gap-3">
                                 <div className="w-16">
@@ -410,31 +490,26 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                     </div>
                                 </div>
                             )}
-
-                            <button onClick={() => handleRemoveItem(item.id)} className="absolute top-2 right-2 p-2 text-muted-foreground hover:text-red-500">
-                                <Trash2 className="h-4 w-4" />
-                            </button>
                         </div>
                     ))}
 
                     <button
                         onClick={handleAddItem}
-                        className="w-full py-3 rounded-xl border border-dashed border-border/50 text-muted-foreground text-sm font-medium hover:bg-muted/30 transition-colors flex items-center justify-center gap-2"
+                        className="w-full py-3 rounded-xl border border-dashed border-border flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                     >
-                        <Plus className="h-4 w-4" /> Ajouter une ligne
+                        <Plus className="h-4 w-4" />
+                        Ajouter une ligne
                     </button>
                 </div>
 
                 {/* Notes & Conditions */}
-                <div className="space-y-4 pt-4 border-t border-border/50">
+                <div className="space-y-4">
                     <div>
-                        <label className="text-xs font-semibold text-muted-foreground mb-2 block flex items-center gap-2">
-                            <FileText className="h-3 w-3" /> Notes (visibles sur PDF)
-                        </label>
+                        <label className="text-xs font-semibold text-muted-foreground mb-2 block">Notes (visibles sur PDF)</label>
                         <textarea
                             value={notes}
                             onChange={e => setNotes(e.target.value)}
-                            placeholder="Notes pour le client..."
+                            placeholder="Message ou détails supplémentaires..."
                             className="w-full bg-card border border-border rounded-xl p-3 text-sm min-h-[80px]"
                         />
                     </div>
@@ -497,11 +572,8 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                 {/* Bottom Bar Total & Save */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 pb-8 bg-background border-t border-border flex items-center gap-4 z-[60]">
                     <div className="flex-1">
-                        <p className="text-xs text-muted-foreground">Total TTC</p>
-                        <div className="flex items-baseline gap-2">
-                            <p className="text-xl font-bold">{calculateTotal().toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p>
-                            <span className="text-xs text-muted-foreground">({items.length} articles)</span>
-                        </div>
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold">Total TTC</p>
+                        <p className="text-xl font-bold">{calculateTotal().toFixed(2)}€</p>
                     </div>
                     <button
                         onClick={handleSave}
