@@ -16,8 +16,8 @@ export function MobileProducts() {
     const [sortBy, setSortBy] = useState<"nom_asc" | "nom_desc" | "prix_asc" | "prix_desc" | "sold_desc" | "sold_asc">("nom_asc");
     const [isEditing, setIsEditing] = useState(false);
     const [editingProduct, setEditingProduct] = useState<any>(null); // null = create, object = edit
-    const [showSort, setShowSort] = useState(false);
     const [showSearch, setShowSearch] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
 
     // Calculate Sales Stats for each product
     const productStats = products.map(p => {
@@ -65,63 +65,65 @@ export function MobileProducts() {
     return (
         <div className="min-h-screen bg-muted/10 pb-24">
             {/* Header */}
-            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2">
-                <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
-                    <ArrowLeft className="h-6 w-6" />
-                </Link>
-                <div className="flex-1 flex items-center justify-end gap-2">
-                    {showSearch ? (
-                        <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <input
-                                autoFocus
-                                placeholder="Rechercher..."
-                                className="w-full h-10 pl-9 pr-10 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                            />
-                            <button
-                                onClick={() => { setShowSearch(false); setSearch(""); }}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-between">
-                            <h1 className="text-xl font-bold">Produits</h1>
-                            <button
-                                onClick={() => setShowSearch(true)}
-                                className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
-                            >
-                                <Search className="h-5 w-5 text-muted-foreground" />
-                            </button>
-                        </div>
-                    )}
-                </div>
-                <button
-                    onClick={() => setShowSort(!showSort)}
-                    className={cn("h-10 w-10 mr-2 rounded-full flex items-center justify-center transition-colors", showSort ? "bg-primary text-black" : "bg-muted text-muted-foreground")}
-                >
-                    <ArrowUpDown className="h-5 w-5" />
-                </button>
-                <button
-                    onClick={handleCreate}
-                    className="h-10 w-10 rounded-full bg-primary text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-                >
-                    <Plus className="h-6 w-6" />
-                </button>
-            </div>
+            <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                    <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
+                        <ArrowLeft className="h-6 w-6" />
+                    </Link>
+                    <div className="flex-1 flex items-center justify-end gap-2">
+                        {showSearch ? (
+                            <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <input
+                                    autoFocus
+                                    placeholder="Rechercher..."
+                                    className="w-full h-10 pl-9 pr-10 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                />
+                                <button
+                                    onClick={() => { setShowSearch(false); setSearch(""); }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-between">
+                                <h1 className="text-xl font-bold">Produits</h1>
+                                <button
+                                    onClick={() => setShowSearch(true)}
+                                    className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
+                                >
+                                    <Search className="h-5 w-5 text-muted-foreground" />
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
-            {/* Sort & KPIs */}
-            {showSort && (
-                <div className="bg-background/95 backdrop-blur border-b border-white/10 p-4 space-y-4 animate-in slide-in-from-top-2">
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center active:scale-95 transition-all", showFilters ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground")}
+                    >
+                        <Filter className="h-5 w-5" />
+                    </button>
+
+                    <button
+                        onClick={handleCreate}
+                        className="h-10 w-10 rounded-full bg-primary text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                    >
+                        <Plus className="h-6 w-6" />
+                    </button>
+                </div>
+
+                {/* Filter Chips - Collapsible */}
+                {showFilters && (
+                    <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide animate-in slide-in-from-top-2 fade-in duration-200">
                         {[
                             { id: "sold_desc", label: "Plus vendus" },
                             { id: "sold_asc", label: "Moins vendus" },
-                            { id: "prix_desc", label: "Prix décroissant" },
-                            { id: "prix_asc", label: "Prix croissant" },
+                            { id: "prix_desc", label: "Prix ↓" },
+                            { id: "prix_asc", label: "Prix ↑" },
                             { id: "nom_asc", label: "A - Z" },
                             { id: "nom_desc", label: "Z - A" },
                         ].map(opt => (
@@ -129,28 +131,32 @@ export function MobileProducts() {
                                 key={opt.id}
                                 onClick={() => setSortBy(opt.id as any)}
                                 className={cn(
-                                    "whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium border transition-colors",
+                                    "whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
                                     sortBy === opt.id
-                                        ? "bg-primary text-primary-foreground border-primary"
-                                        : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                                        ? "bg-foreground text-background border-foreground"
+                                        : "bg-card border-border hover:bg-muted text-muted-foreground"
                                 )}
                             >
                                 {opt.label}
                             </button>
                         ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-muted/30 p-3 rounded-xl border border-border/50">
-                            <p className="text-xs text-muted-foreground">Prix Moyen</p>
-                            <p className="font-bold">{avgPrice.toFixed(2)}€</p>
-                        </div>
-                        <div className="bg-muted/30 p-3 rounded-xl border border-border/50">
-                            <p className="text-xs text-muted-foreground">Total Produits</p>
-                            <p className="font-bold">{totalProducts}</p>
-                        </div>
+                )}
+            </div>
+
+            {/* Stats - Always Visible */}
+            <div className="p-4 pb-3">
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-card p-3 rounded-xl border border-border/50 shadow-sm">
+                        <p className="text-xs text-muted-foreground mb-1">Prix Moyen</p>
+                        <p className="text-lg font-bold">{avgPrice.toFixed(2)}€</p>
+                    </div>
+                    <div className="bg-card p-3 rounded-xl border border-border/50 shadow-sm">
+                        <p className="text-xs text-muted-foreground mb-1">Total Produits</p>
+                        <p className="text-lg font-bold">{totalProducts}</p>
                     </div>
                 </div>
-            )}
+            </div>
 
             {/* List */}
             <div className="p-4 space-y-3">

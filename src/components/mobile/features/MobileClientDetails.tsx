@@ -39,23 +39,25 @@ export function MobileClientDetails({ id }: MobileClientDetailsProps) {
                     <ArrowLeft className="h-6 w-6" />
                 </Link>
                 <h1 className="font-bold text-lg truncate flex-1 text-center pr-8">{client.nom}</h1>
-                <Link href={`/clients/${id}/edit`} className="p-2 -mr-2 rounded-full hover:bg-muted text-primary">
+                <Link href={`/clients/${id}?mode=edit`} className="p-2 -mr-2 rounded-full hover:bg-muted text-primary">
                     <Edit2 className="h-5 w-5" />
                 </Link>
             </div>
 
             <div className="p-4 space-y-6">
                 {/* Info Card */}
-                <div className="bg-card rounded-2xl p-6 border border-border/50 shadow-sm flex flex-col items-center text-center space-y-4">
-                    <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center text-3xl font-bold text-primary">
-                        {client.nom.substring(0, 1).toUpperCase()}
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-bold">{client.nom}</h2>
-                        {client.email && <p className="text-muted-foreground">{client.email}</p>}
+                <div className="bg-card rounded-2xl p-6 border border-border/50 shadow-sm space-y-4">
+                    <div className="flex items-center gap-4">
+                        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0">
+                            {client.nom.substring(0, 1).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h2 className="text-xl font-bold truncate">{client.nom}</h2>
+                            {client.email && <p className="text-sm text-muted-foreground truncate">{client.email}</p>}
+                        </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 w-full pt-4 border-t border-border/50">
+                    <div className="grid grid-cols-2 gap-3 pt-4 border-t border-border/50">
                         <div className="text-center">
                             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Dépensé Total</p>
                             <p className="font-bold text-lg text-emerald-500">
@@ -69,17 +71,46 @@ export function MobileClientDetails({ id }: MobileClientDetailsProps) {
                     </div>
                 </div>
 
-                {/* Contact Actions */}
-                <div className="flex gap-3">
+                {/* Client Details */}
+                <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Informations</h3>
+
                     {client.email && (
-                        <a href={`mailto:${client.email}`} className="flex-1 py-3 bg-card border border-border rounded-xl flex items-center justify-center gap-2 font-medium active:scale-95 transition-transform">
-                            <Mail className="h-5 w-5 text-blue-500" /> Email
-                        </a>
+                        <div className="text-sm">
+                            <p className="text-xs text-muted-foreground mb-1">Email</p>
+                            <p className="font-medium">{client.email}</p>
+                        </div>
                     )}
+
                     {client.telephone && (
-                        <a href={`tel:${client.telephone}`} className="flex-1 py-3 bg-card border border-border rounded-xl flex items-center justify-center gap-2 font-medium active:scale-95 transition-transform">
-                            <Phone className="h-5 w-5 text-emerald-500" /> Appeler
-                        </a>
+                        <div className="text-sm">
+                            <p className="text-xs text-muted-foreground mb-1">Téléphone</p>
+                            <p className="font-medium">{client.telephone}</p>
+                        </div>
+                    )}
+
+                    {client.adresse && (
+                        <div className="text-sm">
+                            <p className="text-xs text-muted-foreground mb-1">Adresse</p>
+                            <p className="font-medium">{client.adresse}</p>
+                            {client.codePostal && client.ville && (
+                                <p className="font-medium">{client.codePostal} {client.ville}</p>
+                            )}
+                        </div>
+                    )}
+
+                    {client.siret && (
+                        <div className="text-sm">
+                            <p className="text-xs text-muted-foreground mb-1">SIRET</p>
+                            <p className="font-medium">{client.siret}</p>
+                        </div>
+                    )}
+
+                    {client.tvaIntracom && (
+                        <div className="text-sm">
+                            <p className="text-xs text-muted-foreground mb-1">TVA Intracommunautaire</p>
+                            <p className="font-medium">{client.tvaIntracom}</p>
+                        </div>
                     )}
                 </div>
 

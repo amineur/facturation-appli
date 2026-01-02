@@ -5,14 +5,17 @@ import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoic
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp, Eye, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp, Eye, Loader2, Settings, Lock, Unlock, X, Mail } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { createInvoice, updateInvoice } from "@/lib/actions/invoices";
-import { createQuote, updateQuote } from "@/lib/actions/quotes";
+import { createInvoice, updateInvoice, toggleInvoiceLock } from "@/lib/actions/invoices";
+import { createQuote, updateQuote, toggleQuoteLock } from "@/lib/actions/quotes";
 import { format } from "date-fns";
+import { fr } from "date-fns/locale";
+import { dataService } from "@/lib/data-service";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { PDFPreviewModal } from '@/components/ui/PDFPreviewModal';
+import { EmailHistoryView } from '@/components/features/EmailHistoryView';
 
 interface MobileEditorProps {
     type: "FACTURE" | "DEVIS";
@@ -21,7 +24,7 @@ interface MobileEditorProps {
 
 export function MobileEditor({ type, id }: MobileEditorProps) {
     const router = useRouter();
-    const { clients, societe, invoices, quotes, products, isLoading } = useData();
+    const { invoices, quotes, clients, products, user, societe, isLoading } = useData();
 
     // Form State
     const searchParams = useSearchParams();
@@ -82,72 +85,165 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
     const [currentDocNumber, setCurrentDocNumber] = useState(() => initialDoc?.numero || "");
 
+    // Configuration State
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [rawConfig, setRawConfig] = useState<any>({});
+    const [showDateColumn, setShowDateColumn] = useState(false);
+    const [showTTCColumn, setShowTTCColumn] = useState(false);
+    const [discountEnabled, setDiscountEnabled] = useState(false);
+    const [discountType, setDiscountType] = useState<'pourcentage' | 'montant'>('pourcentage');
+    const [defaultTva, setDefaultTva] = useState(20);
+
+    // Global Discount
+    const [remiseGlobale, setRemiseGlobale] = useState(0);
+    const [remiseGlobaleType, setRemiseGlobaleType] = useState<'pourcentage' | 'montant'>('pourcentage');
+
+
+    // Autocomplete State
+    const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
+
+    // Lock State
+    const [isLocked, setIsLocked] = useState(false);
+    const isHardLocked = ["Envoyée", "Payée", "Annulée", "Archivée", "Facturé"].includes(statut);
+    const isReadOnly = isHardLocked || isLocked;
+
     // UI States
     const [clientSearch, setClientSearch] = useState("");
     const [productSearch, setProductSearch] = useState("");
     const [isSelectingClient, setIsSelectingClient] = useState(false);
     const [isSelectingProduct, setIsSelectingProduct] = useState(false);
-    const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
-    const [showAdvanced, setShowAdvanced] = useState(false); // Dates & Status
+    const [expandedItemId, setExpandedItemId] = useState<string | number | null>(null);
+    const [showAdvanced, setShowAdvanced] = useState(false); // Dates
+    const [showCommunications, setShowCommunications] = useState(false); // Communications
 
     // Preview State
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-    // Late Load Effect (if data wasn't ready at mount)
+    // Initial Load (Edit or Duplicate)
     useEffect(() => {
-        // If we already initialized from data, don't overwrite user edits
-        if (hasInitialized) return;
+        if (!hasInitialized) {
+            if (id) {
+                // Edit Mode
+                const doc = type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id);
+                if (doc) {
+                    setSelectedClientId(doc.clientId);
+                    // Use a unique ID for React keys to avoid conflicts/drag issues if any
+                    setItems((doc.items || []).map((i: any) => ({ ...i, id: i.id || Math.random().toString(36).substr(2, 9) })));
 
-        // Try to find doc again (in case invoices loaded late)
-        const doc = id
-            ? (type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id))
-            : (sourceId ? (type === "FACTURE" ? invoices.find(i => i.id === sourceId) : quotes.find(q => q.id === sourceId)) : null);
+                    if ((doc as any).dateEmission) {
+                        try { setDateEmission(new Date((doc as any).dateEmission).toISOString().split('T')[0]); } catch (e) { }
+                    }
 
-        if (doc) {
-            setSelectedClientId(doc.clientId);
-            setItems((doc.items || []).map((i: any) => ({ ...i, id: Math.random() })));
+                    const echeance = type === "FACTURE" ? (doc as any).dateEcheance : (doc as any).dateValidite;
+                    if (echeance) {
+                        try { setDateEcheance(new Date(echeance).toISOString().split('T')[0]); } catch (e) { }
+                    }
 
-            if ((doc as any).dateEmission) {
-                try { setDateEmission(new Date((doc as any).dateEmission).toISOString().split('T')[0]); } catch (e) { }
+                    setStatut(doc.statut);
+                    setNotes(doc.notes || "");
+                    setConditions(doc.conditions || "");
+                    setCurrentDocNumber(doc.numero);
+                    if ((doc as any).datePaiement) {
+                        try { setDatePaiement(new Date((doc as any).datePaiement).toISOString().split('T')[0]); } catch (e) { }
+                    }
+
+                    // Config & Lock
+                    const conf = (doc as any).config || {};
+                    // Handle string config if legacy
+                    const parsedConf = typeof conf === 'string' ? JSON.parse(conf) : conf;
+
+                    setRawConfig(parsedConf || {});
+                    setShowDateColumn(parsedConf?.showDateColumn ?? false);
+                    setShowTTCColumn(parsedConf?.showTTCColumn ?? false);
+                    setDiscountEnabled(parsedConf?.discountEnabled ?? false);
+                    setDefaultTva(parsedConf?.defaultTva ?? 20);
+
+                    // Handle Conditions Paiement from config if available (it overwrites basic state if present)
+                    // The basic state 'conditionsPaiement' is passed to config on save.
+                    // On load, we should trust config IF present, else default.
+                    if (parsedConf?.conditionsPaiement) setConditionsPaiement(parsedConf.conditionsPaiement);
+                    else {
+                        try {
+                            // Fallback attempts
+                            const oldConf = typeof (doc as any).config === 'string' ? JSON.parse((doc as any).config) : (doc as any).config || {};
+                            if (oldConf.conditionsPaiement) setConditionsPaiement(oldConf.conditionsPaiement);
+                        } catch (e) { }
+                    }
+
+                    setIsLocked(!!doc.isLocked);
+
+                    setHasInitialized(true);
+                }
+            } else if (sourceId) {
+                // Duplicate Mode
+                const doc = type === "FACTURE" ? invoices.find(i => i.id === sourceId) : quotes.find(q => q.id === sourceId);
+                if (doc) {
+                    setSelectedClientId(doc.clientId);
+                    setItems((doc.items || []).map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) })));
+                    setNotes(doc.notes || "");
+                    setConditions(doc.conditions || "");
+
+                    // Config from source
+                    const conf = (doc as any).config || {};
+                    const parsedConf = typeof conf === 'string' ? JSON.parse(conf) : conf;
+
+                    setRawConfig(parsedConf || {});
+                    setShowDateColumn(parsedConf?.showDateColumn ?? false);
+                    setShowTTCColumn(parsedConf?.showTTCColumn ?? false);
+                    setDiscountEnabled(parsedConf?.discountEnabled ?? false);
+                    setDefaultTva(parsedConf?.defaultTva ?? 20);
+                    if (parsedConf?.conditionsPaiement) setConditionsPaiement(parsedConf.conditionsPaiement);
+
+                    // Initialize global discount from source?
+                    // Usually we don't copy global discount on duplicate? 
+                    // Desktop duplication usually keeps item details but maybe resets global stuffs?
+                    // Safe verification: InvoiceEditor.tsx `buildFormDefaults` copies `remiseGlobale`.
+                    setRemiseGlobale(doc.remiseGlobale || 0);
+                    setRemiseGlobaleType((doc as any).remiseGlobaleType || 'pourcentage');
+
+                    // Do not copy locked state
+                    setIsLocked(false);
+                }
+            } else {
+                // Defaults for new doc
+                const globalConfig = dataService.getGlobalConfig();
+                const defaults = type === "FACTURE" ? globalConfig.invoiceDefaults : globalConfig.quoteDefaults;
+                setShowDateColumn(defaults?.showDate ?? globalConfig.showDateColumn ?? false);
+                setShowTTCColumn(defaults?.showTtc ?? globalConfig.showTTCColumn ?? false);
+                setDiscountEnabled(defaults?.showRemise ?? globalConfig.discountEnabled ?? false);
+                setDiscountType(globalConfig.discountType || 'pourcentage');
+                setDefaultTva(globalConfig.defaultTva ?? 20);
+
+                // Generate document number for new documents
+                if (!sourceId) {
+                    const nextNumber = type === "FACTURE"
+                        ? generateNextInvoiceNumber(invoices)
+                        : generateNextQuoteNumber(quotes);
+                    setCurrentDocNumber(nextNumber);
+                }
+
+                // Init raw config empty so we don't carry garbage
+                setRawConfig({});
             }
-
-            const echeance = type === "FACTURE" ? (doc as any).dateEcheance : (doc as any).dateValidite;
-            if (echeance) {
-                try { setDateEcheance(new Date(echeance).toISOString().split('T')[0]); } catch (e) { }
-            }
-
-            setStatut(doc.statut);
-            setNotes(doc.notes || "");
-            setConditions(doc.conditions || "");
-
-            try {
-                const conf = typeof (doc as any).config === 'string' ? JSON.parse((doc as any).config) : (doc as any).config || {};
-                if (conf.conditionsPaiement) setConditionsPaiement(conf.conditionsPaiement);
-            } catch (e) { }
-
-            setCurrentDocNumber(doc.numero);
-            if ((doc as any).datePaiement) {
-                try { setDatePaiement(new Date((doc as any).datePaiement).toISOString().split('T')[0]); } catch (e) { }
-            }
-
-            setHasInitialized(true);
         }
-
-
     }, [id, sourceId, type, invoices, quotes, hasInitialized]);
 
     const handleAddItem = () => {
-        const newId = Date.now();
-        setItems([...items, { id: newId, description: "", quantite: 1, prixUnitaire: 0, tva: 20, remise: 0 }]);
+        const newId = Math.random().toString(36).substr(2, 9);
+        setItems([...items, { id: newId, description: "", quantite: 1, prixUnitaire: 0, tva: defaultTva, remise: 0 }]); // Use defaultTva state
         setExpandedItemId(newId); // Auto expand new item
     };
 
-    const handleRemoveItem = (id: number) => {
-        setItems(items.filter(i => i.id !== id));
+    const handleUpdateItem = (id: any, field: string, value: any) => {
+        if (isReadOnly) return;
+        setItems(prevItems => prevItems.map(item =>
+            item.id == id ? { ...item, [field]: value } : item
+        ));
     };
 
-    const updateItem = (id: number, field: string, value: any) => {
-        setItems(items.map(i => i.id === id ? { ...i, [field]: value } : i));
+    const handleRemoveItem = (id: number) => {
+        if (isReadOnly) return;
+        setItems(items.filter(item => item.id !== id));
     };
 
     const calculateTotal = () => {
@@ -209,80 +305,183 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
         }
     };
 
-    const handleSave = async () => {
+    const handleToggleLock = async () => {
+        if (!id) return; // Cannot lock unsaved
+
+        // Optimistic toggle? No, Desktop saves first.
+        // We will call handleChangeSave logic but forcing lock state.
+        // Or simpler: Reuse handleSave logic.
+        // We must override the `isLocked` state in the payload.
+
+        setIsSubmitting(true);
+        try {
+            const nextState = !isLocked;
+            await saveDocument(nextState); // New helper
+            setIsLocked(nextState); // Update local state only after success
+            // Server lock call is done inside saveDocument or we do it here?
+            // Desktop: Save -> Then Call ToggleLock Action.
+
+            // Let's create a dedicated saveAndLock function or refactor handleSave.
+            // For minimal risk, I'll inline the logic here mimicking handleSave.
+        } catch (e) {
+            toast.error("Erreur lors du verrouillage");
+            setIsSubmitting(false);
+        }
+    };
+
+    // Extracted calculation logic
+    const calculateTotals = () => {
+        let htAvantRemiseGlobale = 0;
+        let remiseLignesTotal = 0;
+
+        items.forEach(item => {
+            const q = Number(item.quantite || 0);
+            const p = Number(item.prixUnitaire || 0);
+            const montantAvantRemise = q * p;
+            let remiseLigne = 0;
+
+            if (discountEnabled && item.remise && Number(item.remise) > 0) {
+                if (discountType === 'montant') {
+                    remiseLigne = Number(item.remise);
+                } else {
+                    remiseLigne = montantAvantRemise * (Number(item.remise) / 100);
+                }
+            }
+            remiseLignesTotal += remiseLigne;
+            htAvantRemiseGlobale += Math.max(0, montantAvantRemise - remiseLigne);
+        });
+
+        let remiseGlobaleMontant = 0;
+        if (remiseGlobale && remiseGlobale > 0) {
+            if (remiseGlobaleType === 'montant') {
+                remiseGlobaleMontant = remiseGlobale;
+            } else {
+                remiseGlobaleMontant = htAvantRemiseGlobale * (remiseGlobale / 100);
+            }
+        }
+
+        const globalDiscountRatio = htAvantRemiseGlobale > 0
+            ? Math.max(0, 1 - (remiseGlobaleMontant / htAvantRemiseGlobale))
+            : 1;
+
+        const htNet = Math.max(0, htAvantRemiseGlobale - remiseGlobaleMontant);
+
+        const tva = items.reduce((acc, item) => {
+            const q = Number(item.quantite || 0);
+            const p = Number(item.prixUnitaire || 0);
+            const montantAvantRemise = q * p;
+            let remiseLigne = 0;
+            if (discountEnabled && item.remise && Number(item.remise) > 0) {
+                if (discountType === 'montant') {
+                    remiseLigne = Number(item.remise);
+                } else {
+                    remiseLigne = montantAvantRemise * (Number(item.remise) / 100);
+                }
+            }
+            const montantLigneNet = Math.max(0, montantAvantRemise - remiseLigne);
+            const montantLigneFinal = montantLigneNet * globalDiscountRatio;
+            return acc + (montantLigneFinal * (Number(item.tva || 0) / 100));
+        }, 0);
+
+        return {
+            totalHT: htNet,
+            totalTVA: tva,
+            totalTTC: htNet + tva,
+            htAvantRemiseGlobale,
+            remiseLignesTotal,
+            remiseGlobaleMontant
+        };
+    };
+
+    const saveDocument = async (nextLockState?: boolean) => {
         if (!selectedClientId) {
             toast.error("Veuillez sélectionner un client");
             return;
         }
 
+        const totals = calculateTotals();
+        const targetLockState = nextLockState !== undefined ? nextLockState : isLocked;
+
+        const payload: any = {
+            clientId: selectedClientId,
+            items: items.map(i => ({ ...i, id: typeof i.id === 'string' && i.id.length > 10 ? undefined : i.id })),
+            dateEmission: new Date(dateEmission).toISOString(),
+            notes,
+            conditions,
+            statut,
+            totalHT: totals.totalHT,
+            totalTVA: totals.totalTVA,
+            totalTTC: totals.totalTTC,
+            remiseGlobale: remiseGlobale,
+            remiseGlobaleType: remiseGlobaleType,
+            remiseGlobaleMontant: totals.remiseGlobaleMontant,
+            config: JSON.stringify({
+                ...rawConfig,
+                conditionsPaiement,
+                showDateColumn,
+                showTTCColumn,
+                discountEnabled,
+                discountType,
+                defaultTva
+            }),
+            isLocked: targetLockState,
+            societeId: societe?.id,
+            type: type
+        };
+
+        if (type === "FACTURE") {
+            payload.dateEcheance = new Date(dateEcheance).toISOString();
+            payload.numero = currentDocNumber || generateNextInvoiceNumber(invoices);
+        } else {
+            payload.dateValidite = new Date(dateEcheance).toISOString();
+            payload.numero = currentDocNumber || generateNextQuoteNumber(quotes);
+        }
+
+        if (type === "FACTURE" && statut === "Payée" && datePaiement) {
+            payload.datePaiement = new Date(datePaiement).toISOString();
+        }
+
+        if (id) {
+            // Update
+            payload.id = id;
+            // payload.numero = currentDocNumber; // Keep existing number - already in payload
+
+            if (type === "FACTURE") await updateInvoice(payload);
+            else await updateQuote(payload);
+
+            if (nextLockState !== undefined) {
+                if (type === "FACTURE") await toggleInvoiceLock(id, nextLockState);
+                else await toggleQuoteLock(id, nextLockState);
+                toast.success(nextLockState ? "Verrouillé" : "Déverrouillé");
+            } else {
+
+            }
+            // No toast here if not locking, handleSave does it? 
+            // Better to toast here if handleSave calls this.
+            if (nextLockState === undefined) toast.success("Enregistré");
+
+        } else {
+            // Create
+            if (type === "FACTURE") {
+                const res = await createInvoice(payload);
+                if (res?.id) {
+                    toast.success("Facture créée");
+                    router.push("/factures");
+                }
+            } else {
+                const res = await createQuote(payload);
+                if (res?.id) {
+                    toast.success("Devis créé");
+                    router.push("/devis");
+                }
+            }
+        }
+    };
+
+    const handleSave = async () => {
         setIsSubmitting(true);
         try {
-            const mappedItems = items.map(i => {
-                const q = Number(i.quantite);
-                const p = Number(i.prixUnitaire);
-                const r = Number(i.remise || 0);
-                const t = Number(i.tva || 0);
-                const ht = q * p * (1 - r / 100);
-                return {
-                    description: i.description || "Article",
-                    quantite: q,
-                    prixUnitaire: p,
-                    tva: t,
-                    remise: r,
-                    totalLigne: ht // Approximate, backend usually recalcs
-                };
-            });
-
-            const totalTTC = calculateTotal();
-            const totalHT = items.reduce((sum, i) => sum + (Number(i.quantite) * Number(i.prixUnitaire) * (1 - Number(i.remise || 0) / 100)), 0);
-
-            const docData: any = {
-                dateEmission: new Date(dateEmission).toISOString(),
-                clientId: selectedClientId,
-                items: mappedItems,
-                notes,
-                conditions,
-                statut,
-                totalHT,
-                totalTTC,
-                config: JSON.stringify({ conditionsPaiement })
-            };
-
-            if (type === "FACTURE") {
-                docData.dateEcheance = new Date(dateEcheance).toISOString();
-            } else {
-                docData.dateValidite = new Date(dateEcheance).toISOString();
-            }
-
-            if (type === "FACTURE" && statut === "Payée" && datePaiement) {
-                docData.datePaiement = new Date(datePaiement).toISOString();
-            }
-
-            if (id) {
-                // Update
-                docData.id = id;
-                docData.numero = currentDocNumber;
-
-                if (type === "FACTURE") await updateInvoice(docData);
-                else await updateQuote(docData);
-
-                toast.success("Modifications enregistrées");
-            } else {
-                // Create
-                const numero = currentDocNumber || (type === "FACTURE"
-                    ? generateNextInvoiceNumber(invoices)
-                    : generateNextQuoteNumber(quotes));
-                docData.numero = numero;
-
-                if (type === "FACTURE") await createInvoice(docData);
-                else await createQuote(docData);
-
-                toast.success(`${type === "FACTURE" ? "Facture" : "Devis"} créé`);
-            }
-
-            // Invalidate cache (useData usually handles this via realtime or optimistic, but let's be safe)
-            router.push(type === "FACTURE" ? "/factures" : "/devis");
-
+            await saveDocument();
         } catch (error) {
             console.error(error);
             toast.error("Erreur d'enregistrement");
@@ -296,6 +495,102 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
         return (
             <div className="min-h-screen bg-muted/10 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    // Locked View
+    if (isReadOnly && !isSettingsOpen) {
+        // Maybe show a banner?
+    }
+
+    // Configuration View (Bottom Sheet)
+    if (isSettingsOpen) {
+        return (
+            <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
+                {/* Backdrop */}
+                <div
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => setIsSettingsOpen(false)}
+                />
+
+                {/* Sheet */}
+                <div className="relative w-full max-w-lg bg-background rounded-t-3xl sm:rounded-2xl shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+
+                    {/* Header */}
+                    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border/50 p-4 flex items-center justify-between">
+                        <h2 className="font-bold text-lg">Configuration</h2>
+                        <button onClick={() => setIsSettingsOpen(false)} className="p-2 -mr-2 rounded-full hover:bg-muted bg-muted/50">
+                            <X className="h-5 w-5" />
+                        </button>
+                    </div>
+
+                    <div className="p-4 space-y-6 pb-12">
+                        {/* Columns Section */}
+                        <section className="space-y-3">
+                            <h3 className="font-semibold text-muted-foreground uppercase text-xs tracking-wider">Colonnes</h3>
+
+                            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
+                                <span className="font-medium">Date prestation</span>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative cursor-pointer border-2", showDateColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700")} onClick={() => setShowDateColumn(!showDateColumn)}>
+                                    <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", showDateColumn && "translate-x-5")} />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
+                                <span className="font-medium">Prix TTC</span>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative cursor-pointer border-2", showTTCColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700")} onClick={() => setShowTTCColumn(!showTTCColumn)}>
+                                    <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", showTTCColumn && "translate-x-5")} />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
+                                <span className="font-medium">Remises (Lignes)</span>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative cursor-pointer border-2", discountEnabled ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700")} onClick={() => setDiscountEnabled(!discountEnabled)}>
+                                    <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", discountEnabled && "translate-x-5")} />
+                                </div>
+                            </div>
+
+                            {discountEnabled && (
+                                <div className="p-3 bg-muted/20 rounded-xl border space-y-2 animate-in slide-in-from-top-2">
+                                    <span className="text-xs font-medium uppercase text-muted-foreground">Type de remise (Lignes)</span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => setDiscountType('pourcentage')}
+                                            className={cn("p-2 rounded-lg text-xs font-bold border transition-colors", discountType === 'pourcentage' ? "bg-primary/10 border-primary text-primary" : "bg-background border-border")}
+                                        >
+                                            Pourcentage (%)
+                                        </button>
+                                        <button
+                                            onClick={() => setDiscountType('montant')}
+                                            className={cn("p-2 rounded-lg text-xs font-bold border transition-colors", discountType === 'montant' ? "bg-primary/10 border-primary text-primary" : "bg-background border-border")}
+                                        >
+                                            Montant (€)
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+
+                        {/* Defaults Section */}
+                        <section className="space-y-3">
+                            <h3 className="font-semibold text-muted-foreground uppercase text-xs tracking-wider">Valeurs par défaut</h3>
+                            <div>
+                                <label className="text-xs font-medium mb-1 block">TVA par défaut (%)</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-muted/20 border rounded-xl p-3"
+                                    value={defaultTva}
+                                    onChange={(e) => setDefaultTva(Number(e.target.value))}
+                                />
+                            </div>
+                        </section>
+
+                        <button onClick={() => setIsSettingsOpen(false)} className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-xl mt-4">
+                            Terminer
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -403,50 +698,128 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     <ArrowLeft className="h-6 w-6" />
                 </Link>
                 <div className="flex flex-col items-center">
-                    <span className="font-bold text-sm">{id ? "Modifier" : "Nouvelle"} {type === "FACTURE" ? "Facture" : "Devis"}</span>
+                    <span className="font-bold text-sm">{id ? "Modifier" : (type === "FACTURE" ? "Nouvelle" : "Nouveau")} {type === "FACTURE" ? "Facture" : "Devis"}</span>
                     {currentDocNumber && <span className="text-[10px] text-muted-foreground">{currentDocNumber}</span>}
                 </div>
 
-                <button onClick={handlePreview} className="p-2 -mr-2 rounded-full hover:bg-muted text-muted-foreground">
-                    <Eye className="h-6 w-6" />
-                </button>
+                <div className="flex items-center gap-1 -mr-2">
+                    <button onClick={handleToggleLock} className="p-2 rounded-full hover:bg-muted text-muted-foreground" disabled={!id}>
+                        {isLocked ? <Lock className="h-5 w-5 text-orange-500" /> : <Unlock className="h-5 w-5" />}
+                    </button>
+                    <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-full hover:bg-muted text-primary">
+                        <Settings className="h-5 w-5" />
+                    </button>
+                    <button onClick={handlePreview} className="p-2 rounded-full hover:bg-muted text-muted-foreground">
+                        <Eye className="h-6 w-6" />
+                    </button>
+                </div>
             </div>
 
             <div className="p-4 space-y-6">
                 {/* Client Selector */}
-                <button
-                    onClick={() => setIsSelectingClient(true)}
-                    className={cn(
-                        "w-full p-4 rounded-2xl border flex items-center gap-4 transition-all text-left",
-                        selectedClient
-                            ? "bg-card border-border shadow-sm"
-                            : "bg-muted/30 border-dashed border-muted-foreground/30 hover:bg-muted/50"
-                    )}
-                >
-                    {selectedClient ? (
-                        <>
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary shrink-0">
-                                {selectedClient.nom[0]}
+                {selectedClient ? (
+                    <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-3">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3 flex-1">
+                                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg shrink-0">
+                                    {selectedClient.nom[0]}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-base">{selectedClient.nom}</p>
+                                    {selectedClient.email && (
+                                        <p className="text-xs text-muted-foreground truncate">{selectedClient.email}</p>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-bold truncate">{selectedClient.nom}</p>
-                                <p className="text-xs text-muted-foreground truncate">{selectedClient.email || "Sans email"}</p>
-                            </div>
-                            <div className="bg-primary/5 p-2 rounded-full text-primary">
+                            <button
+                                onClick={() => setIsSelectingClient(true)}
+                                disabled={isReadOnly}
+                                className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                                 <User className="h-4 w-4" />
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground shrink-0">
-                                <UserPlus className="h-5 w-5" />
-                            </div>
-                            <span className="font-medium text-muted-foreground">Sélectionner un client</span>
-                        </>
-                    )}
-                </button>
+                            </button>
+                        </div>
 
-                {/* Dates & Status */}
+                        {/* Client Details */}
+                        <div className="space-y-2 pt-2 border-t border-border/50">
+                            {selectedClient.email && (
+                                <div className="text-xs">
+                                    <p className="text-muted-foreground font-medium mb-1">Email</p>
+                                    <p className="text-foreground">{selectedClient.email}</p>
+                                </div>
+                            )}
+                            {selectedClient.telephone && (
+                                <div className="text-xs">
+                                    <p className="text-muted-foreground font-medium mb-1">Téléphone</p>
+                                    <p className="text-foreground">{selectedClient.telephone}</p>
+                                </div>
+                            )}
+                            {selectedClient.adresse && (
+                                <div className="text-xs">
+                                    <p className="text-muted-foreground font-medium mb-1">Adresse</p>
+                                    <p className="text-foreground">{selectedClient.adresse}</p>
+                                    {selectedClient.codePostal && selectedClient.ville && (
+                                        <p className="text-foreground">{selectedClient.codePostal} {selectedClient.ville}</p>
+                                    )}
+                                </div>
+                            )}
+                            {selectedClient.siret && (
+                                <div className="text-xs">
+                                    <p className="text-muted-foreground font-medium mb-1">SIRET</p>
+                                    <p className="text-foreground">{selectedClient.siret}</p>
+                                </div>
+                            )}
+                            {selectedClient.tvaIntracom && (
+                                <div className="text-xs">
+                                    <p className="text-muted-foreground font-medium mb-1">TVA Intracommunautaire</p>
+                                    <p className="text-foreground">{selectedClient.tvaIntracom}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => setIsSelectingClient(true)}
+                        disabled={isReadOnly}
+                        className="w-full p-4 rounded-2xl border border-dashed border-muted-foreground/30 bg-muted/30 hover:bg-muted/50 flex items-center gap-4 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground shrink-0">
+                            <UserPlus className="h-5 w-5" />
+                        </div>
+                        <span className="font-medium text-muted-foreground">Sélectionner un client</span>
+                    </button>
+                )}
+
+
+                {/* Status - Only visible when editing existing document */}
+                {id && (
+                    <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm">
+                        <label className="text-[11px] font-medium text-muted-foreground uppercase mb-2 block">Statut</label>
+                        <select
+                            value={statut}
+                            onChange={e => setStatut(e.target.value)}
+                            disabled={isReadOnly}
+                            className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-medium"
+                        >
+                            <option value="Brouillon">Brouillon</option>
+                            <option value="Envoyée">Envoyée</option>
+                            {type === "FACTURE" ? (
+                                <>
+                                    <option value="Payée">Payée</option>
+                                    <option value="En retard">En retard</option>
+                                    <option value="Annulée">Annulée</option>
+                                </>
+                            ) : (
+                                <>
+                                    <option value="Accepté">Accepté</option>
+                                    <option value="Refusé">Refusé</option>
+                                </>
+                            )}
+                        </select>
+                    </div>
+                )}
+
+                {/* Dates */}
                 <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-4">
                     <button
                         onClick={() => setShowAdvanced(!showAdvanced)}
@@ -454,7 +827,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     >
                         <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
                             <Calendar className="h-4 w-4" />
-                            Dates & Statut
+                            Dates
                         </h3>
                         {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
@@ -468,6 +841,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                         type="date"
                                         value={dateEmission}
                                         onChange={e => setDateEmission(e.target.value)}
+                                        disabled={isReadOnly}
                                         className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
                                     />
                                 </div>
@@ -479,32 +853,10 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                         type="date"
                                         value={dateEcheance}
                                         onChange={e => setDateEcheance(e.target.value)}
+                                        disabled={isReadOnly}
                                         className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <label className="text-[11px] font-medium text-muted-foreground uppercase mb-1 block">Statut</label>
-                                <select
-                                    value={statut}
-                                    onChange={e => setStatut(e.target.value)}
-                                    className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
-                                >
-                                    <option value="Brouillon">Brouillon</option>
-                                    <option value="Envoyée">Envoyée</option>
-                                    {type === "FACTURE" ? (
-                                        <>
-                                            <option value="Payée">Payée</option>
-                                            <option value="En retard">En retard</option>
-                                            <option value="Annulée">Annulée</option>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <option value="Accepté">Accepté</option>
-                                            <option value="Refusé">Refusé</option>
-                                        </>
-                                    )}
-                                </select>
                             </div>
                             {type === "FACTURE" && statut === "Payée" && (
                                 <div className="col-span-2 animate-in slide-in-from-top-2">
@@ -513,6 +865,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                         type="date"
                                         value={datePaiement}
                                         onChange={e => setDatePaiement(e.target.value)}
+                                        disabled={isReadOnly}
                                         className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
                                     />
                                 </div>
@@ -521,101 +874,234 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     )}
                 </div>
 
-                {/* Items */}
+                {/* Communications - Only for existing documents */}
+                {id && (
+                    <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-4">
+                        <button
+                            onClick={() => setShowCommunications(!showCommunications)}
+                            className="flex items-center justify-between w-full"
+                        >
+                            <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                <Mail className="h-4 w-4" />
+                                Communications
+                            </h3>
+                            {showCommunications ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </button>
+
+                        {showCommunications && (
+                            <div className="pt-2 space-y-3 animate-in slide-in-from-top-2">
+                                <EmailHistoryView emails={initialDoc?.emails || []} />
+
+                                {statut !== 'Annulée' && (
+                                    <button
+                                        onClick={() => toast.info("Fonctionnalité d'envoi d'email à venir")}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 rounded-lg transition-all text-sm font-medium"
+                                    >
+                                        <Mail className="h-4 w-4" />
+                                        Envoyer un email
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div className="space-y-4">
                     <div className="flex items-center justify-between px-1">
                         <h3 className="text-sm font-semibold text-muted-foreground">Articles</h3>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setIsSelectingProduct(true)}
-                                className="text-xs bg-primary/10 text-primary px-3 py-1.5 rounded-full font-medium hover:bg-primary/20 transition-colors"
-                            >
-                                + Catalogue
-                            </button>
-                        </div>
                     </div>
 
-                    {items.map((item, index) => (
-                        <div key={item.id} className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-3 relative group">
-                            <div className="absolute top-2 right-2 opacity-100">
+
+
+                    {items.map((item, index) => {
+                        const prixTTC = (item.prixUnitaire || 0) * (1 + (item.tva || 0) / 100);
+                        const filteredProducts = products?.filter(p =>
+                            p.nom.toLowerCase().includes((item.description || "").toLowerCase())
+                        ).slice(0, 5) || [];
+
+                        return (
+                            <div key={item.id} className={cn("bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-4 relative group transition-all", focusedItemId === item.id ? "z-20 ring-1 ring-primary/20" : "z-0")}>
+                                <div className="absolute top-3 right-3 opacity-100 z-10">
+                                    {!isReadOnly && (
+                                        <button
+                                            onClick={() => handleRemoveItem(item.id)}
+                                            className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors bg-background/50 border border-transparent hover:border-border"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="pr-10 relative">
+                                    <label className="text-[10px] uppercase text-muted-foreground font-semibold mb-1 block">Description</label>
+                                    <input
+                                        placeholder="Nom de l'article ou service"
+                                        value={item.description}
+                                        onChange={(e) => {
+                                            handleUpdateItem(item.id, "description", e.target.value);
+                                            setFocusedItemId(item.id);
+                                        }}
+                                        onFocus={() => setFocusedItemId(item.id)}
+                                        onBlur={() => setTimeout(() => setFocusedItemId(null), 400)}
+                                        disabled={isReadOnly}
+                                        className="w-full bg-transparent border-b border-border pb-2 text-sm font-medium focus:outline-none focus:border-primary placeholder:text-muted-foreground/50 disabled:opacity-50"
+                                        autoComplete="off"
+                                    />
+
+                                    {/* Autocomplete Dropdown */}
+                                    {focusedItemId === item.id && filteredProducts.length > 0 && (
+                                        <div
+                                            className="absolute top-full left-0 right-0 z-[100] mt-1 bg-white dark:bg-zinc-950 text-popover-foreground rounded-lg border border-border/50 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100 flex flex-col"
+                                        >
+                                            {filteredProducts.map((product) => (
+                                                <button
+                                                    key={product.id}
+                                                    type="button"
+                                                    className="w-full text-left px-4 py-3 text-sm hover:bg-muted/50 active:bg-muted flex items-center justify-between group/product border-b last:border-0 border-border/50"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleUpdateItem(item.id, "description", product.nom);
+                                                        handleUpdateItem(item.id, "prixUnitaire", product.prixUnitaire);
+                                                        handleUpdateItem(item.id, "tva", product.tva || 20);
+                                                        setFocusedItemId(null);
+                                                    }}
+                                                >
+                                                    <span className="font-medium truncate pr-2">{product.nom}</span>
+                                                    <span className="text-primary font-bold text-xs whitespace-nowrap bg-primary/10 px-2 py-1 rounded-full">
+                                                        {product.prixUnitaire}€
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-3">
+                                    {/* Date Column - Full Width if enabled */}
+                                    {showDateColumn && (
+                                        <div className="bg-muted/10 p-2 rounded-lg border border-border/50">
+                                            <label className="text-[10px] text-muted-foreground uppercase font-semibold block mb-1">Date Prestation</label>
+                                            <input
+                                                type="date"
+                                                value={item.date ? new Date(item.date).toISOString().split('T')[0] : ""}
+                                                onChange={(e) => handleUpdateItem(item.id, "date", e.target.value)}
+                                                disabled={isReadOnly}
+                                                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary disabled:opacity-50"
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-12 gap-3 items-start">
+                                        {/* Qty */}
+                                        <div className="col-span-3 sm:col-span-2">
+                                            <label className="text-[10px] text-muted-foreground uppercase font-semibold block text-center mb-1">Qté</label>
+                                            <input
+                                                type="number"
+                                                value={item.quantite}
+                                                onChange={(e) => handleUpdateItem(item.id, "quantite", e.target.value)}
+                                                disabled={isReadOnly}
+                                                className="w-full bg-muted/30 border border-transparent focus:bg-background focus:border-primary rounded-lg py-2 px-1 text-sm text-center transition-colors disabled:opacity-50"
+                                            />
+                                        </div>
+
+                                        {/* Middle Block: Prices & Discount */}
+                                        <div className="col-span-6 sm:col-span-7 space-y-2">
+                                            <div className="flex gap-2">
+                                                <div className="flex-1">
+                                                    <label className="text-[10px] text-muted-foreground uppercase font-semibold block text-center mb-1">Prix HT</label>
+                                                    <input
+                                                        type="number"
+                                                        value={item.prixUnitaire}
+                                                        onChange={(e) => handleUpdateItem(item.id, "prixUnitaire", e.target.value)}
+                                                        disabled={isReadOnly}
+                                                        className="w-full bg-muted/30 border border-transparent focus:bg-background focus:border-primary rounded-lg py-2 px-1 text-sm text-center transition-colors disabled:opacity-50"
+                                                    />
+                                                </div>
+                                                {showTTCColumn && (
+                                                    <div className="flex-1">
+                                                        <label className="text-[10px] text-muted-foreground uppercase font-semibold block text-center mb-1">TTC</label>
+                                                        <input
+                                                            type="number"
+                                                            value={parseFloat(prixTTC.toFixed(2))}
+                                                            onChange={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                const rate = 1 + (item.tva || 0) / 100;
+                                                                handleUpdateItem(item.id, "prixUnitaire", val / rate);
+                                                            }}
+                                                            disabled={isReadOnly}
+                                                            className="w-full bg-muted/30 border border-transparent focus:bg-background focus:border-primary rounded-lg py-2 px-1 text-sm text-center transition-colors disabled:opacity-50"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {discountEnabled && (
+                                                <div className="relative">
+                                                    <label className="text-[10px] text-muted-foreground uppercase font-semibold block mb-1">Remise ({discountType === 'pourcentage' ? '%' : '€'})</label>
+                                                    <input
+                                                        type="number"
+                                                        value={item.remise}
+                                                        onChange={(e) => handleUpdateItem(item.id, "remise", e.target.value)}
+                                                        disabled={isReadOnly}
+                                                        className="w-full bg-orange-500/5 border border-orange-500/20 focus:bg-background focus:border-orange-500 rounded-lg py-2 px-2 text-sm text-orange-700 placeholder:text-orange-300 transition-colors disabled:opacity-50"
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Total */}
+                                        <div className="col-span-3 text-right">
+                                            <label className="text-[10px] text-muted-foreground uppercase font-semibold block mb-1">Total</label>
+                                            <p className="py-2 text-sm font-bold truncate text-primary">
+                                                {(() => {
+                                                    const montantAvantRemise = (item.quantite || 0) * (item.prixUnitaire || 0);
+                                                    let remise = 0;
+                                                    if (discountEnabled && item.remise) {
+                                                        if (discountType === 'montant') remise = Number(item.remise);
+                                                        else remise = montantAvantRemise * (Number(item.remise) / 100);
+                                                    }
+                                                    return Math.max(0, montantAvantRemise - remise).toFixed(2);
+                                                })()}€
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Expanded Fields Toggle (Only TVA left if Discount acts as column) */}
                                 <button
-                                    onClick={() => handleRemoveItem(item.id)}
-                                    className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                    onClick={() => setExpandedItemId(expandedItemId === item.id ? null : item.id)}
+                                    className="w-full flex items-center justify-center gap-1 py-1 text-xs text-muted-foreground hover:text-primary transition-colors border-t border-dashed border-border/50 mt-2 pt-2"
                                 >
-                                    <Trash2 className="h-4 w-4" />
+                                    {expandedItemId === item.id ? "Masquer TVA" : `TVA (${item.tva || defaultTva}%)`}
+                                    {expandedItemId === item.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                                 </button>
-                            </div>
 
-                            <input
-                                placeholder="Description"
-                                value={item.description}
-                                onChange={(e) => updateItem(item.id, "description", e.target.value)}
-                                className="w-[90%] bg-transparent border-b border-border/50 pb-2 text-sm font-medium focus:outline-none focus:border-primary"
-                            />
-                            <div className="flex gap-3">
-                                <div className="w-16">
-                                    <label className="text-[9px] text-muted-foreground uppercase block text-center">Qté</label>
-                                    <input
-                                        type="number"
-                                        value={item.quantite}
-                                        onChange={(e) => updateItem(item.id, "quantite", e.target.value)}
-                                        className="w-full bg-muted/30 rounded-lg px-2 py-2 text-sm text-center"
-                                    />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-[9px] text-muted-foreground uppercase block text-center">Prix €</label>
-                                    <input
-                                        type="number"
-                                        value={item.prixUnitaire}
-                                        onChange={(e) => updateItem(item.id, "prixUnitaire", e.target.value)}
-                                        className="w-full bg-muted/30 rounded-lg px-2 py-2 text-sm text-center"
-                                    />
-                                </div>
-                                <div className="w-24 text-right">
-                                    <label className="text-[9px] text-muted-foreground uppercase block">Total</label>
-                                    <p className="py-2 text-sm font-bold">
-                                        {(item.quantite * item.prixUnitaire * (1 - (item.remise || 0) / 100)).toFixed(2)}€
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Extended Fields Toggle */}
-                            <button
-                                onClick={() => setExpandedItemId(expandedItemId === item.id ? null : item.id)}
-                                className="text-xs text-primary flex items-center gap-1 mt-2"
-                            >
-                                {expandedItemId === item.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                {expandedItemId === item.id ? "Masquer options" : "TVA & Remise"}
-                            </button>
-
-                            {expandedItemId === item.id && (
-                                <div className="grid grid-cols-2 gap-4 mt-2 pt-3 border-t border-border/50 animate-in slide-in-from-top-1">
-                                    <div>
-                                        <label className="text-[10px] text-muted-foreground uppercase block mb-1">TVA (%)</label>
-                                        <input
-                                            type="number"
-                                            value={item.tva}
-                                            onChange={(e) => updateItem(item.id, "tva", e.target.value)}
-                                            className="w-full bg-muted/30 rounded-lg px-2 py-2 text-sm"
-                                        />
+                                {expandedItemId === item.id && (
+                                    <div className="grid grid-cols-2 gap-4 pt-2 animate-in slide-in-from-top-1">
+                                        <div className="col-span-1">
+                                            <label className="text-[10px] text-muted-foreground uppercase block mb-1">Taux TVA (%)</label>
+                                            <input
+                                                type="number"
+                                                value={item.tva}
+                                                onChange={(e) => handleUpdateItem(item.id, "tva", e.target.value)}
+                                                disabled={isReadOnly}
+                                                className="w-full bg-muted/30 rounded-lg px-2 py-2 text-sm disabled:opacity-50"
+                                            />
+                                        </div>
+                                        <div className="col-span-1 flex items-end justify-end pb-2">
+                                            <span className="text-[10px] text-muted-foreground italic">Appliqué au montant HT</span>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] text-muted-foreground uppercase block mb-1">Remise (%)</label>
-                                        <input
-                                            type="number"
-                                            value={item.remise}
-                                            onChange={(e) => updateItem(item.id, "remise", e.target.value)}
-                                            className="w-full bg-muted/30 rounded-lg px-2 py-2 text-sm"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                                )}
+                            </div>
+                        );
+                    })}
 
                     <button
                         onClick={handleAddItem}
-                        className="w-full py-3 rounded-xl border border-dashed border-border flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                        disabled={isReadOnly}
+                        className="w-full py-3 rounded-xl border border-dashed border-border flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Plus className="h-4 w-4" />
                         Ajouter une ligne
@@ -630,6 +1116,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                             value={notes}
                             onChange={e => setNotes(e.target.value)}
                             placeholder="Message ou détails supplémentaires..."
+                            disabled={isReadOnly}
                             className="w-full bg-card border border-border rounded-xl p-3 text-sm min-h-[80px]"
                         />
                     </div>
@@ -689,11 +1176,49 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
                 </div>
 
+                <div className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Remise Globale</label>
+                        <div className="flex bg-muted rounded-lg p-1">
+                            <button
+                                onClick={() => setRemiseGlobaleType('pourcentage')}
+                                className={cn("px-3 py-1 text-xs rounded-md transition-all", remiseGlobaleType === 'pourcentage' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+                            >
+                                %
+                            </button>
+                            <button
+                                onClick={() => setRemiseGlobaleType('montant')}
+                                className={cn("px-3 py-1 text-xs rounded-md transition-all", remiseGlobaleType === 'montant' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+                            >
+                                €
+                            </button>
+                        </div>
+                    </div>
+                    <input
+                        type="number"
+                        value={remiseGlobale}
+                        onChange={(e) => setRemiseGlobale(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-muted/30 rounded-xl p-3 text-sm"
+                        placeholder={remiseGlobaleType === 'pourcentage' ? "Ex: 10%" : "Ex: 50€"}
+                    />
+
+                    <div className="space-y-2 pt-2 border-t border-dashed">
+                        <div className="flex justify-between text-sm text-muted-foreground">
+                            <span>Total HT</span>
+                            <span>{calculateTotals().totalHT.toFixed(2)}€</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-muted-foreground">
+                            <span>Total TVA</span>
+                            <span>{calculateTotals().totalTVA.toFixed(2)}€</span>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Bottom Bar Total & Save */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 pb-8 bg-background border-t border-border flex items-center gap-4 z-[60]">
                     <div className="flex-1">
                         <p className="text-[10px] uppercase text-muted-foreground font-semibold">Total TTC</p>
-                        <p className="text-xl font-bold">{calculateTotal().toFixed(2)}€</p>
+                        <p className="text-xl font-bold">{calculateTotals().totalTTC.toFixed(2)}€</p>
                     </div>
                     <button
                         onClick={handlePreview}

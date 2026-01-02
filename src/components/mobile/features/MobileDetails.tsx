@@ -224,7 +224,7 @@ export function MobileDetails({ id, type }: MobileDetailsProps) {
                     <Download className="h-5 w-5" />
                 </button>
                 <Link
-                    href={type === "FACTURE" ? `/factures/${id}/edit` : `/devis/${id}/edit`}
+                    href={type === "FACTURE" ? `/factures/${id}?mode=edit` : `/devis/${id}?mode=edit`}
                     className="flex-1 bg-card border border-border text-foreground font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
                 >
                     <Edit2 className="h-4 w-4" />

@@ -46,20 +46,14 @@ export default function MobileApp() {
         if (parts.length > 2 && parts[2] === "new") {
             content = <MobileEditor type={isInvoice ? "FACTURE" : "DEVIS"} />;
         }
-        // Handle /123/edit -> Editor
-        else if (parts.length > 3 && parts[3] === "edit") {
-            const id = parts[2];
-            content = <MobileEditor id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
-        }
-        // Handle /123/send -> Email Composer
-        else if (parts.length > 3 && parts[3] === "send") {
-            const id = parts[2];
-            content = <MobileEmailComposer id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
-        }
-        // Handle /123 -> Details
+        // Handle /123 -> Details or Editor (via query param)
         else if (parts.length > 2) {
             const id = parts[2];
-            content = <MobileDetails id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
+            if (searchParams.get("mode") === "edit") {
+                content = <MobileEditor id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
+            } else {
+                content = <MobileDetails id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
+            }
         }
         // Handle List
         else {
@@ -72,13 +66,13 @@ export default function MobileApp() {
         if (parts[2] === "new") {
             content = <MobileClientEditor />;
         }
-        else if (parts.length > 3 && parts[3] === "edit") {
-            const id = parts[2];
-            content = <MobileClientEditor id={id} />;
-        }
         else if (parts.length > 2 && parts[2]) {
             const id = parts[2];
-            content = <MobileClientDetails id={id} />;
+            if (searchParams.get("mode") === "edit") {
+                content = <MobileClientEditor id={id} />;
+            } else {
+                content = <MobileClientDetails id={id} />;
+            }
         }
         else {
             content = <MobileClients />;
