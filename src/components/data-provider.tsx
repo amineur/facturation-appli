@@ -269,6 +269,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
                 if (clientsRes.success && clientsRes.data) setClients(clientsRes.data);
                 if (productsRes.success && productsRes.data) setProducts(productsRes.data);
+
+                // CACHE SAVE
+                if (typeof window !== 'undefined') {
+                    try {
+                        const cache = {
+                            invoices: dashboardRes.success ? dashboardRes.data?.invoices : [],
+                            quotes: dashboardRes.success ? dashboardRes.data?.quotes : [],
+                            clients: clientsRes.success ? clientsRes.data : [],
+                            products: productsRes.success ? productsRes.data : [],
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem(`glassy_cache_${currentSocieteId}`, JSON.stringify(cache));
+                    } catch (e) { console.error("Cache save error", e); }
+                }
             } else {
                 // Should be unreachable due to onboarding check, but guard anyway
 
@@ -302,7 +316,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         // Initial fetch triggers
         if (!authChecked) { // Only fetch if we haven't resolved auth yet (or refreshing)
-            fetchData();
+            // Try to restore cache first for instant load
+            let cacheRestored = false;
+            if (typeof window !== 'undefined') {
+                try {
+                    const storedSoc = localStorage.getItem("glassy_active_societe");
+                    if (storedSoc) {
+                        const s = JSON.parse(storedSoc);
+                        setSociete(s);
+                        const c = localStorage.getItem(`glassy_cache_${s.id}`);
+                        if (c) {
+                            const cache = JSON.parse(c);
+                            if (cache.invoices) setInvoices(cache.invoices);
+                            if (cache.quotes) setQuotes(cache.quotes);
+                            if (cache.clients) setClients(cache.clients);
+                            if (cache.products) setProducts(cache.products);
+                            // Instant Unlock
+                            setIsLoading(false);
+                            cacheRestored = true;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Cache restore error", e);
+                }
+            }
+
+            fetchData(cacheRestored); // Silent fetch if cache restored
         }
     }, [pathname, authChecked, user]);
 
