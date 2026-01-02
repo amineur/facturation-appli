@@ -52,7 +52,7 @@ export function BottomNav() {
             {['/', '/dashboard', '/factures', '/devis', '/clients'].includes(pathname) && (
                 <div className="fixed bottom-20 right-4 z-50 pb-[env(safe-area-inset-bottom)]">
                     <button
-                        className="h-14 w-14 rounded-full bg-primary text-primary-foreground dark:!text-black shadow-lg flex items-center justify-center active:scale-90 transition-transform touch-manipulation"
+                        className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-90 transition-transform touch-manipulation"
                         onClick={() => router.push('/factures/new')}
                         aria-label="Créer un nouveau document"
                     >

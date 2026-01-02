@@ -186,7 +186,7 @@ export function MobileReports() {
                         className={cn(
                             "whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium border transition-colors",
                             dateRange === opt.key
-                                ? "bg-primary text-primary-foreground dark:!text-black border-primary"
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
                         )}
                     >
