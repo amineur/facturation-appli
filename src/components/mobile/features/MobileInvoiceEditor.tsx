@@ -646,7 +646,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     </div>
                     <button
                         onClick={handlePreview}
-                        className="h-12 w-12 rounded-xl bg-muted text-foreground flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+                        className="h-12 w-12 rounded-xl bg-secondary border border-border text-secondary-foreground flex items-center justify-center shadow-sm active:scale-95 transition-transform"
                         title="Prévisualiser PDF"
                     >
                         <Eye className="h-5 w-5" />
