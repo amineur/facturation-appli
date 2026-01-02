@@ -35,7 +35,7 @@ export default function CommunicationsPage() {
                 <div>
                     <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent flex items-center gap-2">
                         <Send className="h-8 w-8" />
-                        Communications
+                        Historique d'envoi
                     </h1>
                     <p className="text-sm text-muted-foreground mt-1">
                         Facture {invoice.numero} - {client?.nom}
@@ -48,7 +48,8 @@ export default function CommunicationsPage() {
                 <div className="absolute inset-0 overflow-y-auto custom-scrollbar pr-2">
                     <CommunicationsPanel
                         invoice={invoice}
-                        defaultComposeOpen={searchParams.get('compose') === 'true'}
+                        defaultComposeOpen={false}
+                        hideComposeButton={true}
                     />
                 </div>
             </div>

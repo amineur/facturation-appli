@@ -3,7 +3,7 @@
 import { useData } from "@/components/data-provider";
 import { generateNextInvoiceNumber, generateNextQuoteNumber } from "@/lib/invoice-utils";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Plus, Trash2, Save, User, UserPlus, Calendar, FileText, ChevronDown, ChevronUp, Eye, Loader2, Settings, Lock, Unlock, X, Mail } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { dataService } from "@/lib/data-service";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { PDFPreviewModal } from '@/components/ui/PDFPreviewModal';
 import { EmailHistoryView } from '@/components/features/EmailHistoryView';
+import { saveDraft, getDraft } from "@/lib/draft-storage";
 
 interface MobileEditorProps {
     type: "FACTURE" | "DEVIS";
@@ -71,8 +72,17 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
     const [conditionsPaiement, setConditionsPaiement] = useState(() => {
         try {
-            const conf = initialDoc ? (typeof (initialDoc as any).config === 'string' ? JSON.parse((initialDoc as any).config) : (initialDoc as any).config || {}) : {};
-            return conf.conditionsPaiement || "À réception";
+            // Priority 1: Doc Config
+            const docConf = initialDoc ? (typeof (initialDoc as any).config === 'string' ? JSON.parse((initialDoc as any).config) : (initialDoc as any).config || {}) : null;
+            if (docConf?.conditionsPaiement) return docConf.conditionsPaiement;
+
+            // Priority 2: Global Config (Desktop Sync)
+            const globalConf = dataService.getGlobalConfig();
+            const defaults = type === "FACTURE" ? globalConf.invoiceDefaults : globalConf.quoteDefaults;
+            if ((defaults as any)?.conditionsPaiement) return (defaults as any).conditionsPaiement;
+
+            // Priority 3: Fallback
+            return "À réception";
         } catch { return "À réception"; }
     });
 
@@ -89,6 +99,10 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [rawConfig, setRawConfig] = useState<any>({});
     const [showDateColumn, setShowDateColumn] = useState(false);
+    const [showQuantiteColumn, setShowQuantiteColumn] = useState(true);
+    const [showTvaColumn, setShowTvaColumn] = useState(true);
+    const [showRemiseColumn, setShowRemiseColumn] = useState(false);
+    const [showOptionalFields, setShowOptionalFields] = useState(false);
     const [showTTCColumn, setShowTTCColumn] = useState(false);
     const [discountEnabled, setDiscountEnabled] = useState(false);
     const [discountType, setDiscountType] = useState<'pourcentage' | 'montant'>('pourcentage');
@@ -108,6 +122,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     const isReadOnly = isHardLocked || isLocked;
 
     // UI States
+    const isReadyToSave = useRef(false);
     const [clientSearch, setClientSearch] = useState("");
     const [productSearch, setProductSearch] = useState("");
     const [isSelectingClient, setIsSelectingClient] = useState(false);
@@ -119,6 +134,34 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     // Preview State
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+    // Auto-calculate due date based on payment terms (Mirroring Desktop Logic)
+    useEffect(() => {
+        if (!dateEmission || !conditionsPaiement || hasInitialized === false) return;
+
+        try {
+            const emission = new Date(dateEmission);
+            let daysToAdd = 30; // Default
+
+            const match = conditionsPaiement.match(/(\d+)/);
+            if (match) {
+                daysToAdd = parseInt(match[1]);
+            } else if (conditionsPaiement === "À réception") {
+                daysToAdd = 0;
+            }
+
+            const calculatedDate = new Date(emission);
+            calculatedDate.setDate(calculatedDate.getDate() + daysToAdd);
+            const formatted = calculatedDate.toISOString().split("T")[0];
+
+            // Only update if different
+            if (dateEcheance !== formatted) {
+                setDateEcheance(formatted);
+            }
+        } catch (e) {
+            console.error("Date calc error", e);
+        }
+    }, [dateEmission, conditionsPaiement, hasInitialized]);
+
     // Initial Load (Edit or Duplicate)
     useEffect(() => {
         if (!hasInitialized) {
@@ -126,9 +169,40 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                 // Edit Mode
                 const doc = type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id);
                 if (doc) {
-                    setSelectedClientId(doc.clientId);
-                    // Use a unique ID for React keys to avoid conflicts/drag issues if any
-                    setItems((doc.items || []).map((i: any) => ({ ...i, id: i.id || Math.random().toString(36).substr(2, 9) })));
+                    let initialItems = (doc.items || []).map((i: any) => ({ ...i, id: i.id || Math.random().toString(36).substr(2, 9) }));
+                    let initialClientId = doc.clientId;
+
+                    // DRAFT OVERRIDE CHECK
+                    const draft = getDraft(id);
+                    if (draft) {
+                        // Check timestamps.
+                        const serverTime = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;
+
+                        if (draft.updatedAt > serverTime) {
+                            console.log("[MOBILE] Init: Found newer draft, applying override...", {
+                                draftDate: draft.updatedAt,
+                                serverDate: serverTime
+                            });
+                            if (draft.items) initialItems = draft.items;
+                            if (draft.clientId) initialClientId = draft.clientId;
+
+                            // Inject draft config into initial variables to avoid race conditions with separate Restore effect
+                            if (draft.showDateColumn !== undefined) doc.config = { ...doc.config, showDateColumn: draft.showDateColumn };
+                            if (draft.showTTCColumn !== undefined) doc.config = { ...doc.config, showTTCColumn: draft.showTTCColumn };
+                            if (draft.showQuantiteColumn !== undefined) doc.config = { ...doc.config, showQuantiteColumn: draft.showQuantiteColumn };
+                            if (draft.showTvaColumn !== undefined) (doc as any).config = { ...(doc as any).config, showTvaColumn: draft.showTvaColumn };
+                            if (draft.showRemiseColumn !== undefined) (doc as any).config = { ...(doc as any).config, showRemiseColumn: draft.showRemiseColumn };
+                            if (draft.showOptionalFields !== undefined) (doc as any).config = { ...(doc as any).config, showOptionalFields: draft.showOptionalFields };
+                            if (draft.discountEnabled !== undefined) (doc as any).config = { ...(doc as any).config, discountEnabled: draft.discountEnabled };
+                            if (draft.discountType) (doc as any).config = { ...(doc as any).config, discountType: draft.discountType };
+                            if (draft.defaultTva !== undefined) (doc as any).config = { ...(doc as any).config, defaultTva: draft.defaultTva };
+                            if (draft.conditionsPaiement) (doc as any).conditionsPaiement = draft.conditionsPaiement;
+                            if (draft.notes) (doc as any).notes = draft.notes;
+                        }
+                    }
+
+                    setSelectedClientId(initialClientId);
+                    setItems(initialItems);
 
                     if ((doc as any).dateEmission) {
                         try { setDateEmission(new Date((doc as any).dateEmission).toISOString().split('T')[0]); } catch (e) { }
@@ -227,6 +301,149 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
             }
         }
     }, [id, sourceId, type, invoices, quotes, hasInitialized]);
+
+    // -- Auto-Save / Restore Logic --
+
+    // 1. Restore on Mount
+    useEffect(() => {
+        const draft = getDraft(id || 'new');
+        if (draft) {
+            // Conflict resolution: Server wins if newer for existing docs
+            if (id && invoices && quotes) { // Ensure data is loaded
+                const currentDoc = type === "FACTURE" ? invoices.find(i => i.id === id) : quotes.find(q => q.id === id);
+                if (currentDoc && currentDoc.updatedAt) {
+                    const serverTime = new Date(currentDoc.updatedAt).getTime();
+                    if (serverTime > draft.updatedAt) {
+                        // Server is newer, ignore draft
+                        return;
+                    }
+                }
+            }
+
+            console.log("[MOBILE] Restoring draft to State...");
+            if (draft.items) setItems(draft.items);
+            if (draft.clientId) setSelectedClientId(draft.clientId);
+
+            // Restore proper date objects/strings
+            if (draft.dateEmission) {
+                // Ensure it is a valid date string YYYY-MM-DD
+                try {
+                    // Check if ISO full or YYYY-MM-DD
+                    const d = new Date(draft.dateEmission);
+                    if (!isNaN(d.getTime())) {
+                        setDateEmission(d.toISOString().split('T')[0]);
+                    }
+                } catch (e) { }
+            }
+            if (draft.echeance) {
+                try {
+                    const d = new Date(draft.echeance);
+                    if (!isNaN(d.getTime())) setDateEcheance(d.toISOString().split('T')[0]);
+                } catch (e) { }
+            }
+
+            if (draft.conditionsPaiement) setConditionsPaiement(draft.conditionsPaiement);
+            if (draft.notes) setNotes(draft.notes);
+            if (draft.remiseGlobale !== undefined) setRemiseGlobale(draft.remiseGlobale);
+            if (draft.remiseGlobaleType) setRemiseGlobaleType(draft.remiseGlobaleType);
+
+            // Config
+            if (draft.defaultTva !== undefined) setDefaultTva(draft.defaultTva);
+            if (draft.showDateColumn !== undefined) setShowDateColumn(draft.showDateColumn);
+            if (draft.showTvaColumn !== undefined) setShowTvaColumn(draft.showTvaColumn);
+            if (draft.showQuantiteColumn !== undefined) setShowQuantiteColumn(draft.showQuantiteColumn);
+            if (draft.showRemiseColumn !== undefined) setShowRemiseColumn(draft.showRemiseColumn);
+            if (draft.showOptionalFields !== undefined) setShowOptionalFields(draft.showOptionalFields);
+            if (draft.showTTCColumn !== undefined) setShowTTCColumn(draft.showTTCColumn);
+            if (draft.discountEnabled !== undefined) setDiscountEnabled(draft.discountEnabled);
+            if (draft.discountType) setDiscountType(draft.discountType);
+
+            if (!hasInitialized) setHasInitialized(true);
+
+            // Force Sync draftRef to prevents race conditions where save triggers before next render
+            draftRef.current = {
+                items: draft.items || items,
+                clientId: draft.clientId || selectedClientId,
+                dateEmission: draft.dateEmission ? (new Date(draft.dateEmission).toISOString().split('T')[0]) : dateEmission,
+                echeance: dateEcheance, // Simplification: assume echeance state update is enough or user didn't change it yet
+                conditionsPaiement: draft.conditionsPaiement || conditionsPaiement,
+                notes: draft.notes || notes,
+                remiseGlobale: draft.remiseGlobale ?? remiseGlobale,
+                remiseGlobaleType: draft.remiseGlobaleType || remiseGlobaleType,
+                defaultTva: draft.defaultTva ?? defaultTva,
+                showDateColumn: draft.showDateColumn ?? showDateColumn,
+                showTvaColumn: draft.showTvaColumn ?? showTvaColumn,
+                showQuantiteColumn: draft.showQuantiteColumn ?? showQuantiteColumn,
+                showRemiseColumn: draft.showRemiseColumn ?? showRemiseColumn,
+                showOptionalFields: draft.showOptionalFields ?? showOptionalFields,
+                showTTCColumn: draft.showTTCColumn ?? showTTCColumn,
+                discountEnabled: draft.discountEnabled ?? discountEnabled,
+                discountType: draft.discountType || discountType
+            };
+            isReadyToSave.current = true;
+            console.log("[MOBILE] Draft Restoration Complete & Safe.");
+        } else {
+            // No draft found -> We are ready to save new changes (defaults)
+            isReadyToSave.current = true;
+        }
+    }, [id]); // Check only on mount/id change
+
+    // 2. Auto-Save on Change
+    // 2. Auto-Save Logic with Unmount Protection
+
+    const draftData = {
+        items,
+        clientId: selectedClientId,
+        dateEmission,
+        echeance: dateEcheance,
+        conditionsPaiement,
+        notes,
+        remiseGlobale,
+        remiseGlobaleType,
+        defaultTva,
+        showDateColumn,
+        showTvaColumn,
+        showQuantiteColumn,
+        showRemiseColumn,
+        showOptionalFields,
+        showTTCColumn,
+        discountEnabled,
+        discountType
+    };
+
+    const draftRef = useRef(draftData);
+
+    // Update ref on every render
+    useLayoutEffect(() => {
+        draftRef.current = draftData;
+    });
+
+    // Save on Unmount (Force Sync)
+    useEffect(() => {
+        return () => {
+            if (isReadOnly) return;
+            if (!isReadyToSave.current) {
+                console.warn("[MOBILE] Unmount Save SKIPPED - Not Ready");
+                return;
+            }
+            console.log("[MOBILE] Unmounting - forcing save...", draftRef.current);
+            saveDraft(id || 'new', draftRef.current);
+        };
+    }, [id, isReadOnly]);
+
+    // Auto-Save on Change (Debounced)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (isReadOnly) return;
+            if (!isReadyToSave.current) {
+                // Skip initial auto-saves until ready
+                return;
+            }
+            console.log("[MOBILE] Auto-saving draft...", { itemsCount: items.length, tva: defaultTva });
+            saveDraft(id || 'new', draftData);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [items, selectedClientId, dateEmission, dateEcheance, conditionsPaiement, notes, remiseGlobale, remiseGlobaleType, defaultTva, showDateColumn, showTvaColumn, showQuantiteColumn, showRemiseColumn, showOptionalFields, showTTCColumn, discountEnabled, discountType, isReadOnly, id]);
 
     const handleAddItem = () => {
         const newId = Math.random().toString(36).substr(2, 9);
@@ -532,21 +749,35 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
                             <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
                                 <span className="font-medium">Date prestation</span>
-                                <div className={cn("w-12 h-7 rounded-full transition-all relative cursor-pointer border-2", showDateColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700")} onClick={() => setShowDateColumn(!showDateColumn)}>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative border-2", showDateColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700", isReadOnly ? "opacity-50 cursor-not-allowed" : "cursor-pointer")} onClick={() => !isReadOnly && setShowDateColumn(!showDateColumn)}>
                                     <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", showDateColumn && "translate-x-5")} />
                                 </div>
                             </div>
 
                             <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
                                 <span className="font-medium">Prix TTC</span>
-                                <div className={cn("w-12 h-7 rounded-full transition-all relative cursor-pointer border-2", showTTCColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700")} onClick={() => setShowTTCColumn(!showTTCColumn)}>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative border-2", showTTCColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700", isReadOnly ? "opacity-50 cursor-not-allowed" : "cursor-pointer")} onClick={() => !isReadOnly && setShowTTCColumn(!showTTCColumn)}>
                                     <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", showTTCColumn && "translate-x-5")} />
                                 </div>
                             </div>
 
                             <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
+                                <span className="font-medium">Colonne Quantité</span>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative border-2", showQuantiteColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700", isReadOnly ? "opacity-50 cursor-not-allowed" : "cursor-pointer")} onClick={() => !isReadOnly && setShowQuantiteColumn(!showQuantiteColumn)}>
+                                    <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", showQuantiteColumn && "translate-x-5")} />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
+                                <span className="font-medium">Colonne TVA</span>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative border-2", showTvaColumn ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700", isReadOnly ? "opacity-50 cursor-not-allowed" : "cursor-pointer")} onClick={() => !isReadOnly && setShowTvaColumn(!showTvaColumn)}>
+                                    <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", showTvaColumn && "translate-x-5")} />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border">
                                 <span className="font-medium">Remises (Lignes)</span>
-                                <div className={cn("w-12 h-7 rounded-full transition-all relative cursor-pointer border-2", discountEnabled ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700")} onClick={() => setDiscountEnabled(!discountEnabled)}>
+                                <div className={cn("w-12 h-7 rounded-full transition-all relative border-2", discountEnabled ? "bg-primary border-primary" : "bg-zinc-200 border-zinc-200 dark:bg-zinc-700 dark:border-zinc-700", isReadOnly ? "opacity-50 cursor-not-allowed" : "cursor-pointer")} onClick={() => !isReadOnly && setDiscountEnabled(!discountEnabled)}>
                                     <div className={cn("absolute top-0.5 left-0.5 bg-white h-5 w-5 rounded-full transition-transform shadow-sm", discountEnabled && "translate-x-5")} />
                                 </div>
                             </div>
@@ -556,14 +787,16 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                     <span className="text-xs font-medium uppercase text-muted-foreground">Type de remise (Lignes)</span>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button
-                                            onClick={() => setDiscountType('pourcentage')}
-                                            className={cn("p-2 rounded-lg text-xs font-bold border transition-colors", discountType === 'pourcentage' ? "bg-primary/10 border-primary text-primary" : "bg-background border-border")}
+                                            onClick={() => !isReadOnly && setDiscountType('pourcentage')}
+                                            disabled={isReadOnly}
+                                            className={cn("p-2 rounded-lg text-xs font-bold border transition-colors", discountType === 'pourcentage' ? "bg-primary/10 border-primary text-primary" : "bg-background border-border", isReadOnly && "opacity-50")}
                                         >
                                             Pourcentage (%)
                                         </button>
                                         <button
-                                            onClick={() => setDiscountType('montant')}
-                                            className={cn("p-2 rounded-lg text-xs font-bold border transition-colors", discountType === 'montant' ? "bg-primary/10 border-primary text-primary" : "bg-background border-border")}
+                                            onClick={() => !isReadOnly && setDiscountType('montant')}
+                                            disabled={isReadOnly}
+                                            className={cn("p-2 rounded-lg text-xs font-bold border transition-colors", discountType === 'montant' ? "bg-primary/10 border-primary text-primary" : "bg-background border-border", isReadOnly && "opacity-50")}
                                         >
                                             Montant (€)
                                         </button>
@@ -581,7 +814,15 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                     type="number"
                                     className="w-full bg-muted/20 border rounded-xl p-3"
                                     value={defaultTva}
-                                    onChange={(e) => setDefaultTva(Number(e.target.value))}
+                                    onChange={(e) => {
+                                        const val = Number(e.target.value);
+                                        setDefaultTva(val);
+                                        // Also update existing items to match user expectation of "changing document VAT"
+                                        if (!isNaN(val)) {
+                                            setItems(prev => prev.map(item => ({ ...item, tva: val })));
+                                        }
+                                    }}
+                                    disabled={isReadOnly}
                                 />
                             </div>
                         </section>
@@ -844,6 +1085,26 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                                         disabled={isReadOnly}
                                         className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
                                     />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="text-[11px] font-medium text-muted-foreground uppercase mb-1 block">Condition de paiement</label>
+                                    <select
+                                        value={conditionsPaiement}
+                                        onChange={e => setConditionsPaiement(e.target.value)}
+                                        disabled={isReadOnly}
+                                        className="w-full bg-muted/30 border border-border rounded-lg px-2 py-2 text-sm"
+                                    >
+                                        <option value="À réception">À réception</option>
+                                        <option value="15 jours">15 jours</option>
+                                        <option value="30 jours">30 jours</option>
+                                        <option value="45 jours">45 jours</option>
+                                        <option value="60 jours">60 jours</option>
+                                        <option value="Personnalisé">Personnalisé</option>
+                                        {/* Preserve existing if custom */}
+                                        {!["À réception", "15 jours", "30 jours", "45 jours", "60 jours", "Personnalisé"].includes(conditionsPaiement) && conditionsPaiement && (
+                                            <option value={conditionsPaiement}>{conditionsPaiement}</option>
+                                        )}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-[11px] font-medium text-muted-foreground uppercase mb-1 block">
@@ -1120,59 +1381,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                             className="w-full bg-card border border-border rounded-xl p-3 text-sm min-h-[80px]"
                         />
                     </div>
-                    {type === "FACTURE" && (
-                        <div>
-                            <label className="text-xs font-semibold text-muted-foreground mb-2 block">Conditions de paiement</label>
-                            <select
-                                value={conditionsPaiement}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setConditionsPaiement(val);
-                                    if (val !== "Personnalisé" && dateEmission) {
-                                        const now = new Date(dateEmission);
-                                        let days = 0;
-                                        switch (val) {
-                                            case "À réception": days = 0; break;
-                                            case "15 jours": days = 15; break;
-                                            case "30 jours": days = 30; break;
-                                            case "30 jours fin du mois":
-                                                const endOfMonth30 = new Date(now.getFullYear(), now.getMonth() + 2, 0); // Next month end
-                                                setDateEcheance(endOfMonth30.toISOString().split('T')[0]);
-                                                return;
-                                            case "45 jours": days = 45; break;
-                                            case "45 jours fin du mois":
-                                                // Logic: +45 days then end of THAT month
-                                                const d45 = new Date(now);
-                                                d45.setDate(d45.getDate() + 45);
-                                                const eom45 = new Date(d45.getFullYear(), d45.getMonth() + 1, 0);
-                                                setDateEcheance(eom45.toISOString().split('T')[0]);
-                                                return;
-                                            case "60 jours": days = 60; break;
-                                            case "60 jours fin du mois":
-                                                const d60 = new Date(now);
-                                                d60.setDate(d60.getDate() + 60);
-                                                const eom60 = new Date(d60.getFullYear(), d60.getMonth() + 1, 0);
-                                                setDateEcheance(eom60.toISOString().split('T')[0]);
-                                                return;
-                                        }
-                                        const target = new Date(now);
-                                        target.setDate(target.getDate() + days);
-                                        setDateEcheance(target.toISOString().split('T')[0]);
-                                    }
-                                }}
-                                className="w-full bg-card border border-border rounded-xl p-3 text-sm h-12"
-                            >
-                                <option value="À réception">À réception</option>
-                                <option value="15 jours">15 jours</option>
-                                <option value="30 jours">30 jours</option>
-                                <option value="30 jours fin du mois">30 jours fin du mois</option>
-                                <option value="45 jours">45 jours</option>
-                                <option value="45 jours fin du mois">45 jours fin du mois</option>
-                                <option value="60 jours">60 jours</option>
-                                <option value="60 jours fin du mois">60 jours fin du mois</option>
-                            </select>
-                        </div>
-                    )}
+
 
                 </div>
 

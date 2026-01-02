@@ -8,6 +8,38 @@ import { getCurrentUser } from './auth';
 import { handleActionError } from './shared';
 import { canAccessSociete } from './members';
 import { MembershipRole } from '@prisma/client';
+import { generateNextQuoteNumber } from '../invoice-utils';
+
+// Helper: Ensure unique quote number
+async function ensureUniqueQuoteNumber(numero: string, societeId: string, excludeId?: string): Promise<string> {
+    let attempts = 0;
+    let currentNumero = numero;
+
+    while (attempts < 10) {
+        const existing = await prisma.devis.findFirst({
+            where: {
+                numero: currentNumero,
+                societeId,
+                id: excludeId ? { not: excludeId } : undefined
+            }
+        });
+
+        if (!existing) {
+            return currentNumero; // Unique!
+        }
+
+        // Number exists, generate next one
+        const allQuotes = await prisma.devis.findMany({
+            where: { societeId },
+            select: { numero: true }
+        });
+
+        currentNumero = generateNextQuoteNumber(allQuotes as any);
+        attempts++;
+    }
+
+    throw new Error('Unable to generate unique quote number after 10 attempts');
+}
 
 // Fetch Actions
 
@@ -220,12 +252,15 @@ export async function createQuote(quote: Devis) {
 
         if (!quote.clientId) throw new Error("Client requis");
 
+        // Ensure unique numero
+        const uniqueNumero = await ensureUniqueQuoteNumber(quote.numero, targetSocieteId);
+
         const processedItems = await ensureProductsExist(quote.items || [], targetSocieteId);
         const itemsJson = JSON.stringify(processedItems);
 
         const res = await prisma.devis.create({
             data: {
-                numero: quote.numero,
+                numero: uniqueNumero,
                 dateEmission: new Date(quote.dateEmission),
                 statut: quote.statut,
                 totalHT: quote.totalHT,

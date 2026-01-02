@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { useForm, useFieldArray, Control, useWatch, FormProvider } from "react-hook-form";
 import { Plus, Trash2, Save, FileText, Send, Eye, MoreHorizontal, Download, ArrowLeft, Loader2, Calendar as CalendarIcon, Check, ChevronsUpDown, X, Search, Tag, Settings, Type, GripVertical, Lock, Unlock, User } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ import { Minimize2, Maximize2, Clock } from "lucide-react";
 import Link from "next/link";
 import { ClientEditor } from "./ClientEditor";
 import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
+import { saveDraft, getDraft } from "@/lib/draft-storage";
 
 
 
@@ -177,14 +178,99 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const { register, control, handleSubmit, setValue, watch, getValues, setError, clearErrors, reset, formState: { errors, isDirty, dirtyFields } } = methods;
 
     const nextActionRef = useRef<'redirect' | 'send' | null>('redirect');
+    const isInitialized = useRef(false);
 
-    // Reset form when initialData loads or ID changes (Robust Reset)
+    // Reset form when initialData loads or ID changes (Robust Reset) WITH Draft Logic
     useEffect(() => {
-        if (initialData?.id) {
-            const defaults = buildFormDefaults(initialData);
-            reset(defaults, { keepDirty: false, keepTouched: false });
+        if (!initialData?.id) return;
+
+        console.log("!!! [DESKTOP] INITIALIZATION (Consolidated) !!!", { id: initialData.id });
+
+        // 1. Start with Server Defaults
+        let finalValues = buildFormDefaults(initialData);
+
+        // 2. Check for Draft Override
+        const draft = getDraft(initialData.id);
+
+        if (draft) {
+            console.log("[DESKTOP] Checking Draft during Init:", {
+                serverTime: initialData.updatedAt,
+                draftTime: draft.updatedAt
+            });
+
+            let useDraft = false;
+            if (initialData.updatedAt) {
+                const serverTime = new Date(initialData.updatedAt).getTime();
+                // Server win if NEWER than draft
+                if (serverTime > draft.updatedAt) {
+                    console.warn("[DESKTOP] Server is newer. Ignoring draft.");
+                } else {
+                    useDraft = true;
+                }
+            } else {
+                useDraft = true;
+            }
+
+            if (useDraft) {
+                console.log("!!! [DESKTOP] OVERRIDING SERVER DEFAULTS WITH DRAFT !!!", {
+                    itemsCount: draft.items?.length,
+                    tva_Global: draft.defaultTva,
+                    FIRST_ITEM: draft.items?.[0]
+                });
+                finalValues = {
+                    ...finalValues,
+                    clientId: draft.clientId || finalValues.clientId,
+                    dateEmission: draft.dateEmission || finalValues.dateEmission,
+                    echeance: draft.echeance || finalValues.echeance,
+                    conditionsPaiement: draft.conditionsPaiement || finalValues.conditionsPaiement,
+                    remiseGlobale: draft.remiseGlobale,
+                    remiseGlobaleType: draft.remiseGlobaleType,
+                    items: draft.items || finalValues.items
+                };
+
+                // Restore Config States
+                if (draft.defaultTva !== undefined) setDefaultTva(draft.defaultTva);
+                if (draft.showDateColumn !== undefined) setShowDateColumn(draft.showDateColumn);
+                if (draft.showQuantiteColumn !== undefined) setShowQuantiteColumn(draft.showQuantiteColumn);
+                if (draft.showTvaColumn !== undefined) setShowTvaColumn(draft.showTvaColumn);
+                if (draft.showRemiseColumn !== undefined) setShowRemiseColumn(draft.showRemiseColumn);
+                if (draft.showTTCColumn !== undefined) setShowTTCColumn(draft.showTTCColumn);
+                if (draft.discountEnabled !== undefined) setDiscountEnabled(draft.discountEnabled);
+                if (draft.discountType) setDiscountType(draft.discountType);
+                if (draft.showOptionalFields !== undefined) setShowOptionalFields(draft.showOptionalFields);
+            }
         }
+
+        // Force Sync draftRef to prevent stale save if unmounted immediately
+        const safeDraftPayload = {
+            clientId: finalValues.clientId,
+            dateEmission: finalValues.dateEmission,
+            echeance: finalValues.echeance,
+            conditionsPaiement: finalValues.conditionsPaiement,
+            remiseGlobale: finalValues.remiseGlobale,
+            remiseGlobaleType: finalValues.remiseGlobaleType,
+            items: finalValues.items,
+            // Sync fresh draft values into the initial draftRef if we are using a draft
+            // This prevents the "Unmount Save" from capturing stale default states (like tva: 20) 
+            // before the react states (like defaultTva) have finished updating for the next render.
+            defaultTva: (!!draft && draft.updatedAt > 0) ? (draft.defaultTva !== undefined ? draft.defaultTva : defaultTva) : defaultTva,
+            showDateColumn: (!!draft && draft.showDateColumn !== undefined) ? draft.showDateColumn : showDateColumn,
+            showQuantiteColumn: (!!draft && draft.showQuantiteColumn !== undefined) ? draft.showQuantiteColumn : showQuantiteColumn,
+            showTvaColumn: (!!draft && draft.showTvaColumn !== undefined) ? draft.showTvaColumn : showTvaColumn,
+            showRemiseColumn: (!!draft && draft.showRemiseColumn !== undefined) ? draft.showRemiseColumn : showRemiseColumn,
+            showTTCColumn: (!!draft && draft.showTTCColumn !== undefined) ? draft.showTTCColumn : showTTCColumn,
+            discountEnabled: (!!draft && draft.discountEnabled !== undefined) ? draft.discountEnabled : discountEnabled,
+            discountType: (!!draft && !!draft.discountType) ? draft.discountType : discountType,
+            showOptionalFields: (!!draft && draft.showOptionalFields !== undefined) ? draft.showOptionalFields : showOptionalFields
+        };
+        draftRef.current = safeDraftPayload;
+
+        reset(finalValues, { keepDirty: false, keepTouched: false });
+        isInitialized.current = true;
+        console.log("[DESKTOP] Initialization Complete. Draft Safety Locked & Ref Synced.");
+
     }, [initialData?.id, reset]); // Dependency on ID is key
+
 
     const { fields, append, remove, replace } = useFieldArray({
         control,
@@ -416,6 +502,57 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
         return globalConfig.operationType ?? 'service';
     });
+
+    // -- DRAFT PERSISTENCE LOGIC (DESKTOP) --
+    // Moved here after state declarations to avoid "used before declaration" errors
+    const formValues = watch();
+
+    const dataToSave = {
+        clientId: formValues.clientId,
+        dateEmission: formValues.dateEmission,
+        echeance: formValues.echeance,
+        conditionsPaiement: formValues.conditionsPaiement,
+        remiseGlobale: formValues.remiseGlobale,
+        remiseGlobaleType: formValues.remiseGlobaleType,
+        items: formValues.items,
+        // Config states
+        defaultTva,
+        showDateColumn,
+        showQuantiteColumn,
+        showTvaColumn,
+        showRemiseColumn,
+        showTTCColumn,
+        discountEnabled,
+        discountType,
+        showOptionalFields
+    };
+
+    const draftRef = useRef(dataToSave);
+    useLayoutEffect(() => {
+        draftRef.current = dataToSave;
+    });
+
+    // Save on Unmount - Use useLayoutEffect to ensure save happens BEFORE the next component detects mount
+    useLayoutEffect(() => {
+        return () => {
+            // Re-check ref to be absolutely sure we have latest
+            if (!isInitialized.current) {
+                console.warn("[DESKTOP] Unmount Save SKIPPED (LayoutEffect) - Not Initialized");
+                return;
+            }
+            console.log("[DESKTOP] Unmounting (LayoutEffect) - forcing save...", draftRef.current);
+            saveDraft(initialData?.id || 'new', draftRef.current);
+        };
+    }, [initialData?.id]);
+
+    // 2. Auto-Save on Change
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            console.log("[DESKTOP] Saving draft...", dataToSave);
+            saveDraft(initialData?.id || 'new', dataToSave);
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [formValues, initialData?.id, dataToSave]);
 
     const [isEditingClient, setIsEditingClient] = useState(false);
     const [editedClientData, setEditedClientData] = useState<Partial<Client>>({});

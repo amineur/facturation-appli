@@ -480,6 +480,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return () => clearInterval(interval);
     }, []);
 
+    // SYNC: Auto-refresh on window focus (Critical for multi-device usage)
+    useEffect(() => {
+        const handleSync = () => {
+            // Only refresh if we have an active session and window is visible
+            if (document.visibilityState === 'visible' && user && societe) {
+                console.log("[SYNC] App Visible/Focused - Refreshing...");
+                fetchData(true); // Silent refresh
+            }
+        };
+
+        window.addEventListener("focus", handleSync);
+        window.addEventListener("visibilitychange", handleSync); // Also trigger when tab becomes visible
+
+        return () => {
+            window.removeEventListener("focus", handleSync);
+            window.removeEventListener("visibilitychange", handleSync);
+        };
+    }, [user, societe, pathname]); // Re-bind if context changes to ensure fetchData closure is fresh enough
+
     const handleAddInvoice = (inv: Facture) => {
         setInvoices(prev => [inv, ...prev]);
     };

@@ -8,6 +8,7 @@ import { getCurrentUser } from './auth';
 import { handleActionError } from './shared';
 import { canAccessSociete } from './members';
 import { MembershipRole } from '@prisma/client';
+import { generateNextInvoiceNumber } from '../invoice-utils';
 
 // Guards
 export async function checkInvoiceMutability(id: string) {
@@ -31,6 +32,37 @@ export async function checkInvoiceMutability(id: string) {
     }
 
     return { success: true };
+}
+
+// Helper: Ensure unique invoice number
+async function ensureUniqueInvoiceNumber(numero: string, societeId: string, excludeId?: string): Promise<string> {
+    let attempts = 0;
+    let currentNumero = numero;
+
+    while (attempts < 10) {
+        const existing = await prisma.facture.findFirst({
+            where: {
+                numero: currentNumero,
+                societeId,
+                id: excludeId ? { not: excludeId } : undefined
+            }
+        });
+
+        if (!existing) {
+            return currentNumero; // Unique!
+        }
+
+        // Number exists, generate next one
+        const allInvoices = await prisma.facture.findMany({
+            where: { societeId },
+            select: { numero: true }
+        });
+
+        currentNumero = generateNextInvoiceNumber(allInvoices as any);
+        attempts++;
+    }
+
+    throw new Error('Unable to generate unique invoice number after 10 attempts');
 }
 
 // Fetch Actions
@@ -232,6 +264,9 @@ export async function createInvoice(invoice: Facture) {
         const authorized = await canAccessSociete(userRes.data.id, targetSocieteId, MembershipRole.EDITOR);
         if (!authorized) return { success: false, error: "Droit insuffisant (Requis: Éditeur)" };
 
+        // Ensure unique numero
+        const uniqueNumero = await ensureUniqueInvoiceNumber(invoice.numero, targetSocieteId);
+
         // Transaction
         const result = await prisma.$transaction(async (tx) => {
             const processedItems = await ensureProductsExist(invoice.items || [], targetSocieteId, tx);
@@ -239,7 +274,7 @@ export async function createInvoice(invoice: Facture) {
 
             const res = await tx.facture.create({
                 data: {
-                    numero: invoice.numero,
+                    numero: uniqueNumero,
                     dateEmission: new Date(invoice.dateEmission),
                     statut: invoice.statut,
                     totalHT: invoice.totalHT,

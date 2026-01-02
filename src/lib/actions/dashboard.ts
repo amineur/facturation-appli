@@ -54,7 +54,8 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                         select: { nom: true }
                     },
                     itemsJSON: true,
-                    config: true
+                    config: true,
+                    isLocked: true
                 },
                 orderBy: [
                     { dateEmission: 'desc' },
@@ -82,7 +83,8 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                         select: { nom: true }
                     },
                     itemsJSON: true,
-                    config: true
+                    config: true,
+                    isLocked: true
                 },
                 orderBy: [
                     { dateEmission: 'desc' },
@@ -133,6 +135,7 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                 dateEmission: inv.dateEmission.toISOString(),
                 echeance: inv.dateEcheance ? inv.dateEcheance.toISOString() : "",
                 statut: inv.statut,
+                isLocked: inv.isLocked,
                 totalHT: inv.totalHT,
                 totalTTC: inv.totalTTC,
                 datePaiement: inv.datePaiement ? inv.datePaiement.toISOString() : undefined,
@@ -171,9 +174,9 @@ export async function fetchDashboardData(userId: string, societeId: string): Pro
                 numero: q.numero,
                 clientId: q.clientId,
                 societeId: q.societeId,
-                dateEmission: q.dateEmission.toISOString(),
                 dateValidite: q.dateValidite ? q.dateValidite.toISOString() : "",
                 statut: q.statut,
+                isLocked: q.isLocked,
                 totalHT: q.totalHT,
                 totalTTC: q.totalTTC,
                 type: "Devis" as const,
