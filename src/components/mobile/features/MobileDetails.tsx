@@ -3,12 +3,14 @@
 import { useData } from "@/components/data-provider";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ArrowLeft, Share2, Printer, Download, Edit2, Send } from "lucide-react";
+import { ArrowLeft, Share2, Printer, Download, Edit2, Send, Eye } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
+import { useState } from "react";
 
 interface MobileDetailsProps {
     id: string;
@@ -18,6 +20,7 @@ interface MobileDetailsProps {
 export function MobileDetails({ id, type }: MobileDetailsProps) {
     const { invoices, quotes, clients, societe } = useData();
     const router = useRouter();
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     const doc = type === "FACTURE"
         ? invoices.find(i => i.id === id)
@@ -34,6 +37,18 @@ export function MobileDetails({ id, type }: MobileDetailsProps) {
 
     const client = clients.find(c => c.id === doc.clientId);
     const dateKey = type === "FACTURE" ? (doc as any).dateEmission : (doc as any).dateEmission;
+    const handlePreview = async () => {
+        if (!societe || !client) return;
+        try {
+            const url = await generateInvoicePDF(doc, societe, client, { returnBlob: true });
+            if (url && typeof url === 'string') {
+                setPreviewUrl(url);
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error("Erreur génération PDF");
+        }
+    };
 
     const handleDownloadPDF = async () => {
         if (!societe) {
@@ -195,6 +210,13 @@ export function MobileDetails({ id, type }: MobileDetailsProps) {
             {/* Floating Actions */}
             <div className="fixed bottom-24 left-4 right-4 flex gap-2 z-40">
                 <button
+                    onClick={handlePreview}
+                    className="p-3 bg-card border border-border text-foreground rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center"
+                    aria-label="Preview"
+                >
+                    <Eye className="h-5 w-5" />
+                </button>
+                <button
                     onClick={handleDownloadPDF}
                     className="p-3 bg-card border border-border text-foreground rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center"
                     aria-label="PDF"
@@ -216,6 +238,13 @@ export function MobileDetails({ id, type }: MobileDetailsProps) {
                     <span>Envoyer</span>
                 </Link>
             </div>
+
+            <PDFPreviewModal
+                isOpen={!!previewUrl}
+                onClose={() => setPreviewUrl(null)}
+                pdfUrl={previewUrl}
+                invoiceNumber={doc.numero}
+            />
         </div>
     );
 }
