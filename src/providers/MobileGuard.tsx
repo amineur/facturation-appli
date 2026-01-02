@@ -46,15 +46,17 @@ export function MobileGuard({ children }: MobileGuardProps) {
     // On client, once mounted and detected as mobile, we switch.
     // This effectively means "Desktop First" loading.
 
-    if (!mounted) {
-        // Return children (Desktop layout) initially to match server
-        return <>{children}</>;
+    if (!mounted || isMobile === undefined) {
+        // Prevent Flash of Desktop Content (FOUC) on mobile.
+        // Instead of defaulting to Desktop, we show a clean loader/blank state 
+        // until we know for sure where we are.
+        return <div className="min-h-screen bg-background flex items-center justify-center"></div>;
     }
 
     const { ENABLE_MOBILE_UI } = MOBILE_CONFIG;
 
     // Feature Flag OFF or Not Mobile -> Render Desktop
-    if (!ENABLE_MOBILE_UI || isMobile === false || isMobile === undefined) {
+    if (!ENABLE_MOBILE_UI || isMobile === false) {
         return <>{children}</>;
     }
 
