@@ -88,45 +88,47 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
                         <ArrowLeft className="h-6 w-6" />
                     </Link>
 
-                    {showSearch ? (
-                        <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <input
-                                autoFocus
-                                placeholder={activeTab === "FACTURE" ? "Rechercher une facture..." : "Rechercher un devis..."}
-                                className="w-full h-10 pl-9 pr-10 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                            />
-                            <button
-                                onClick={() => { setShowSearch(false); setSearchQuery(""); }}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-between">
-                            <h1 className="text-xl font-bold tracking-tight">Documents</h1>
-                            <div className="flex items-center gap-1">
+                    <div className="flex-1 flex items-center justify-end gap-2">
+                        {showSearch ? (
+                            <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <input
+                                    autoFocus
+                                    placeholder={activeTab === "FACTURE" ? "Rechercher..." : "Rechercher..."}
+                                    className="w-full h-10 pl-9 pr-10 rounded-xl bg-muted/50 border-none text-sm focus:ring-1 focus:ring-primary"
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                />
                                 <button
-                                    onClick={() => setShowFilters(!showFilters)}
-                                    className={cn("h-10 w-10 rounded-full flex items-center justify-center active:scale-95 transition-all", showFilters ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground")}
+                                    onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
                                 >
-                                    <Filter className="h-5 w-5" />
+                                    <X className="h-4 w-4" />
                                 </button>
+                            </div>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-between">
+                                <h1 className="text-xl font-bold tracking-tight">Documents</h1>
                                 <button
                                     onClick={() => setShowSearch(true)}
                                     className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
                                 >
                                     <Search className="h-5 w-5 text-muted-foreground" />
                                 </button>
-                                <Link href={activeTab === 'FACTURE' ? "/factures/new" : "/devis/new"} className="h-9 w-9 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/20 flex items-center justify-center active:scale-90 transition-transform">
-                                    <Plus className="h-5 w-5" />
-                                </Link>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
+
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center active:scale-95 transition-all", showFilters ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground")}
+                    >
+                        <Filter className="h-5 w-5" />
+                    </button>
+
+                    <Link href={activeTab === 'FACTURE' ? "/factures/new" : "/devis/new"} className="h-10 w-10 shrink-0 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/20 flex items-center justify-center active:scale-90 transition-transform">
+                        <Plus className="h-6 w-6" />
+                    </Link>
                 </div>
 
                 {/* Tabs */}
