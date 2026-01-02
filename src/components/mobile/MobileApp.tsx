@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { MobileShell } from "./layout/MobileShell";
 import Link from "next/link";
 import { Plus } from "lucide-react";
@@ -31,6 +31,7 @@ const MobileProfile = dynamic(() => import("./features/MobileProfile").then(mod 
 
 export default function MobileApp() {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
 
     // -- ROUTING MAPPER --
     let content = null;
@@ -82,7 +83,7 @@ export default function MobileApp() {
         else {
             content = <MobileClients />;
         }
-    } else if (pathname.startsWith("/products")) {
+    } else if (pathname.startsWith("/produits")) {
         content = <MobileProducts />;
     } else if (pathname.startsWith("/rapports")) {
         content = <MobileReports />;

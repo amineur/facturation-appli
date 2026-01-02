@@ -23,7 +23,7 @@ export function BottomNav() {
         { label: "Tableau de bord", icon: Home, path: "/" },
         { label: "Documents", icon: FileText, path: "/factures" }, // Maps to MobileDocuments
         { label: "Clients", icon: Users, path: "/clients" },
-        { label: "Produits", icon: Package, path: "/products" },
+        { label: "Produits", icon: Package, path: "/produits" },
         { label: "Menu", icon: Menu, path: "/settings" },
     ];
 
