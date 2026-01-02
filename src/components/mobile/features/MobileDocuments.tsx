@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { toast } from "sonner";
+import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 
 interface MobileDocumentsProps {
     initialTab?: "FACTURE" | "DEVIS";
@@ -21,6 +22,8 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
     const [showSearch, setShowSearch] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewDocNum, setPreviewDocNum] = useState<string>("");
 
     // -- Filter Options --
     const filters = [
@@ -104,7 +107,8 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
         try {
             const url = generateInvoicePDF(previewDoc, societe, client, { returnBlob: true });
             if (url && typeof url === 'string') {
-                window.open(url, '_blank');
+                setPreviewDocNum(doc.numero);
+                setPreviewUrl(url);
             }
         } catch (err) {
             console.error(err);
@@ -264,6 +268,13 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
                     </div>
                 )}
             </div>
+
+            <PDFPreviewModal
+                isOpen={!!previewUrl}
+                onClose={() => setPreviewUrl(null)}
+                pdfUrl={previewUrl}
+                invoiceNumber={previewDocNum}
+            />
         </div>
     );
 }

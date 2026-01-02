@@ -12,6 +12,7 @@ import { createInvoice, updateInvoice } from "@/lib/actions/invoices";
 import { createQuote, updateQuote } from "@/lib/actions/quotes";
 import { format } from "date-fns";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
+import { PDFPreviewModal } from '@/components/ui/PDFPreviewModal';
 
 interface MobileEditorProps {
     type: "FACTURE" | "DEVIS";
@@ -48,6 +49,9 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
     const [isSelectingProduct, setIsSelectingProduct] = useState(false);
     const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
     const [showAdvanced, setShowAdvanced] = useState(false); // Dates & Status
+
+    // Preview State
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     // Initial Load (Edit or Duplicate)
     useEffect(() => {
@@ -165,7 +169,7 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
 
         const url = generateInvoicePDF(mockDoc, societe, client, { returnBlob: true });
         if (url && typeof url === 'string') {
-            window.open(url, '_blank');
+            setPreviewUrl(url);
         }
     };
 
@@ -663,6 +667,18 @@ export function MobileEditor({ type, id }: MobileEditorProps) {
                     </button>
                 </div>
             </div>
+
+            {/* Client Selector (Slide-in) */}
+            {isSelectingClient && (
+                // ... handled above by early return, but kept for structure if needed
+                null
+            )}
+            <PDFPreviewModal
+                isOpen={!!previewUrl}
+                onClose={() => setPreviewUrl(null)}
+                pdfUrl={previewUrl}
+                invoiceNumber={currentDocNumber || "PREVIEW"}
+            />
         </div>
     );
 }
