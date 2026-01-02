@@ -331,6 +331,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
                             if (cache.quotes) setQuotes(cache.quotes);
                             if (cache.clients) setClients(cache.clients);
                             if (cache.products) setProducts(cache.products);
+
+                            // Restore User from Cache to prevent FOUC in MobileGuard
+                            const uId = localStorage.getItem("glassy_current_user_id");
+                            const uStr = localStorage.getItem("glassy_users");
+                            if (uId && uStr) {
+                                const uList = JSON.parse(uStr);
+                                const found = uList.find((u: any) => u.id === uId);
+                                if (found) {
+                                    setUser(found);
+                                    setAuthChecked(true); // Assume auth valid for instant load (verified later by fetch)
+                                }
+                            }
+
                             // Instant Unlock
                             setIsLoading(false);
                             cacheRestored = true;
