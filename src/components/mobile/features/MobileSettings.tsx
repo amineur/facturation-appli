@@ -1,7 +1,7 @@
 "use client";
 
 import { useData } from "@/components/data-provider";
-import { User, Building, Users, Mail, FileText, Database, LogOut, ChevronRight, Moon, Sun } from "lucide-react";
+import { User, Building, Users, Mail, FileText, Database, LogOut, ChevronRight, Moon, Sun, BarChart3 } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -87,6 +87,17 @@ export function MobileSettings() {
                     label="Données"
                     href="/settings/data"
                     color="bg-slate-500"
+                />
+            </div>
+
+            {/* Analytics Section */}
+            <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase px-1">Pilotage</p>
+                <MenuItem
+                    icon={BarChart3}
+                    label="Rapports & Statistiques"
+                    href="/rapports"
+                    color="bg-pink-500"
                 />
             </div>
 
