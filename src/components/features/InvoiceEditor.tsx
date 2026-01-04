@@ -26,6 +26,8 @@ import Link from "next/link";
 import { ClientEditor } from "./ClientEditor";
 import { getClientDisplayName, getClientSearchText } from "@/lib/client-utils";
 import { saveDraft, getDraft } from "@/lib/draft-storage";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileDocumentPage } from "../mobile/features/MobileDocumentPage";
 
 
 
@@ -42,7 +44,27 @@ interface InvoiceFormValues {
     items: LigneItem[];
 }
 
-export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
+
+export function InvoiceEditor(props: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
+    const isMobile = useIsMobile();
+    const documentId = props.initialData?.id || 'new';
+
+    console.log("[InvoiceEditor] Rendering with isMobile:", isMobile, "documentId:", documentId);
+
+    if (isMobile) {
+        return <MobileDocumentPage
+            key={`mobile-${documentId}`}
+            type={props.type === "Facture" ? "FACTURE" : "DEVIS"}
+            id={props.initialData?.id}
+            initialMode="edit"
+
+        />;
+    }
+
+    return <DesktopInvoiceEditor key={`desktop-${documentId}`} {...props} />;
+}
+
+function DesktopInvoiceEditor({ type = "Facture", initialData }: { type?: "Facture" | "Devis", initialData?: Facture | Devis }) {
     const { clients: globalClients, products, refreshData, societe, invoices, quotes, logAction, addInvoice, updateInvoiceInList } = useData();
     const [optimisticClients, setOptimisticClients] = useState<Client[]>([]);
 
@@ -180,11 +202,108 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     const nextActionRef = useRef<'redirect' | 'send' | null>('redirect');
     const isInitialized = useRef(false);
 
+    // -- STATE DECLARATIONS --
+    const [isClientOpen, setIsClientOpen] = useState(false);
+    const [clientSearch, setClientSearch] = useState("");
+    const [isLocked, setIsLocked] = useState<boolean>(initialData?.isLocked ?? false);
+    const [isEditingClient, setIsEditingClient] = useState(false);
+    const [editedClientData, setEditedClientData] = useState<Partial<Client>>({});
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+    // Config States
+    const globalConfig = dataService.getGlobalConfig();
+    const defaults = type === "Facture" ? globalConfig.invoiceDefaults : globalConfig.quoteDefaults;
+
+    const [showDateColumn, setShowDateColumn] = useState(initialData?.config?.showDateColumn ?? defaults?.showDate ?? globalConfig.showDateColumn ?? false);
+    const [showQuantiteColumn, setShowQuantiteColumn] = useState(initialData?.config?.showQuantiteColumn ?? defaults?.showQuantite ?? true);
+    const [showTvaColumn, setShowTvaColumn] = useState(initialData?.config?.showTvaColumn ?? defaults?.showTva ?? true);
+    const [showRemiseColumn, setShowRemiseColumn] = useState(initialData?.config?.showRemiseColumn ?? defaults?.showRemise ?? false);
+    const [showTTCColumn, setShowTTCColumn] = useState(initialData?.config?.showTTCColumn ?? defaults?.showTtc ?? globalConfig.showTTCColumn ?? false);
+    const [discountEnabled, setDiscountEnabled] = useState(initialData?.config?.discountEnabled ?? defaults?.showRemise ?? globalConfig.discountEnabled ?? false);
+    const [discountType, setDiscountType] = useState<'pourcentage' | 'montant'>(initialData?.config?.discountType || globalConfig.discountType || 'pourcentage');
+    const [defaultTva, setDefaultTva] = useState(initialData?.config?.defaultTva ?? globalConfig.defaultTva ?? 20);
+    const [showOptionalFields, setShowOptionalFields] = useState(initialData?.config?.showOptionalFields ?? globalConfig.showOptionalFields ?? false);
+
+    // -- DRAFT REF --
+    const draftRef = useRef<any>(null);
+
+    // Watch values for auto-save (stable object)
+    const formValues = watch();
+
+    // Unified persistence object
+    const persistenceData = {
+        ...formValues,
+        // ABSOLUTE SERVER PRIORITY: If server is locked or has a hard-locked status, 
+        // the draft MUST also be locked. We never save a 'deverrouillé' draft for a 'verrouillé' server doc.
+        isLocked: isLocked || !!initialData?.isLocked,
+        statut: (type === 'Facture' && ["Envoyée", "Payée", "Annulée", "Archivée"].includes(initialData?.statut as any))
+            ? initialData?.statut
+            : (type === 'Devis' && ["Facturé", "Archivé"].includes(initialData?.statut as any))
+                ? initialData?.statut
+                : localStatus,
+        defaultTva,
+        showDateColumn,
+        showQuantiteColumn,
+        showTvaColumn,
+        showRemiseColumn,
+        showTTCColumn,
+        discountEnabled,
+        discountType,
+        showOptionalFields,
+        updatedAt: Date.now()
+    };
+
+    useLayoutEffect(() => {
+        draftRef.current = persistenceData;
+    });
+
+    // Save on Unmount
+    useLayoutEffect(() => {
+        return () => {
+            if (!isInitialized.current) return;
+            console.log("[DESKTOP] Unmounting - forcing draft save", draftRef.current);
+            saveDraft(initialData?.id || 'new', draftRef.current);
+        };
+    }, [initialData?.id]);
+
+
+    // Auto-Save
+    useEffect(() => {
+        if (!isInitialized.current) return;
+        const timer = setTimeout(() => {
+            saveDraft(initialData?.id || 'new', persistenceData);
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [
+        initialData?.id,
+        formValues.clientId,
+        formValues.dateEmission,
+        formValues.echeance,
+        formValues.items,
+        isLocked,
+        localStatus,
+        defaultTva,
+        showDateColumn,
+        showQuantiteColumn,
+        showTvaColumn,
+        showRemiseColumn,
+        showTTCColumn,
+        discountEnabled,
+        discountType,
+        showOptionalFields
+    ]);
+
     // Reset form when initialData loads or ID changes (Robust Reset) WITH Draft Logic
     useEffect(() => {
         if (!initialData?.id) return;
 
-        console.log("!!! [DESKTOP] INITIALIZATION (Consolidated) !!!", { id: initialData.id });
+        // 0. RESET STALE STATE ON ID CHANGE
+        // This is CRITICAL to prevent 'spontaneous unlocking' when navigating from a locked to unlocked doc.
+        isInitialized.current = false;
+        setIsLocked(!!initialData.isLocked);
+        setLocalStatus(initialData.statut as any);
+
+        console.log("!!! [DESKTOP] INITIALIZATION (Consolidated) !!!", { id: initialData.id, serverLocked: !!initialData.isLocked });
 
         // 1. Start with Server Defaults
         let finalValues = buildFormDefaults(initialData);
@@ -225,7 +344,14 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                     conditionsPaiement: draft.conditionsPaiement || finalValues.conditionsPaiement,
                     remiseGlobale: draft.remiseGlobale,
                     remiseGlobaleType: draft.remiseGlobaleType,
-                    items: draft.items || finalValues.items
+                    items: (draft.items || finalValues.items).map((item: any) => ({
+                        ...item,
+                        id: item.id || uuidv4(),
+                        quantite: typeof item.quantite === 'string' ? parseFloat(item.quantite.replace(',', '.')) : (Number(item.quantite) || 0),
+                        prixUnitaire: typeof item.prixUnitaire === 'string' ? parseFloat(item.prixUnitaire.replace(',', '.')) : (Number(item.prixUnitaire) || 0),
+                        remise: typeof item.remise === 'string' ? parseFloat(item.remise.replace(',', '.')) : (Number(item.remise) || 0),
+                        tva: typeof item.tva === 'string' ? parseFloat(item.tva.replace(',', '.')) : (Number(item.tva) || 20),
+                    }))
                 };
 
                 // Restore Config States
@@ -238,11 +364,26 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                 if (draft.discountEnabled !== undefined) setDiscountEnabled(draft.discountEnabled);
                 if (draft.discountType) setDiscountType(draft.discountType);
                 if (draft.showOptionalFields !== undefined) setShowOptionalFields(draft.showOptionalFields);
+                // Strict Lock Priority: Server wins if it's already locked
+                const serverLocked = !!initialData.isLocked;
+                const draftLocked = draft.isLocked !== undefined ? draft.isLocked : serverLocked;
+                const finalLocked = serverLocked || draftLocked;
+                setIsLocked(finalLocked);
+
+                // Strict Status Priority: Server wins if it's in a hard-locked state
+                const serverStatus = initialData.statut;
+                const isServerHardLocked = type === "Facture"
+                    ? ["Envoyée", "Payée", "Annulée", "Archivée"].includes(serverStatus as StatusFacture)
+                    : ["Facturé", "Archivé"].includes(serverStatus as StatusDevis);
+
+                const finalStatus = isServerHardLocked ? serverStatus : (draft.statut || serverStatus);
+                setLocalStatus(finalStatus as any);
             }
         }
 
-        // Force Sync draftRef to prevent stale save if unmounted immediately
-        const safeDraftPayload = {
+        // Force Sync draftRef with final calculated values to prevent stale unmount save
+        draftRef.current = {
+            ...persistenceData,
             clientId: finalValues.clientId,
             dateEmission: finalValues.dateEmission,
             echeance: finalValues.echeance,
@@ -250,20 +391,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
             remiseGlobale: finalValues.remiseGlobale,
             remiseGlobaleType: finalValues.remiseGlobaleType,
             items: finalValues.items,
-            // Sync fresh draft values into the initial draftRef if we are using a draft
-            // This prevents the "Unmount Save" from capturing stale default states (like tva: 20) 
-            // before the react states (like defaultTva) have finished updating for the next render.
-            defaultTva: (!!draft && draft.updatedAt > 0) ? (draft.defaultTva !== undefined ? draft.defaultTva : defaultTva) : defaultTva,
-            showDateColumn: (!!draft && draft.showDateColumn !== undefined) ? draft.showDateColumn : showDateColumn,
-            showQuantiteColumn: (!!draft && draft.showQuantiteColumn !== undefined) ? draft.showQuantiteColumn : showQuantiteColumn,
-            showTvaColumn: (!!draft && draft.showTvaColumn !== undefined) ? draft.showTvaColumn : showTvaColumn,
-            showRemiseColumn: (!!draft && draft.showRemiseColumn !== undefined) ? draft.showRemiseColumn : showRemiseColumn,
-            showTTCColumn: (!!draft && draft.showTTCColumn !== undefined) ? draft.showTTCColumn : showTTCColumn,
-            discountEnabled: (!!draft && draft.discountEnabled !== undefined) ? draft.discountEnabled : discountEnabled,
-            discountType: (!!draft && !!draft.discountType) ? draft.discountType : discountType,
-            showOptionalFields: (!!draft && draft.showOptionalFields !== undefined) ? draft.showOptionalFields : showOptionalFields
         };
-        draftRef.current = safeDraftPayload;
 
         reset(finalValues, { keepDirty: false, keepTouched: false });
         isInitialized.current = true;
@@ -281,48 +409,13 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         }
     });
 
-    // State Declarations
-    const [isClientOpen, setIsClientOpen] = useState(false);
-    const [clientSearch, setClientSearch] = useState("");
-    const [isClientModalOpen, setIsClientModalOpen] = useState(false); // Modal state
-    const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false); // Confirmation modal
-    const [isSaving, setIsSaving] = useState(false);
-
-    // Refs
-    // const nextActionRef... (already there)
-    const clientDropdownRef = useRef<HTMLDivElement>(null);
-
-    // --- LOCK LOGIC: CLEAN REIMPLEMENTATION ---
-
-    // 1. Hard Lock (Business Rules - Irreversible via UI)
+    // --- LOCK & READONLY LOGIC ---
     const isHardLocked = type === "Facture"
         ? ["Envoyée", "Payée", "Annulée", "Archivée"].includes(localStatus as StatusFacture)
         : ["Facturé", "Archivé"].includes(localStatus as StatusDevis);
 
-    // 2. Local State (SSOT for Soft Lock)
-    // Initialized ONCE from server data    const [isLocking, setIsLocking] = useState(false);
-
-    // DEBUG: Monitor incoming data
-    useEffect(() => {
-        console.log(`[EDITOR_DEBUG] InitialData Updated for ${initialData?.id || 'new'}:`, {
-            statut: initialData?.statut,
-            hasEmails: !!initialData?.emails,
-            emailsCount: initialData?.emails?.length,
-            emails: initialData?.emails
-        });
-    }, [initialData]);
-
-    const [isLocked, setIsLocked] = useState<boolean>(() => {
-        if (isHardLocked) return true;
-        if (!initialData) return false;
-        // Soft lock check
-        return !!initialData.isLocked;
-    });
-
-    const [isLocking, setIsLocking] = useState(false);
-
-    // 3. Effective ReadOnly State (What drives the UI inputs)
     const isReadOnly = isHardLocked || isLocked;
+    const [isLocking, setIsLocking] = useState(false);
 
     // Remove old debug states/effects if any remained (cleaned)
 
@@ -473,25 +566,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     };
 
 
-    // Load Global Config for defaults if not editing specific invoice config
-    // Load Global Config for defaults
-    const globalConfig = dataService.getGlobalConfig();
-    const defaults = type === "Facture" ? globalConfig.invoiceDefaults : globalConfig.quoteDefaults;
-
-    // Column visibility states
-    const [showDateColumn, setShowDateColumn] = useState(initialData?.config?.showDateColumn ?? defaults?.showDate ?? globalConfig.showDateColumn ?? false);
-
-    // New States for Columns
-    const [showQuantiteColumn, setShowQuantiteColumn] = useState(initialData?.config?.showQuantiteColumn ?? defaults?.showQuantite ?? true);
-    const [showTvaColumn, setShowTvaColumn] = useState(initialData?.config?.showTvaColumn ?? defaults?.showTva ?? true);
-    const [showRemiseColumn, setShowRemiseColumn] = useState(initialData?.config?.showRemiseColumn ?? defaults?.showRemise ?? false);
-
-    const [showTTCColumn, setShowTTCColumn] = useState(initialData?.config?.showTTCColumn ?? defaults?.showTtc ?? globalConfig.showTTCColumn ?? false);
-    const [discountEnabled, setDiscountEnabled] = useState(initialData?.config?.discountEnabled ?? defaults?.showRemise ?? globalConfig.discountEnabled ?? false);
-    const [discountType, setDiscountType] = useState<'pourcentage' | 'montant'>(initialData?.config?.discountType || globalConfig.discountType || 'pourcentage');
     const [globalDiscountType, setGlobalDiscountType] = useState<'pourcentage' | 'montant'>(initialData?.remiseGlobaleType || 'pourcentage');
-    const [defaultTva, setDefaultTva] = useState(initialData?.config?.defaultTva ?? globalConfig.defaultTva ?? 20); // Default VAT rate
-    const [showOptionalFields, setShowOptionalFields] = useState(initialData?.config?.showOptionalFields ?? globalConfig.showOptionalFields ?? false);
 
     // Freeze Operation Type
     // If Editing (initialData exists): Use saved value. If missing (legacy), force 'service' to preserve history.
@@ -503,60 +578,11 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
         return globalConfig.operationType ?? 'service';
     });
 
-    // -- DRAFT PERSISTENCE LOGIC (DESKTOP) --
-    // Moved here after state declarations to avoid "used before declaration" errors
-    const formValues = watch();
-
-    const dataToSave = {
-        clientId: formValues.clientId,
-        dateEmission: formValues.dateEmission,
-        echeance: formValues.echeance,
-        conditionsPaiement: formValues.conditionsPaiement,
-        remiseGlobale: formValues.remiseGlobale,
-        remiseGlobaleType: formValues.remiseGlobaleType,
-        items: formValues.items,
-        // Config states
-        defaultTva,
-        showDateColumn,
-        showQuantiteColumn,
-        showTvaColumn,
-        showRemiseColumn,
-        showTTCColumn,
-        discountEnabled,
-        discountType,
-        showOptionalFields
-    };
-
-    const draftRef = useRef(dataToSave);
-    useLayoutEffect(() => {
-        draftRef.current = dataToSave;
-    });
-
-    // Save on Unmount - Use useLayoutEffect to ensure save happens BEFORE the next component detects mount
-    useLayoutEffect(() => {
-        return () => {
-            // Re-check ref to be absolutely sure we have latest
-            if (!isInitialized.current) {
-                console.warn("[DESKTOP] Unmount Save SKIPPED (LayoutEffect) - Not Initialized");
-                return;
-            }
-            console.log("[DESKTOP] Unmounting (LayoutEffect) - forcing save...", draftRef.current);
-            saveDraft(initialData?.id || 'new', draftRef.current);
-        };
-    }, [initialData?.id]);
-
-    // 2. Auto-Save on Change
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            console.log("[DESKTOP] Saving draft...", dataToSave);
-            saveDraft(initialData?.id || 'new', dataToSave);
-        }, 1000);
-        return () => clearTimeout(timer);
-    }, [formValues, initialData?.id, dataToSave]);
-
-    const [isEditingClient, setIsEditingClient] = useState(false);
-    const [editedClientData, setEditedClientData] = useState<Partial<Client>>({});
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isClientModalOpen, setIsClientModalOpen] = useState(false); // Modal state
+    const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false); // Confirmation modal
+    const [isSaving, setIsSaving] = useState(false);
+    const settingsRef = useRef<HTMLDivElement>(null);
+    const clientDropdownRef = useRef<HTMLDivElement>(null);
 
     // Email & History State
     const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
@@ -611,9 +637,6 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
     });
 
     // Close settings on click outside
-    // settingsRef is defined above or here once
-    const settingsRef = useRef<HTMLDivElement>(null);
-    // clientDropdownRef removed here (moved to top)
 
 
     useEffect(() => {
@@ -1523,11 +1546,7 @@ export function InvoiceEditor({ type = "Facture", initialData }: { type?: "Factu
                                         nextActionRef.current = 'send';
                                         handleSubmit((data) => onSubmit(data))();
                                     }}
-                                    disabled={initialData?.statut === "Annulée" || initialData?.statut === "Refusé"}
-                                    className={cn(
-                                        "px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 font-medium",
-                                        (initialData?.statut === "Annulée" || initialData?.statut === "Refusé") && "opacity-50 cursor-not-allowed bg-blue-500/50 hover:bg-blue-500/50"
-                                    )}
+                                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 font-medium"
                                     title={type === "Facture" ? "Envoyer la facture" : "Envoyer le devis"}
                                 >
                                     <Send className="h-4 w-4" />

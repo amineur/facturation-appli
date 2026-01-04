@@ -24,6 +24,7 @@ export interface Produit {
     prixUnitaire: number;
     tva: number;
     societeId: string;
+    soldCount?: number;
 }
 
 export type ClientType = 'COMPANY' | 'INDIVIDUAL';
@@ -55,6 +56,7 @@ export interface Client {
 
     // Legal infos
     rcs?: string;
+    totalPurchases?: number; // Total amount paid by the client (calculated)
 }
 
 export interface Societe {

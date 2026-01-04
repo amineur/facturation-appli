@@ -114,7 +114,18 @@ export async function fetchProducts(societeId: string): Promise<{ success: boole
         if (!authorized) return { success: false, error: "Accès refusé" };
 
         const products = await prisma.produit.findMany({
-            where: { societeId }
+            where: { societeId },
+            include: {
+                factureItems: {
+                    where: {
+                        facture: {
+                            deletedAt: null,
+                            statut: { in: ['Payée', 'Envoyée', 'Téléchargée', 'Retard', 'Archivée'] }
+                        }
+                    },
+                    select: { quantite: true }
+                }
+            }
         });
 
         const mapped: Produit[] = products.map((p: any) => ({
@@ -123,7 +134,8 @@ export async function fetchProducts(societeId: string): Promise<{ success: boole
             nom: p.nom,
             description: p.description || "",
             prixUnitaire: p.prixUnitaire,
-            tva: p.tva
+            tva: p.tva,
+            soldCount: p.factureItems.reduce((sum: number, item: any) => sum + (item.quantite || 0), 0)
         }));
         return { success: true, data: mapped };
     } catch (error: any) {

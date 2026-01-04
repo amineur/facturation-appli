@@ -106,7 +106,7 @@ export function MobileIdentityEditor() {
     };
 
     return (
-        <div className="pb-32 bg-background min-h-screen">
+        <div className="pb-32 bg-background min-h-screen font-sans">
             {/* Header */}
             <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -255,11 +255,11 @@ export function MobileIdentityEditor() {
                         </div>
                         <div>
                             <label className="text-xs font-medium text-muted-foreground ml-1">IBAN</label>
-                            <input {...register("iban")} className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-mono" />
+                            <input {...register("iban")} className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-sans" />
                         </div>
                         <div>
                             <label className="text-xs font-medium text-muted-foreground ml-1">BIC</label>
-                            <input {...register("bic")} className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-mono" />
+                            <input {...register("bic")} className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-sans" />
                         </div>
                     </div>
                 </div>

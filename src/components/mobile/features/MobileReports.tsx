@@ -4,6 +4,7 @@ import { useData } from "@/components/data-provider";
 import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths, endOfDay, startOfDay } from "date-fns";
 import { fr } from "date-fns/locale";
+import { safeFormat } from "@/lib/date-utils";
 import { useState, useMemo } from "react";
 import { BarChart3, Users, Package, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,9 +47,14 @@ export function MobileReports() {
             }
         }
 
-        const filterDate = (dateStr: string) => {
-            const date = parseISO(dateStr);
-            return isWithinInterval(date, { start, end });
+        const filterDate = (dateStr: string | undefined | null) => {
+            if (!dateStr) return false;
+            try {
+                const date = parseISO(dateStr);
+                return isWithinInterval(date, { start, end });
+            } catch (e) {
+                return false;
+            }
         };
 
         return {
@@ -115,8 +121,15 @@ export function MobileReports() {
     // 3. Monthly Breakdown
     const monthlyData = useMemo(() => {
         const data = new Map<string, { name: string; factures: number; devis: number }>();
-        const getKey = (dateStr: string) => dateStr.substring(0, 7);
-        const getLabel = (dateStr: string) => format(parseISO(dateStr), "MMM yy", { locale: fr });
+        const getKey = (dateStr: string | undefined | null) => dateStr ? dateStr.substring(0, 7) : "unknown";
+        const getLabel = (dateStr: string | undefined | null) => {
+            if (!dateStr) return "Inconnu";
+            try {
+                return format(parseISO(dateStr), "MMM yy", { locale: fr });
+            } catch (e) {
+                return "Inconnu";
+            }
+        };
 
         // Init
         [...filteredData.invoices, ...filteredData.quotes].forEach(item => {
@@ -139,10 +152,10 @@ export function MobileReports() {
     }, [filteredData]);
 
     return (
-        <div className="p-4 space-y-6 pb-32">
+        <div className="p-4 space-y-6 pb-32 font-sans">
             <div>
                 <h1 className="text-2xl font-bold">Rapports</h1>
-                <p className="text-sm text-muted-foreground">Analyses du {format(filteredData.start, "d MMM")} au {format(filteredData.end, "d MMM")}</p>
+                <p className="text-sm text-muted-foreground">Analyses du {safeFormat(filteredData.start, "d MMM")} au {safeFormat(filteredData.end, "d MMM")}</p>
             </div>
 
             {/* KPI Cards (New Audit Requirement) */}

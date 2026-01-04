@@ -18,6 +18,7 @@ import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay, subMo
 import { useDashboardState } from "@/components/providers/dashboard-state-provider";
 import { fetchDashboardMetrics } from "@/app/actions";
 import { Facture, Devis, Societe } from "@/types";
+import { safeFormat } from "@/lib/date-utils";
 
 const InvoiceStatusChart = dynamic(() => import("@/components/features/InvoiceStatusChart").then(mod => mod.InvoiceStatusChart), {
     loading: () => <Skeleton className="w-full h-[300px] rounded-xl" />,
@@ -383,7 +384,7 @@ export function DashboardContent({
                                             <p className="font-semibold text-foreground truncate text-sm">{clientName}</p>
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <Receipt className="h-3 w-3 text-muted-foreground shrink-0" />
-                                                <span className="text-xs text-muted-foreground truncate">{invoice.numero} • {format(new Date(invoice.dateEmission), "dd/MM/yyyy")}</span>
+                                                <span className="text-xs text-muted-foreground truncate">{invoice.numero} • {safeFormat(invoice.dateEmission)}</span>
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0">
@@ -414,7 +415,7 @@ export function DashboardContent({
                                             <p className="font-semibold text-foreground truncate text-sm">{clientName}</p>
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
-                                                <span className="text-xs text-muted-foreground truncate">{quote.numero} • {format(new Date(quote.dateEmission), "dd/MM/yyyy")}</span>
+                                                <span className="text-xs text-muted-foreground truncate">{quote.numero} • {safeFormat(quote.dateEmission)}</span>
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0">

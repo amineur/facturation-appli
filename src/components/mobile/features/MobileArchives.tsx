@@ -5,6 +5,7 @@ import { useData } from "@/components/data-provider";
 import { Archive, Receipt, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { safeFormat } from "@/lib/date-utils";
 
 export function MobileArchives() {
     const { societe } = useData();
@@ -44,7 +45,7 @@ export function MobileArchives() {
 
 
     return (
-        <div className="p-4 space-y-4 pb-32">
+        <div className="p-4 space-y-4 pb-32 font-sans">
             <div>
                 <h1 className="text-2xl font-bold">Archives</h1>
                 <p className="text-sm text-muted-foreground">Documents archivés (Lecture seule)</p>
@@ -60,7 +61,7 @@ export function MobileArchives() {
                         </div>
                         <div className="flex justify-between items-end">
                             <p className="text-xs text-muted-foreground">
-                                {item.archivedAt ? `Archivé le ${format(new Date(item.archivedAt), "d MMM yy", { locale: fr })}` : "Archivé"}
+                                {item.archivedAt ? `Archivé le ${safeFormat(item.archivedAt, "d MMM yy")}` : "Archivé"}
                             </p>
                             <p className="font-bold text-sm">{item.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p>
                         </div>

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { safeFormat } from "@/lib/date-utils";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { toast } from "sonner";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
@@ -20,7 +21,7 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
     const [activeTab, setActiveTab] = useState<"FACTURE" | "DEVIS">(initialTab);
     const [searchQuery, setSearchQuery] = useState("");
     const [showSearch, setShowSearch] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
+    const [showFilters, setShowFilters] = useState(true);
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewDocNum, setPreviewDocNum] = useState<string>("");
@@ -117,13 +118,11 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
     };
 
     return (
-        <div className="flex flex-col h-screen pb-20 bg-background">
+        <div className="flex flex-col h-screen pb-20 bg-background font-sans">
             {/* Extended Header */}
             <div className="bg-background/80 backdrop-blur-xl border-b border-border sticky top-0 z-30 px-4 py-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                    <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
-                        <ArrowLeft className="h-6 w-6" />
-                    </Link>
+                    <div className="w-10" /> {/* Spacer for centering when arrows are removed */}
 
                     <div className="flex-1 flex items-center justify-end gap-2">
                         {showSearch ? (
@@ -156,12 +155,6 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
                         )}
                     </div>
 
-                    <button
-                        onClick={() => setShowFilters(!showFilters)}
-                        className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center active:scale-95 transition-all", showFilters ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground")}
-                    >
-                        <Filter className="h-5 w-5" />
-                    </button>
 
                     <Link href={activeTab === 'FACTURE' ? "/factures/new" : "/devis/new"} className="h-10 w-10 shrink-0 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/20 flex items-center justify-center active:scale-90 transition-transform">
                         <Plus className="h-6 w-6" />
@@ -223,36 +216,34 @@ export function MobileDocuments({ initialTab = "FACTURE" }: MobileDocumentsProps
                             href={activeTab === 'FACTURE' ? `/factures/${item.id}` : `/devis/${item.id}`}
                             className="block group"
                         >
-                            <div className="bg-card border border-border/50 p-4 rounded-2xl active:scale-[0.99] transition-all relative overflow-hidden">
-                                <div className="flex justify-between items-start mb-2 relative z-10">
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn("p-2 rounded-lg", activeTab === 'FACTURE' ? "bg-blue-500/10 text-blue-500" : "bg-purple-500/10 text-purple-500")}>
-                                            {activeTab === 'FACTURE' ? <Receipt className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                            <div className="bg-card border border-border/50 p-4 rounded-2xl active:scale-[0.99] transition-all">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-foreground mb-1 truncate">{client?.nom || "Inconnu"}</p>
+                                        <div className="flex items-center gap-2 mb-0.5">
+                                            <span className={cn(
+                                                "text-[9px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded",
+                                                activeTab === 'FACTURE' ? "bg-blue-500/10 text-blue-500" : "bg-purple-500/10 text-purple-500"
+                                            )}>
+                                                {activeTab === 'FACTURE' ? 'FAC' : 'DEV'}
+                                            </span>
+                                            <p className="text-sm font-medium text-muted-foreground">{item.numero}</p>
                                         </div>
-                                        <div>
-                                            <p className="font-bold text-sm text-foreground">{item.numero}</p>
-                                            <p className="text-xs text-muted-foreground capitalize">{format(new Date(item.dateEmission), "d MMMM yyyy", { locale: fr })}</p>
-                                        </div>
+                                        <p className="text-xs text-muted-foreground">{safeFormat(item.dateEmission, "d MMM yyyy")}</p>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={(e) => handlePreview(e, item)}
-                                            className="p-2 -mr-2 rounded-full hover:bg-muted text-muted-foreground active:scale-90 transition-transform"
-                                        >
-                                            <Eye className="h-5 w-5" />
-                                        </button>
-                                        {/* <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" /> */}
-                                    </div>
+                                    <button
+                                        onClick={(e) => handlePreview(e, item)}
+                                        className="p-2 -mr-2 rounded-full hover:bg-muted text-muted-foreground active:scale-90 transition-all"
+                                    >
+                                        <Eye className="h-4 w-4" />
+                                    </button>
                                 </div>
 
-                                <div className="flex justify-between items-end relative z-10">
-                                    <div>
-                                        <p className="text-sm font-medium text-muted-foreground mb-1">{client?.nom || "Inconnu"}</p>
-                                        <span className={cn("text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full border", getStatusColor(item.statut))}>
-                                            {item.statut}
-                                        </span>
-                                    </div>
-                                    <p className="text-lg font-bold text-foreground">{item.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p>
+                                <div className="flex justify-between items-end">
+                                    <span className={cn("text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full border", getStatusColor(item.statut))}>
+                                        {item.statut}
+                                    </span>
+                                    <p className="text-base font-bold text-foreground">{item.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</p>
                                 </div>
                             </div>
                         </Link>

@@ -16,7 +16,12 @@ export async function fetchClients(societeId: string): Promise<{ success: boolea
 
         const clients = await prisma.client.findMany({
             where: { societeId },
-            orderBy: { nom: 'asc' }
+            include: {
+                factures: {
+                    where: { deletedAt: null, statut: { not: 'Annulée' as any } },
+                    select: { totalTTC: true }
+                }
+            }
         });
 
         const mapped: Client[] = clients.map((c: any) => ({
@@ -30,7 +35,8 @@ export async function fetchClients(societeId: string): Promise<{ success: boolea
             codePostal: c.codePostal || undefined,
             pays: c.pays || undefined,
             siret: c.siret || undefined,
-            tvaIntra: c.tvaIntra || undefined
+            tvaIntra: c.tvaIntra || undefined,
+            totalPurchases: c.factures.reduce((sum: number, f: any) => sum + (f.totalTTC || 0), 0)
         }));
 
         return { success: true, data: mapped };

@@ -22,10 +22,16 @@ interface InvoiceLineItemProps {
 }
 
 const PriceInput = ({ value, onChange, onBlur, inputRef, className, disabled }: any) => {
-    const [localValue, setLocalValue] = useState(value !== undefined ? value.toFixed(2).replace('.', ',') : "0,00");
+    const formatValue = (val: any) => {
+        if (val === undefined || val === null || val === "") return "0,00";
+        const num = typeof val === 'string' ? parseFloat(val.replace(',', '.')) : Number(val);
+        return isNaN(num) ? "0,00" : num.toFixed(2).replace('.', ',');
+    };
+
+    const [localValue, setLocalValue] = useState(formatValue(value));
 
     useEffect(() => {
-        setLocalValue(value !== undefined ? value.toFixed(2).replace('.', ',') : "0,00");
+        setLocalValue(formatValue(value));
     }, [value]);
 
     return (

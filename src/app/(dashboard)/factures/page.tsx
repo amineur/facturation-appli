@@ -13,6 +13,7 @@ import { dataService } from "@/lib/data-service";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { safeFormat } from "@/lib/date-utils";
 import { deleteRecord, updateInvoice, markInvoiceAsSent, createInvoice, markInvoiceAsDownloaded } from "@/app/actions";
 import { createClientAction as createClient } from "@/app/actions-clients";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
@@ -48,16 +49,6 @@ const getStatusColor = (status: StatusFacture) => {
     }
 };
 
-const formatDateSafe = (dateStr: string | undefined | null) => {
-    if (!dateStr) return "-";
-    try {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return "-";
-        return format(date, "dd.MM.yy");
-    } catch {
-        return "-";
-    }
-};
 
 export default function InvoicesPageWrapper() {
     return (
@@ -496,11 +487,10 @@ function InvoicesPage() {
                         />
                     </div>
                     <div className="relative w-full md:w-48">
-                        <Filter className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as StatusFacture | "ALL")}
-                            className="h-10 w-full rounded-lg px-4 pl-10 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-border dark:border-white/20 hover:border-primary/30 focus:border-primary/50 focus:ring-0 transition-colors"
+                            className="h-10 w-full rounded-lg px-4 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-border dark:border-white/20 hover:border-primary/30 focus:border-primary/50 focus:ring-0 transition-colors"
                         >
                             <option value="ALL" className="text-foreground bg-background">Tous les statuts</option>
                             <option value="Brouillon" className="text-foreground bg-background">Brouillon</option>
@@ -575,9 +565,9 @@ function InvoicesPage() {
                                                     <td className="px-3 py-4 max-w-[200px] truncate" title={client ? getClientDisplayName(client) : "Inconnu"}>
                                                         {client ? getClientDisplayName(client) : "Inconnu"}
                                                     </td>
-                                                    <td className="px-3 py-4">{formatDateSafe(facture.dateEmission)}</td>
-                                                    <td className="px-3 py-4">{formatDateSafe(facture.echeance)}</td>
-                                                    <td className="px-3 py-4">{formatDateSafe(facture.datePaiement)}</td>
+                                                    <td className="px-3 py-4">{safeFormat(facture.dateEmission, "dd.MM.yy")}</td>
+                                                    <td className="px-3 py-4">{safeFormat(facture.echeance, "dd.MM.yy")}</td>
+                                                    <td className="px-3 py-4">{safeFormat(facture.datePaiement, "dd.MM.yy")}</td>
                                                     <td className="px-3 py-4 font-bold text-foreground">
                                                         {facture.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
                                                     </td>

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { generateInvoicePDF } from "@/lib/pdf-generator";
 import { PDFPreviewModal } from "@/components/ui/PDFPreviewModal";
 import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { deleteRecord, updateQuoteStatus, convertQuoteToInvoice } from "@/app/actions";
 import { toast } from "sonner";
 import { useInvoiceEmail } from "@/hooks/use-invoice-email";
@@ -426,11 +427,10 @@ function DevisPage() {
                         />
                     </div>
                     <div className="relative w-full md:w-48">
-                        <Filter className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as StatusDevis | "ALL")}
-                            className="h-10 w-full rounded-lg px-4 pl-10 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-border dark:border-white/20 hover:border-primary/30 focus:border-primary/50 focus:ring-0 transition-colors"
+                            className="h-10 w-full rounded-lg px-4 pr-4 text-sm appearance-none cursor-pointer text-foreground bg-transparent border border-border dark:border-white/20 hover:border-primary/30 focus:border-primary/50 focus:ring-0 transition-colors"
                         >
                             <option value="ALL" className="text-foreground bg-background">Tous les statuts</option>
                             <option value="Brouillon" className="text-foreground bg-background">Brouillon</option>
@@ -483,7 +483,7 @@ function DevisPage() {
                                                     {client ? getClientDisplayName(client) : "Inconnu"}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {devis.dateEmission ? format(new Date(devis.dateEmission), "dd.MM.yy") : "-"}
+                                                    {safeFormat(devis.dateEmission, "dd.MM.yy")}
                                                 </td>
                                                 <td className="px-6 py-4 font-bold text-foreground">
                                                     {devis.totalTTC.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}

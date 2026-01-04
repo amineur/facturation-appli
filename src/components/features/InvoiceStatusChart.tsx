@@ -97,7 +97,7 @@ export function InvoiceStatusChart({ invoices, globalInvoices, chartData, totalO
                                             <div className="bg-popover/95 backdrop-blur-sm border border-border p-2 rounded-lg shadow-lg text-xs flex items-center gap-2 transform -translate-x-1/2 left-1/2 relative">
                                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: data.color }} />
                                                 <span className="font-medium text-popover-foreground">{data.name}:</span>
-                                                <span className="font-mono font-bold text-popover-foreground">
+                                                <span className="font-sans font-bold text-popover-foreground">
                                                     {(data.amount || 0).toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}
                                                 </span>
                                             </div>
@@ -129,7 +129,7 @@ export function InvoiceStatusChart({ invoices, globalInvoices, chartData, totalO
                                 <span className="text-sm md:text-base font-medium text-foreground truncate">{item.name}</span>
                             </div>
                             {/* Display only amount */}
-                            <span className="text-sm md:text-base font-semibold text-foreground font-mono whitespace-nowrap flex-shrink-0">
+                            <span className="text-sm md:text-base font-semibold text-foreground font-sans whitespace-nowrap flex-shrink-0">
                                 {(item as any).amount?.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }) || '0 €'}
                             </span>
                         </div>

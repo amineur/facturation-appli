@@ -11,39 +11,25 @@ import { createProduct, updateProduct, deleteProduct } from "@/lib/actions/produ
 import { useRouter } from "next/navigation";
 
 export function MobileProducts() {
-    const { products, invoices } = useData();
+    const { products } = useData();
     const [search, setSearch] = useState("");
-    const [sortBy, setSortBy] = useState<"nom_asc" | "nom_desc" | "prix_asc" | "prix_desc" | "sold_desc" | "sold_asc">("nom_asc");
+    const [sortBy, setSortBy] = useState<"nom_asc" | "nom_desc" | "prix_asc" | "prix_desc" | "sold_desc" | "sold_asc">("sold_desc");
     const [isEditing, setIsEditing] = useState(false);
     const [editingProduct, setEditingProduct] = useState<any>(null); // null = create, object = edit
     const [showSearch, setShowSearch] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
+    const [showFilters, setShowFilters] = useState(true);
 
-    // Calculate Sales Stats for each product
-    const productStats = products.map(p => {
-        let soldCount = 0;
-        invoices.forEach(inv => {
-            if (["Payée", "Envoyée"].includes(inv.statut)) {
-                inv.items?.forEach(item => {
-                    // Loose matching by description as we might not have ID link in legacy data
-                    if (item.description === p.nom || item.description?.includes(p.nom)) {
-                        soldCount += Number(item.quantite || 0);
-                    }
-                });
-            }
-        });
-        return { ...p, soldCount };
-    });
-
-    const filtered = productStats.filter(p => p.nom.toLowerCase().includes(search.toLowerCase()))
+    const filtered = products.filter(p => p.nom.toLowerCase().includes(search.toLowerCase()))
         .sort((a, b) => {
+            const soldA = a.soldCount || 0;
+            const soldB = b.soldCount || 0;
             switch (sortBy) {
                 case "nom_asc": return a.nom.localeCompare(b.nom);
                 case "nom_desc": return b.nom.localeCompare(a.nom);
                 case "prix_asc": return a.prixUnitaire - b.prixUnitaire;
                 case "prix_desc": return b.prixUnitaire - a.prixUnitaire;
-                case "sold_desc": return b.soldCount - a.soldCount;
-                case "sold_asc": return a.soldCount - b.soldCount;
+                case "sold_desc": return soldB - soldA;
+                case "sold_asc": return soldA - soldB;
                 default: return 0;
             }
         });
@@ -63,13 +49,11 @@ export function MobileProducts() {
     };
 
     return (
-        <div className="min-h-screen bg-muted/10 pb-24">
+        <div className="min-h-screen bg-muted/10 pb-24 font-sans">
             {/* Header */}
             <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                    <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted shrink-0">
-                        <ArrowLeft className="h-6 w-6" />
-                    </Link>
+                    <div className="w-10" /> {/* Spacer for centering when arrows are removed */}
                     <div className="flex-1 flex items-center justify-end gap-2">
                         {showSearch ? (
                             <div className="flex-1 relative animate-in fade-in zoom-in-95 duration-200">
@@ -90,7 +74,9 @@ export function MobileProducts() {
                             </div>
                         ) : (
                             <div className="flex-1 flex items-center justify-between">
-                                <h1 className="text-xl font-bold">Produits</h1>
+                                <h1 className="text-xl font-bold">
+                                    {products.length} {products.length > 1 ? "Produits" : "Produit"}
+                                </h1>
                                 <button
                                     onClick={() => setShowSearch(true)}
                                     className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-muted active:scale-95 transition-all"
@@ -101,12 +87,6 @@ export function MobileProducts() {
                         )}
                     </div>
 
-                    <button
-                        onClick={() => setShowFilters(!showFilters)}
-                        className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center active:scale-95 transition-all", showFilters ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground")}
-                    >
-                        <Filter className="h-5 w-5" />
-                    </button>
 
                     <button
                         onClick={handleCreate}
@@ -160,19 +140,32 @@ export function MobileProducts() {
 
             {/* List */}
             <div className="p-4 space-y-3">
-                {filtered.map(product => (
+                {filtered.map((product, index) => (
                     <div key={product.id} className="bg-card rounded-2xl p-4 border border-border/50 shadow-sm flex items-center gap-4 active:scale-[0.98] transition-all" onClick={() => handleEdit(product)}>
-                        <div className="h-12 w-12 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 shrink-0">
-                            <Box className="h-6 w-6" />
+                        <div className={cn(
+                            "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border transition-colors",
+                            index === 0 ? "bg-orange-500/20 border-orange-500/30" :
+                                index === 1 ? "bg-orange-500/15 border-orange-500/20" :
+                                    index === 2 ? "bg-orange-500/10 border-orange-500/15" :
+                                        "bg-orange-500/5 border-orange-500/10"
+                        )}>
+                            <span className={cn(
+                                "text-[10px] font-black mr-0.5",
+                                index < 3 ? "text-orange-500/50" : "text-orange-500/30"
+                            )}>#</span>
+                            <span className={cn(
+                                "text-sm font-bold text-foreground",
+                                index < 3 ? "text-orange-500" : ""
+                            )}>{index + 1}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start">
                                 <h3 className="font-bold truncate pr-2">{product.nom}</h3>
-                                <span className="font-mono font-bold">{Number(product.prixUnitaire).toFixed(2)}€</span>
+                                <span className="font-sans font-bold">{Number(product.prixUnitaire).toFixed(2)}€</span>
                             </div>
                             <div className="flex justify-between items-end">
                                 <p className="text-xs text-muted-foreground truncate max-w-[70%]">{product.description || "Aucune description"}</p>
-                                {product.soldCount > 0 && (
+                                {product.soldCount !== undefined && product.soldCount > 0 && (
                                     <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-medium">
                                         {product.soldCount} ventes
                                     </span>

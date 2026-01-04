@@ -9,10 +9,13 @@ export interface DraftData {
     clientId?: string;
     dateEmission?: string;
     echeance?: string;
-    conditionsPaiement?: string;
+    conditions?: string;
     notes?: string;
+    statut?: string;
+    numero?: string;
     remiseGlobale?: number;
     remiseGlobaleType?: 'pourcentage' | 'montant';
+    isLocked?: boolean;
 
     // Config specifique
     defaultTva?: number;
@@ -24,6 +27,7 @@ export interface DraftData {
     showOptionalFields?: boolean;
     discountEnabled?: boolean;
     discountType?: 'pourcentage' | 'montant';
+    conditionsPaiement?: string;
 
     updatedAt: number;
 }

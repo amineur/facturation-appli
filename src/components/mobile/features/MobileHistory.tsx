@@ -5,6 +5,7 @@ import { fetchHistory } from "@/lib/actions/history";
 import { useData } from "@/components/data-provider";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { safeFormat } from "@/lib/date-utils";
 import { Clock, FileText, Receipt, Users, Package, Trash2, Edit2, Plus, LogIn } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +50,7 @@ export function MobileHistory() {
     if (loading) return <div className="p-8 text-center text-muted-foreground">Chargement...</div>;
 
     return (
-        <div className="p-4 space-y-4 pb-32">
+        <div className="p-4 space-y-4 pb-32 font-sans">
             <div>
                 <h1 className="text-2xl font-bold">Historique</h1>
                 <p className="text-sm text-muted-foreground">Journal d'activité global</p>
@@ -66,7 +67,7 @@ export function MobileHistory() {
                             <div className="flex gap-2 text-xs text-muted-foreground mt-1">
                                 <span>{item.userName}</span>
                                 <span>•</span>
-                                <span>{format(new Date(item.timestamp), "d MMM UH:mm", { locale: fr })}</span>
+                                <span>{safeFormat(item.timestamp, "d MMM 'à' HH:mm")}</span>
                             </div>
                         </div>
                     </div>

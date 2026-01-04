@@ -8,7 +8,7 @@ interface MobileShellProps {
 
 export function MobileShell({ children }: MobileShellProps) {
     return (
-        <div className="flex flex-col min-h-screen pb-20 bg-background">
+        <div className="flex flex-col min-h-screen pb-20 font-sans">
             {/* Header could go here */}
             <main className="flex-1 overflow-x-hidden">
                 {children}

@@ -101,9 +101,14 @@ export default function RapportsPage() {
             }
         }
 
-        const filterDate = (dateStr: string) => {
-            const date = parseISO(dateStr);
-            return isWithinInterval(date, { start, end });
+        const filterDate = (dateStr: string | undefined | null) => {
+            if (!dateStr) return false;
+            try {
+                const date = parseISO(dateStr);
+                return isWithinInterval(date, { start, end });
+            } catch (e) {
+                return false;
+            }
         };
 
         return {
@@ -226,8 +231,15 @@ export default function RapportsPage() {
         const data = new Map<string, { name: string; factures: number; devis: number }>();
 
         // Helper to get key "YYYY-MM"
-        const getKey = (dateStr: string) => dateStr.substring(0, 7);
-        const getLabel = (dateStr: string) => format(parseISO(dateStr), "MMMM yyyy", { locale: fr });
+        const getKey = (dateStr: string | undefined | null) => dateStr ? dateStr.substring(0, 7) : "unknown";
+        const getLabel = (dateStr: string | undefined | null) => {
+            if (!dateStr) return "Inconnu";
+            try {
+                return format(parseISO(dateStr), "MMMM yyyy", { locale: fr });
+            } catch (e) {
+                return "Inconnu";
+            }
+        };
 
         // Initialize with filtered data
         [...filteredData.invoices, ...filteredData.quotes].forEach(item => {

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ArrowLeft, Mail, Phone, MapPin, FileText, Receipt, History, Edit2 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 
 interface MobileClientDetailsProps {
     id: string;
@@ -32,7 +33,7 @@ export function MobileClientDetails({ id }: MobileClientDetailsProps) {
         .reduce((sum, i) => sum + i.totalTTC, 0);
 
     return (
-        <div className="min-h-screen bg-muted/10 pb-24">
+        <div className="min-h-screen bg-muted/10 pb-24 font-sans">
             {/* Header */}
             <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b border-white/10 p-4 flex items-center justify-between">
                 <Link href="/clients" className="p-2 -ml-2 rounded-full hover:bg-muted">
@@ -137,7 +138,7 @@ export function MobileClientDetails({ id }: MobileClientDetailsProps) {
                                     </div>
                                     <div>
                                         <p className="font-bold text-sm">{doc.numero}</p>
-                                        <p className="text-xs text-muted-foreground">{format(new Date(doc.dateEmission), "dd/MM/yyyy")}</p>
+                                        <p className="text-xs text-muted-foreground">{safeFormat(doc.dateEmission, "dd/MM/yyyy")}</p>
                                     </div>
                                 </div>
                                 <span className="font-bold text-sm">

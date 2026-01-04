@@ -11,8 +11,7 @@ import dynamic from "next/dynamic";
 const MobileDashboard = dynamic(() => import("./features/MobileDashboard").then(mod => mod.MobileDashboard));
 const MobileDocuments = dynamic(() => import("./features/MobileDocuments").then(mod => mod.MobileDocuments));
 const MobileClients = dynamic(() => import("./features/MobileClients").then(mod => mod.MobileClients));
-const MobileDetails = dynamic(() => import("./features/MobileDetails").then(mod => mod.MobileDetails));
-const MobileEditor = dynamic(() => import("./features/MobileInvoiceEditor").then(mod => mod.MobileEditor));
+const MobileDocumentPage = dynamic(() => import("./features/MobileDocumentPage").then(mod => mod.MobileDocumentPage));
 const MobileClientDetails = dynamic(() => import("./features/MobileClientDetails").then(mod => mod.MobileClientDetails));
 const MobileClientEditor = dynamic(() => import("./features/MobileClientEditor").then(mod => mod.MobileClientEditor));
 const MobileEmailComposer = dynamic(() => import("./features/MobileEmailComposer").then(mod => mod.MobileEmailComposer));
@@ -44,16 +43,12 @@ export default function MobileApp() {
 
         // Handle /new -> Editor
         if (parts.length > 2 && parts[2] === "new") {
-            content = <MobileEditor type={isInvoice ? "FACTURE" : "DEVIS"} />;
+            content = <MobileDocumentPage type={isInvoice ? "FACTURE" : "DEVIS"} initialMode="edit" />;
         }
         // Handle /123 -> Details or Editor (via query param)
         else if (parts.length > 2) {
             const id = parts[2];
-            if (searchParams.get("mode") === "edit") {
-                content = <MobileEditor id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
-            } else {
-                content = <MobileDetails id={id} type={isInvoice ? "FACTURE" : "DEVIS"} />;
-            }
+            content = <MobileDocumentPage id={id} type={isInvoice ? "FACTURE" : "DEVIS"} initialMode={searchParams.get("mode") === "edit" ? "edit" : "view"} />;
         }
         // Handle List
         else {

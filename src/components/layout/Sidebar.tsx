@@ -27,8 +27,8 @@ const navigation = [
     { name: "Tableau de bord", href: "/", icon: LayoutDashboard },
     { name: "Devis", href: "/devis", icon: FileText },
     { name: "Factures", href: "/factures", icon: Receipt },
-    { name: "Clients", href: "/clients", icon: Users },
     { name: "Produits", href: "/produits", icon: Package },
+    { name: "Clients", href: "/clients", icon: Users },
     { name: "Rapports", href: "/rapports", icon: BarChart3 },
     { name: "Corbeille", href: "/corbeille", icon: Trash2 },
 ];

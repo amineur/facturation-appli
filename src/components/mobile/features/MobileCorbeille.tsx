@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchDeletedInvoices, restoreRecord } from "@/lib/actions/invoices"; // Wait, restoreRecord is in history? No, invoices.ts has fetchDeletedInvoices. restoreRecord is where?
+import { fetchDeletedInvoices } from "@/lib/actions/invoices";
 // Checked history.ts, restoreRecord is exported there.
 import { restoreRecord as restoreRecordAction } from "@/lib/actions/history";
 // fetchDeletedInvoices is in invoices.ts
@@ -11,6 +11,7 @@ import { Receipt, FileText, RefreshCw, Trash } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { safeFormat } from "@/lib/date-utils";
 
 export function MobileCorbeille() {
     const { societe, refreshData } = useData();
@@ -65,7 +66,7 @@ export function MobileCorbeille() {
     if (loading) return <div className="p-8 text-center text-muted-foreground">Chargement...</div>;
 
     return (
-        <div className="p-4 space-y-4 pb-32">
+        <div className="p-4 space-y-4 pb-32 font-sans">
             <div>
                 <h1 className="text-2xl font-bold">Corbeille</h1>
                 <p className="text-sm text-muted-foreground">Éléments supprimés (Restaurables)</p>
@@ -80,7 +81,7 @@ export function MobileCorbeille() {
                             </div>
                             <div>
                                 <p className="font-semibold text-sm">{item.numero}</p>
-                                <p className="text-xs text-muted-foreground">Supprimé le {format(new Date(item.deletedAt), "d MMM", { locale: fr })}</p>
+                                <p className="text-xs text-muted-foreground">Supprimé le {safeFormat(item.deletedAt, "d MMM")}</p>
                             </div>
                         </div>
                         <button
